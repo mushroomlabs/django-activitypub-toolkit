@@ -1,0 +1,27 @@
+stages:
+  - build
+  - publish
+
+build_site:
+  image: python:3.12
+  before_script:
+    - pip install poetry
+    - poetry install --only docs
+
+  stage: build
+  script:
+    - poetry run mkdocs build
+  artifacts:
+    paths:
+      - site
+
+pages:
+  stage: publish
+  image: python:3.12
+  script:
+    - mv site public
+  artifacts:
+    paths:
+      - public
+  only:
+    - master

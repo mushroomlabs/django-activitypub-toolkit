@@ -72,6 +72,12 @@ pytest-socket = "*"
 responses = "*"
 httpretty = "*"
 
+[tool.poetry.group.docs.dependencies]
+mkdocs = "^1.6"
+mkdocs-material = "^9.5"
+mkdocs-macros-plugin = "^1.0"
+
+
 [tool.black]
 line-length = 99
 target-version = ['py311', 'py312', 'py313']
