@@ -408,8 +408,8 @@ class Reference(StatusModel):
     def referenced_item(self):
         logger.debug(f"Getting item referenced by {self.uri}")
         try:
-            return AbstractObject.objects.get_subclass(reference_id=self.uri)
-        except AbstractObject.DoesNotExist:
+            return BaseActivityStreamsObject.objects.get_subclass(reference_id=self.uri)
+        except BaseActivityStreamsObject.DoesNotExist:
             return None
 
     @property
@@ -609,7 +609,7 @@ class Link(CoreType):
         self.save()
 
 
-class AbstractObject(CoreType):
+class BaseActivityStreamsObject(CoreType):
     LINKED_DATA_FIELDS = {
         "published": "published",
         "updated": "updated",
@@ -796,7 +796,7 @@ class AbstractObject(CoreType):
         return self.reference_id
 
 
-class Collection(AbstractObject):
+class Collection(BaseActivityStreamsObject):
     EXTRA_LINKED_DATA_FIELDS = {
         "type": "type",
         "total_items": "totalItems",
@@ -819,7 +819,10 @@ class Collection(AbstractObject):
     )
 
     base_object = models.OneToOneField(
-        AbstractObject, related_name="as_collection", parent_link=True, on_delete=models.CASCADE
+        BaseActivityStreamsObject,
+        related_name="as_collection",
+        parent_link=True,
+        on_delete=models.CASCADE,
     )
 
     @property
@@ -952,11 +955,14 @@ class CollectionItem(models.Model):
     order = models.FloatField(default=0.0)
 
 
-class Object(AbstractObject):
+class Object(BaseActivityStreamsObject):
     EXTRA_LINKED_DATA_FIELDS = {"type": "type"}
 
     base_object = models.OneToOneField(
-        AbstractObject, related_name="as_object", parent_link=True, on_delete=models.CASCADE
+        BaseActivityStreamsObject,
+        related_name="as_object",
+        parent_link=True,
+        on_delete=models.CASCADE,
     )
 
     class Types(models.TextChoices):
@@ -1005,7 +1011,7 @@ class Object(AbstractObject):
         return self.uri or f"Unreferenced object #{self.id} ({self.get_type_display()}"
 
 
-class Actor(AbstractObject):
+class Actor(BaseActivityStreamsObject):
     NAMESPACES = set([AS2, SEC_V1])
     EXTRA_LINKED_DATA_FIELDS = {
         "type": "type",
@@ -1025,7 +1031,10 @@ class Actor(AbstractObject):
         APPLICATION = str(AS2.Application)
 
     base_object = models.OneToOneField(
-        AbstractObject, related_name="as_actor", parent_link=True, on_delete=models.CASCADE
+        BaseActivityStreamsObject,
+        related_name="as_actor",
+        parent_link=True,
+        on_delete=models.CASCADE,
     )
     type = models.CharField(max_length=64, choices=Types.choices)
     preferred_username = models.CharField(max_length=100, null=True, blank=True)
@@ -1212,7 +1221,7 @@ class Actor(AbstractObject):
         return actor.inbox
 
 
-class Activity(AbstractObject):
+class Activity(BaseActivityStreamsObject):
     EXTRA_LINKED_DATA_FIELDS = {
         "type": "type",
         "actor": "actor",
@@ -1253,7 +1262,10 @@ class Activity(AbstractObject):
         VIEW = str(AS2.View)
 
     base_object = models.OneToOneField(
-        AbstractObject, related_name="as_activity", parent_link=True, on_delete=models.CASCADE
+        BaseActivityStreamsObject,
+        related_name="as_activity",
+        parent_link=True,
+        on_delete=models.CASCADE,
     )
 
     type = models.CharField(max_length=128, choices=Types.choices, db_index=True)
@@ -1521,7 +1533,7 @@ class QuestionExtraData(LinkedDataModel):
     # Only applicable for Question Activities (or Objects if non-standard)
 
     question = models.OneToOneField(
-        AbstractObject, related_name="question_properties", on_delete=models.CASCADE
+        BaseActivityStreamsObject, related_name="question_properties", on_delete=models.CASCADE
     )
     closed = models.DateTimeField(null=True, blank=True)
     any_of = models.ManyToManyField(CoreType, related_name="multiple_choice_alternatives")

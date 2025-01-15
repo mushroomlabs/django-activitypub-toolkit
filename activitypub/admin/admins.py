@@ -5,8 +5,8 @@ from ..schemas import AS2
 from . import actions, filters
 
 
-@admin.register(models.AbstractObject)
-class AbstractObjectAdmin(admin.ModelAdmin):
+@admin.register(models.BaseActivityStreamsObject)
+class BaseActivityStreamsObjectAdmin(admin.ModelAdmin):
     list_display = ("id", "uri", "activitypub_type")
 
     def has_change_permission(self, request, obj=None):
@@ -180,5 +180,5 @@ __all__ = [
     "AccountAdmin",
     "ActorAdmin",
     "ActivityAdmin",
-    "AbstractObjectAdmin",
+    "BaseActivityStreamsObjectAdmin",
 ]

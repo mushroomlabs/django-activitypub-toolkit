@@ -6,7 +6,14 @@ from unittest import SkipTest
 from django.core.exceptions import ValidationError
 
 from activitypub import factories
-from activitypub.models import AbstractObject, Activity, Actor, LinkedDataModel, Object, Reference
+from activitypub.models import (
+    Activity,
+    Actor,
+    BaseActivityStreamsObject,
+    LinkedDataModel,
+    Object,
+    Reference,
+)
 from activitypub.schemas import AS2
 
 from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase
@@ -21,7 +28,7 @@ def with_document_file(path):
                 raise SkipTest("Document {full_path} not found")
             with open(full_path) as f:
                 document = json.load(f)
-                as_object = AbstractObject.load(document)
+                as_object = BaseActivityStreamsObject.load(document)
                 new_args = args + (as_object,)
                 return function_at_test(*new_args, **kw)
 

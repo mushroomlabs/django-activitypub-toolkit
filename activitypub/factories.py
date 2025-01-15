@@ -24,7 +24,7 @@ class ReferenceFactory(factory.django.DjangoModelFactory):
         exclude = ("path",)
 
 
-class AbstractObjectFactory(factory.django.DjangoModelFactory):
+class BaseActivityStreamsObjectFactory(factory.django.DjangoModelFactory):
     id = factory.LazyFunction(models.generate_ulid)
     reference = factory.SubFactory(ReferenceFactory)
 
@@ -43,7 +43,7 @@ class AbstractObjectFactory(factory.django.DjangoModelFactory):
         self.attributed_to.add(*extracted)
 
 
-class CollectionFactory(AbstractObjectFactory):
+class CollectionFactory(BaseActivityStreamsObjectFactory):
     name = factory.Sequence(lambda n: f"Collection {n:03d}")
     reference = factory.SubFactory(ReferenceFactory)
 
@@ -51,7 +51,7 @@ class CollectionFactory(AbstractObjectFactory):
         model = models.Collection
 
 
-class ActorFactory(AbstractObjectFactory):
+class ActorFactory(BaseActivityStreamsObjectFactory):
     type = models.Actor.Types.PERSON
     reference = factory.SubFactory(ReferenceFactory)
     inbox = factory.SubFactory(CollectionFactory)
@@ -97,14 +97,14 @@ class AccountFactory(factory.django.DjangoModelFactory):
         model = models.Account
 
 
-class ObjectFactory(AbstractObjectFactory):
+class ObjectFactory(BaseActivityStreamsObjectFactory):
     type = fuzzy.FuzzyChoice(choices=models.Object.Types.choices)
 
     class Meta:
         model = models.Object
 
 
-class ActivityFactory(AbstractObjectFactory):
+class ActivityFactory(BaseActivityStreamsObjectFactory):
     type = fuzzy.FuzzyChoice(choices=models.Activity.Types.choices)
     reference = factory.SubFactory(ReferenceFactory)
     actor = factory.SubFactory(ActorFactory)

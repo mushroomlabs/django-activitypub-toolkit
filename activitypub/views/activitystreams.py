@@ -11,7 +11,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..decorators import calculate_digest, collect_signature
-from ..models import AbstractObject, Actor, HttpSignatureProof, LinkedDataModel, Message, Reference
+from ..models import (
+    Actor,
+    BaseActivityStreamsObject,
+    Collection,
+    HttpSignatureProof,
+    LinkedDataModel,
+    Message,
+    Reference,
+)
 from ..pagination import CollectionPagination
 from ..parsers import ActivityStreamsJsonParser, JsonLdParser
 from ..renderers import ActivityJsonRenderer, JsonLdRenderer
@@ -26,7 +34,7 @@ logger = logging.getLogger(__name__)
 class ActivityPubObjectDetailView(APIView):
     renderer_classes = (ActivityJsonRenderer, JsonLdRenderer)
     parser_classes = (ActivityStreamsJsonParser, JsonLdParser)
-    object_type = AbstractObject
+    object_type = BaseActivityStreamsObject
 
     def get_renderers(self):
         if settings.DEBUG:
@@ -44,8 +52,16 @@ class ActivityPubObjectDetailView(APIView):
             raise Http404
 
     def get(self, *args, **kw):
-        object = self.get_object(*args, **kw)
-        return Response(object.to_jsonld())
+        as_object = self.get_object(*args, **kw)
+        if isinstance(as_object, Collection) and "page" in self.request.GET:
+            paginator = CollectionPagination(collection=as_object)
+            queryset = as_object.items.reverse()
+            collection_items = paginator.paginate_queryset(
+                queryset, request=self.request, view=self
+            )
+            return paginator.get_paginated_response(collection_items)
+
+        return Response(as_object.to_jsonld())
 
     def post(self, *args, **kwargs):
         try:
@@ -106,25 +122,4 @@ class ActorDetailView(ActivityPubObjectDetailView):
         return self._get_actor()
 
 
-class CollectionDetailView(ActivityPubObjectDetailView):
-    pagination_class = CollectionPagination
-
-    @property
-    def paginator(self):
-        if not hasattr(self, "_paginator"):
-            self._paginator = self.pagination_class(collection=self.get_object())
-        return self._paginator
-
-    def get(self, *args, **kw):
-        collection = self.get_object()
-        if "page" not in self.request.GET:
-            return Response(collection.to_jsonld())
-        else:
-            queryset = collection.items.reverse()
-            collection_items = self.paginator.paginate_queryset(
-                queryset, request=self.request, view=self
-            )
-            return self.paginator.get_paginated_response(collection_items)
-
-
-__all__ = ("ActivityPubObjectDetailView", "ActorDetailView", "CollectionDetailView")
+__all__ = ("ActivityPubObjectDetailView", "ActorDetailView")
