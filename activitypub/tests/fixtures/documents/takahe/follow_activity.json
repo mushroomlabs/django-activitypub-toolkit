@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "toot": "http://joinmastodon.org/ns#",
+      "Emoji": "toot:Emoji",
+      "Hashtag": "as:Hashtag",
+      "blurhash": "toot:blurhash",
+      "featured": {
+        "@id": "toot:featured",
+        "@type": "@id"
+      },
+      "sensitive": "as:sensitive",
+      "focalPoint": {
+        "@id": "toot:focalPoint",
+        "@container": "@list"
+      },
+      "votersCount": "toot:votersCount",
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers"
+    }
+  ],
+  "id": "https://remote.example.com/actors/follower/follow/test-activity/",
+  "type": "Follow",
+  "actor": "https://remote.example.com/actors/follower/",
+  "object": "https://local.example.com/actors/followed"g
+
+}

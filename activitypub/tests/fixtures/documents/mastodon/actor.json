@@ -1,0 +1,90 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "toot": "http://joinmastodon.org/ns#",
+      "featured": {
+        "@id": "toot:featured",
+        "@type": "@id"
+      },
+      "featuredTags": {
+        "@id": "toot:featuredTags",
+        "@type": "@id"
+      },
+      "alsoKnownAs": {
+        "@id": "as:alsoKnownAs",
+        "@type": "@id"
+      },
+      "movedTo": {
+        "@id": "as:movedTo",
+        "@type": "@id"
+      },
+      "schema": "http://schema.org#",
+      "PropertyValue": "schema:PropertyValue",
+      "value": "schema:value",
+      "discoverable": "toot:discoverable",
+      "Device": "toot:Device",
+      "Ed25519Signature": "toot:Ed25519Signature",
+      "Ed25519Key": "toot:Ed25519Key",
+      "Curve25519Key": "toot:Curve25519Key",
+      "EncryptedMessage": "toot:EncryptedMessage",
+      "publicKeyBase64": "toot:publicKeyBase64",
+      "deviceId": "toot:deviceId",
+      "claim": {
+        "@type": "@id",
+        "@id": "toot:claim"
+      },
+      "fingerprintKey": {
+        "@type": "@id",
+        "@id": "toot:fingerprintKey"
+      },
+      "identityKey": {
+        "@type": "@id",
+        "@id": "toot:identityKey"
+      },
+      "devices": {
+        "@type": "@id",
+        "@id": "toot:devices"
+      },
+      "messageFranking": "toot:messageFranking",
+      "messageType": "toot:messageType",
+      "cipherText": "toot:cipherText",
+      "suspended": "toot:suspended",
+      "memorial": "toot:memorial",
+      "indexable": "toot:indexable",
+      "Hashtag": "as:Hashtag",
+      "focalPoint": {
+        "@container": "@list",
+        "@id": "toot:focalPoint"
+      }
+    }
+  ],
+  "id": "https://mastodon.example.com/users/tester",
+  "type": "Person",
+  "following": "https://mastodon.example.com/users/tester/following",
+  "followers": "https://mastodon.example.com/users/tester/followers",
+  "inbox": "https://mastodon.example.com/users/tester/inbox",
+  "outbox": "https://mastodon.example.com/users/tester/outbox",
+  "featured": "https://mastodon.example.com/users/tester/collections/featured",
+  "featuredTags": "https://mastodon.example.com/users/tester/collections/tags",
+  "preferredUsername": "tester",
+  "name": "Tester McTesty",
+  "summary": "<p>Just a simple test actor</p>",
+  "url": "https://mastodon.example.com/@tester",
+  "manuallyApprovesFollowers": false,
+  "discoverable": true,
+  "indexable": true,
+  "published": "1999-01-01T00:00:00Z",
+  "memorial": false,
+  "devices": "https://mastodon.example.com/users/tester/collections/devices",
+  "publicKey": {
+    "id": "https://mastodon.example.com/users/tester#main-key",
+    "owner": "https://mastodon.example.com/users/tester",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nINVALID_TEST_KEY\n-----END PUBLIC KEY-----\n"
+  },
+  "endpoints": {
+    "sharedInbox": "https://mastodon.example.com/inbox"
+  }
+}

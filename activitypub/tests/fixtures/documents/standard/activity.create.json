@@ -1,0 +1,15 @@
+{
+  "id": "https://remote.example.com/users/alice#votes/test-note-01/activity",
+  "to": "https://local.example.com/users/bob",
+  "type": "Create",
+  "actor": "https://remote.example.com/users/alice",
+  "object": {
+    "id": "https://remote.example.com/users/alice#votes/test-note-01",
+    "to": "https://local.example.com/users/bob",
+    "name": "ActivityPub testing is fun",
+    "type": "Note",
+    "inReplyTo": "https://local.example.com/objects/test-object-01",
+    "attributedTo": "https://local.example.com/users/bob"
+  },
+  "@context": "https://www.w3.org/ns/activitystreams"
+}

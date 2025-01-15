@@ -1,0 +1,26 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "blurhash": "toot:blurhash",
+      "Emoji": "toot:Emoji",
+      "focalPoint": {
+        "@container": "@list",
+        "@id": "toot:focalPoint"
+      },
+      "Hashtag": "as:Hashtag",
+      "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+      "sensitive": "as:sensitive",
+      "toot": "http://joinmastodon.org/ns#",
+      "votersCount": "toot:votersCount",
+      "featured": {
+        "@id": "toot:featured",
+        "@type": "@id"
+      }
+    }
+  ],
+  "id": "https://activitypub.lullis.net/@raphael@lullis.net/collections/featured/",
+  "type": "OrderedCollection",
+  "orderedItems": [],
+  "totalItems": 0
+}

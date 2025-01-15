@@ -1,0 +1,8 @@
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "https://mastodon.communick.com/users/raphael/outbox",
+  "type": "OrderedCollection",
+  "totalItems": 1550,
+  "first": "https://mastodon.communick.com/users/raphael/outbox?page=true",
+  "last": "https://mastodon.communick.com/users/raphael/outbox?min_id=0&page=true"
+}

@@ -1,0 +1,21 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "id": "https://remote.example.com/users/alice",
+  "type": "Person",
+  "inbox": "https://remote.example.com/users/alice/inbox/",
+  "publicKey": {
+    "id": "https://remote.example.com/users/alice/#main-key",
+    "owner": "https://remote.example.com/users/alice",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nINVALID\n-----END PUBLIC KEY-----\n"
+  },
+  "followers": "https://remote.example.com/users/alice/followers/",
+  "following": "https://remote.example.com/users/alice/following/",
+  "name": "Alice",
+  "outbox": "https://remote.example.com/users/alice/outbox/",
+  "preferredUsername": "alice",
+  "published": "2024-05-14T12:25:58Z",
+  "url": "https://remote.example.com/@alice"
+}
