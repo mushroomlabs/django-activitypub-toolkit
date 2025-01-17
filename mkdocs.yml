@@ -28,10 +28,12 @@ nav:
           - topics/models/domains.md
           - topics/models/accounts.md
           - topics/models/messages.md
-
       - Message Adapters: topics/message_adapters.md
+      - Views: topics/views.md
       - Authentication: topics/authn.md
       - Authorization: topics/authz.md
+      - Background Tasks: topics/tasks.md
+      - Activity Handlers: topics/activity_handlers.md
 
   - HOWTOs:
       - howtos/index.md
