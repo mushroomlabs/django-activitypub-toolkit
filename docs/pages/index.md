@@ -21,11 +21,11 @@ The goal of this project is to build more advanced applications
 powered by ActivityPub and bring back an open **web** where clients
 can act as fully autonomous nodes whenever possible.
 
-#### Related Work
+## Related Work
 
  - [Vocata](https://codeberg.org/Vocata/vocata) as main inspiration
    and showing that it is possible to work with the concept of "The
    Fediverse" as a global shared graph.
- - [Takahē](https://jointakahe.org/)for being the first ActivityPub
+ - [Takahē](https://jointakahe.org/) for being the first ActivityPub
    server designed to serve multiple domains from the same
    installation.

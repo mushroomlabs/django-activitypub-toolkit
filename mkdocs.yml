@@ -12,6 +12,32 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Tutorials:
+      - tutorials/index.md
+      - Getting started: tutorials/getting_started.md
+      - Integrating with your existing Django project: tutorials/integration_with_existing_project.md
+      - Using it as a Standalone ActivityPub API Server: tutorials/standalone.md
+      - Creating activity handlers: tutorials/activity_handlers.md
+
+  - Topic Guides:
+      - topics/index.md
+      - Fundamentals of ActivityPub: topics/activitypub_fundamentals.md
+      - Models:
+          - topics/models/activitypub.md
+          - topics/models/linked_data.md
+          - topics/models/domains.md
+          - topics/models/accounts.md
+          - topics/models/messages.md
+
+      - Message Adapters: topics/message_adapters.md
+      - Authentication: topics/authn.md
+      - Authorization: topics/authz.md
+
+  - HOWTOs:
+      - howtos/index.md
+      - Register Domain: howtos/register_domain.md
+      - Register account: howtos/register_account.md
+  - FAQ: faq.md
 
 plugins:
   - search
