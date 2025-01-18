@@ -1,4 +1,7 @@
- `## The "Social Graph", formalized
+---
+title: Linked Data Models
+---
+
 
 One of the key pillars of the Open Social Web is the ability for
 different nodes to exchange data with each other using a common
