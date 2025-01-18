@@ -104,7 +104,7 @@ applications you won't be working with these classes directly, but if
 you are working on any type of application that is going to implement
 types that deal with ActivityStreams extensions (emojis, hashtags) or
 rely on complete different RDF namespaces (e.g, Mastodon or Lemmy
-contexts) this class help you.
+contexts) this class will help you.
 
 LinkedDataModels need to defined the following class attributes:
 
@@ -143,7 +143,7 @@ class Comment(LinkedDataModel)
 
 ```
 
-To serialize your model, it as simple as:
+To serialize your model, it is as simple as:
 
 ```python
 
