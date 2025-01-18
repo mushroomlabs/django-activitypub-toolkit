@@ -145,7 +145,6 @@ class LinkedDataModel(models.Model):
     @cached_property
     def linked_data_map(self):
         return {**self.LINKED_DATA_FIELDS, **self.EXTRA_LINKED_DATA_FIELDS}
-        # return {k: v for k, v in combined.items() if k in self.linked_data_attributes}
 
     @cached_property
     def linked_data_fields(self):
