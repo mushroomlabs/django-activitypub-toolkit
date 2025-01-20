@@ -23,8 +23,8 @@ nav:
       - topics/index.md
       - Fundamentals of ActivityPub: topics/activitypub_fundamentals.md
       - Models:
-          - topics/models/activitypub.md
           - topics/models/linked_data.md
+          - topics/models/activitypub.md
           - topics/models/domains.md
           - topics/models/accounts.md
           - topics/models/messages.md
@@ -34,6 +34,7 @@ nav:
       - Authorization: topics/authz.md
       - Background Tasks: topics/tasks.md
       - Activity Handlers: topics/activity_handlers.md
+      - Configuration and Customization: topics/application_settings.md
 
   - HOWTOs:
       - howtos/index.md

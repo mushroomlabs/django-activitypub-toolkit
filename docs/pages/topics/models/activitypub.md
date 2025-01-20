@@ -1,5 +1,5 @@
 ---
-title: ActivityPub Models
+title: ActivityPub
 ---
 
 An ActivityPub model refers to all the django [model

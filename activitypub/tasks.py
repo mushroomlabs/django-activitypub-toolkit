@@ -1,13 +1,9 @@
-import json
 import logging
-import ssl
 
-import requests
 from celery import shared_task
 from django.db import transaction
 
 from .models import Activity, Domain, Message, Reference
-from .serializers import NodeInfoSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -43,33 +39,8 @@ def process_message(message_id):
 @shared_task
 def fetch_nodeinfo(domain_name):
     try:
-        NODEINFO_URLS = [
-            "http://nodeinfo.diaspora.software/ns/schema/2.0",
-            "http://nodeinfo.diaspora.software/ns/schema/2.1",
-        ]
         domain = Domain.objects.get(name=domain_name)
-        metadata_response = requests.get(f"https://{domain_name}/.well-known/nodeinfo")
-        metadata_response.raise_for_status()
-        metadata = metadata_response.json()
-
-        for link in metadata.get("links", []):
-            if link.get("rel") in NODEINFO_URLS:
-                nodeinfo20_url = link.get("href")
-                node_response = requests.get(nodeinfo20_url)
-                node_response.raise_for_status()
-                node_data = node_response.json()
-                serializer = NodeInfoSerializer(data=node_data)
-                assert serializer.is_valid(), "Could not parse node info data"
-                software = serializer.data["software"]
-                domain.nodeinfo = node_data
-                domain.software_family = Domain.Software.get_family(software["name"])
-                domain.software = software["name"]
-                domain.version = software["version"]
-                domain.save()
-                break
-
-    except (requests.HTTPError, ssl.SSLCertVerificationError, ssl.SSLError, json.JSONDecodeError):
-        pass
+        domain.get_nodeinfo()
     except Domain.DoesNotExist:
         logger.warning(f"Domain {domain_name} does not exist")
 

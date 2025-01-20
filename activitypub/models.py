@@ -1,9 +1,11 @@
 import base64
 import copy
 import datetime
+import json
 import logging
 import os
 import re
+import ssl
 import sys
 from functools import cached_property
 from typing import Optional, cast
@@ -33,6 +35,7 @@ from requests_http_message_signatures import HTTPSignatureHeaderAuth
 from . import signals
 from .exceptions import DropMessage, UnprocessableJsonLd
 from .schemas import AS2, LDP, PURL_RELATIONSHIP, RDF, SEC, SEC_V1
+from .serializers import NodeInfoSerializer
 from .settings import app_settings
 
 logger = logging.getLogger(__name__)
@@ -1884,6 +1887,40 @@ class Domain(models.Model):
     @property
     def fqdn(self):
         return f"{self.scheme}{self.name}"
+
+    def get_nodeinfo(self):
+        try:
+            NODEINFO_URLS = [
+                "http://nodeinfo.diaspora.software/ns/schema/2.0",
+                "http://nodeinfo.diaspora.software/ns/schema/2.1",
+            ]
+
+            metadata_response = requests.get(f"https://{self.name}/.well-known/nodeinfo")
+            metadata_response.raise_for_status()
+            metadata = metadata_response.json()
+
+            for link in metadata.get("links", []):
+                if link.get("rel") in NODEINFO_URLS:
+                    nodeinfo20_url = link.get("href")
+                    node_response = requests.get(nodeinfo20_url)
+                    node_response.raise_for_status()
+                    node_data = node_response.json()
+                    serializer = NodeInfoSerializer(data=node_data)
+                    assert serializer.is_valid(), "Could not parse node info data"
+                    software = serializer.data["software"]
+                    self.nodeinfo = node_data
+                    self.software_family = self.Software.get_family(software["name"])
+                    self.software = software["name"]
+                    self.version = software["version"]
+                    self.save()
+                    break
+        except (
+            requests.HTTPError,
+            ssl.SSLCertVerificationError,
+            ssl.SSLError,
+            json.JSONDecodeError,
+        ):
+            logger.warning(f"Failed to get nodeinfo from {self.name}")
 
     def reverse_view(self, view_name, *args, **kwargs):
         url = reverse(view_name, args=args, kwargs=kwargs)

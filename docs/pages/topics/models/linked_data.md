@@ -1,5 +1,5 @@
 ---
-title: Linked Data Models
+title: Linked Data
 ---
 
 
