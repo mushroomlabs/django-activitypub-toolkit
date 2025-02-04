@@ -113,6 +113,13 @@ class ActivityFactory(BaseActivityStreamsObjectFactory):
         model = models.Activity
 
 
+class LinkFactory(BaseActivityStreamsObjectFactory):
+    reference = None
+
+    class Meta:
+        model = models.Link
+
+
 @factory.django.mute_signals(post_save)
 class MessageFactory(factory.django.DjangoModelFactory):
     sender = factory.SubFactory(ReferenceFactory)

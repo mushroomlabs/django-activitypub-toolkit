@@ -10,6 +10,7 @@ from activitypub.models import (
     Activity,
     Actor,
     BaseActivityStreamsObject,
+    Link,
     LinkedDataModel,
     Object,
     Reference,
@@ -142,6 +143,25 @@ class CollectionTestCase(BaseTestCase):
         object = factories.ObjectFactory()
         self.collection.append(item=object)
         self.assertEqual(self.collection.collection_items.count(), 1)
+
+
+class LinkTestCase(BaseTestCase):
+    def test_links_do_not_need_references(self):
+        link = factories.LinkFactory()
+        self.assertIsNone(link.reference)
+
+    def test_can_create_mentions(self):
+        mention = factories.LinkFactory(type=Link.Types.MENTION)
+        self.assertEqual(mention.type, str(AS2.Mention))
+
+    def test_can_serialize(self):
+        account = factories.AccountFactory()
+        mention = factories.LinkFactory(
+            type=Link.Types.MENTION, href=account.actor.uri, name=account.subject_name
+        )
+        json_ld_doc = mention.to_jsonld()
+        self.assertFalse("id" in json_ld_doc)
+        self.assertEqual(mention.href, account.actor.uri)
 
 
 class ActivityTestCase(BaseTestCase):

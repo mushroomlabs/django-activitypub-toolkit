@@ -536,6 +536,10 @@ class CoreType(LinkedDataModel):
 
 
 class Link(CoreType):
+    class Types(models.TextChoices):
+        LINK = str(AS2.Link)
+        MENTION = str(AS2.Mention)
+
     class RelationTypes(models.TextChoices):
         ALTERNATE = ("alternate", "Designates a substitute for the link's context")
         APPENDIX = ("appendix", "Refers to an appendix.")
@@ -580,6 +584,7 @@ class Link(CoreType):
 
     core_type = models.OneToOneField(CoreType, parent_link=True, on_delete=models.CASCADE)
 
+    type = models.CharField(max_length=48, choices=Types.choices, default=Types.LINK)
     reference = models.ForeignKey(
         Reference, null=True, blank=True, related_name="links", on_delete=models.SET_NULL
     )
@@ -603,6 +608,7 @@ class Link(CoreType):
     def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
         to_native = lambda x: x and x.toPython()
 
+        self.type = g.value(subject=subject_uri, predicate=RDF.type)
         self.href = to_native(g.value(subject=subject_uri, predicate=AS2.href))
         self.media_type = to_native(g.value(subject=subject_uri, predicate=AS2.mediaType))
         self.name = to_native(g.value(subject=subject_uri, predicate=AS2.name))
