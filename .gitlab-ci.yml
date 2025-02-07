@@ -37,6 +37,11 @@ pages:
       - public
   needs:
     - build_site
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "master"'
+      changes:
+        - docs/*
+        - mkdocs.yml    
   allow_failure: true
   
 test:
