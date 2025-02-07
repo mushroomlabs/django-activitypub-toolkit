@@ -79,7 +79,7 @@ publish_python_package:
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
     - api_token=$(jq --raw-output '.token' <<< "${resp}")
     - poetry config pypi-token.pypi ${api_token}
-    - poetry build --publish
+    - poetry publish --build
 
   id_tokens:
     PYPI_ID_TOKEN:
