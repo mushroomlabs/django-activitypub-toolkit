@@ -59,7 +59,6 @@ test:
   script:
     - export
     - pip install poetry
-    - apt install jq
     - poetry install
     - poetry run pytest
 
@@ -74,6 +73,7 @@ publish_python_package:
   stage: build
 
   script:
+    - apt install jq
     - pip install poetry id
     - oidc_token=$(python -m id PYPI)
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
