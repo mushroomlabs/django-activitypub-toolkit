@@ -21,6 +21,12 @@ build_site:
   artifacts:
     paths:
       - site
+  only:
+    - master
+  rules:
+    changes:
+      - docs/*
+      - mkdocs.yml
 
 pages:
   stage: publish_docs
@@ -32,6 +38,14 @@ pages:
       - public
   only:
     - master
+  needs:
+    job: build_site
+    artifacts: true
+
+  rules:
+    changes:
+      - docs/*
+      - mkdocs.yml
 
 test:
   stage: test
@@ -46,9 +60,9 @@ test:
 
   script:
     - export
-    - pip install -e .
-    - pytest
-
+    - pip install poetry
+    - poetry install
+    - poetry run pytest
 
 build_python_package:
   image: python:3.12
