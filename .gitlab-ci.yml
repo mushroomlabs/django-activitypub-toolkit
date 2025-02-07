@@ -73,7 +73,7 @@ publish_python_package:
   stage: build
 
   script:
-    - apt install jq
+    - apt-get update && apt-get install jq
     - pip install poetry id
     - oidc_token=$(python -m id PYPI)
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
