@@ -36,7 +36,8 @@ pages:
     paths:
       - public
   needs:
-    - build_docs
+    - build_site
+  allow_failure: true
   
 test:
   stage: test
