@@ -21,12 +21,11 @@ build_site:
   artifacts:
     paths:
       - site
-  only:
-    - master
   rules:
-    changes:
-      - docs/*
-      - mkdocs.yml
+    - if: '$CI_COMMIT_REF_NAME == "master"'
+      changes:
+        - docs/*
+        - mkdocs.yml
 
 pages:
   stage: publish_docs
@@ -36,17 +35,9 @@ pages:
   artifacts:
     paths:
       - public
-  only:
-    - master
   needs:
-    job: build_site
-    artifacts: true
-
-  rules:
-    changes:
-      - docs/*
-      - mkdocs.yml
-
+    - build_site   
+  
 test:
   stage: test
   image: python:3.12
