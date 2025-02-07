@@ -59,8 +59,15 @@ test:
   script:
     - export
     - pip install poetry
+    - apt install jq
     - poetry install
     - poetry run pytest
+
+  rules:
+    - changes:
+        - activitypub/*
+        - pyproject.toml
+        - poetry.lock
 
 publish_python_package:
   image: python:3.12
