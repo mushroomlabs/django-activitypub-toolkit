@@ -16,7 +16,6 @@ import requests
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
-from django.contrib.postgres.fields import ArrayField
 from django.db import models, transaction
 from django.db.models import Case, Exists, F, Max, OuterRef, Q, Value, When
 from django.db.models.functions import Concat
@@ -540,6 +539,43 @@ class Link(CoreType):
         LINK = str(AS2.Link)
         MENTION = str(AS2.Mention)
 
+    core_type = models.OneToOneField(CoreType, parent_link=True, on_delete=models.CASCADE)
+
+    type = models.CharField(max_length=48, choices=Types.choices, default=Types.LINK)
+    reference = models.ForeignKey(
+        Reference, null=True, blank=True, related_name="links", on_delete=models.SET_NULL
+    )
+    href = models.URLField()
+    media_type = models.CharField(max_length=48, null=True, blank=True)
+    name = models.TextField(null=True, blank=True)
+    language = models.CharField(max_length=5, null=True, blank=True)
+    height = models.PositiveIntegerField(null=True)
+    width = models.PositiveIntegerField(null=True)
+    preview = models.ForeignKey(
+        Reference,
+        related_name="link_previews",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+    )
+
+    @property
+    def relations(self):
+        return self.related.values_list("type", flat=True)
+
+    def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
+        to_native = lambda x: x and x.toPython()
+
+        self.type = g.value(subject=subject_uri, predicate=RDF.type)
+        self.href = to_native(g.value(subject=subject_uri, predicate=AS2.href))
+        self.media_type = to_native(g.value(subject=subject_uri, predicate=AS2.mediaType))
+        self.name = to_native(g.value(subject=subject_uri, predicate=AS2.name))
+        self.height = to_native(g.value(subject=subject_uri, predicate=AS2.height))
+        self.width = to_native(g.value(subject=subject_uri, predicate=AS2.width))
+        self.save()
+
+
+class LinkRelation(models.Model):
     class RelationTypes(models.TextChoices):
         ALTERNATE = ("alternate", "Designates a substitute for the link's context")
         APPENDIX = ("appendix", "Refers to an appendix.")
@@ -582,39 +618,10 @@ class Link(CoreType):
         WORKING_COPY = ("working-copy", "Points to a working copy for this resource")
         WORKING_COPY_OF = ("working-copy-of", "versioned resource originating this working copy")
 
-    core_type = models.OneToOneField(CoreType, parent_link=True, on_delete=models.CASCADE)
-
-    type = models.CharField(max_length=48, choices=Types.choices, default=Types.LINK)
-    reference = models.ForeignKey(
-        Reference, null=True, blank=True, related_name="links", on_delete=models.SET_NULL
+    link = models.ForeignKey(Link, related_name="related", on_delete=models.CASCADE)
+    type = models.CharField(
+        max_length=50, choices=RelationTypes.choices, default=RelationTypes.ALTERNATE
     )
-    href = models.URLField()
-    relations = ArrayField(
-        models.CharField(max_length=50, choices=RelationTypes.choices), null=True, blank=True
-    )
-    media_type = models.CharField(max_length=48, null=True, blank=True)
-    name = models.TextField(null=True, blank=True)
-    language = models.CharField(max_length=5, null=True, blank=True)
-    height = models.PositiveIntegerField(null=True)
-    width = models.PositiveIntegerField(null=True)
-    preview = models.ForeignKey(
-        Reference,
-        related_name="link_previews",
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
-    )
-
-    def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
-        to_native = lambda x: x and x.toPython()
-
-        self.type = g.value(subject=subject_uri, predicate=RDF.type)
-        self.href = to_native(g.value(subject=subject_uri, predicate=AS2.href))
-        self.media_type = to_native(g.value(subject=subject_uri, predicate=AS2.mediaType))
-        self.name = to_native(g.value(subject=subject_uri, predicate=AS2.name))
-        self.height = to_native(g.value(subject=subject_uri, predicate=AS2.height))
-        self.width = to_native(g.value(subject=subject_uri, predicate=AS2.width))
-        self.save()
 
 
 class BaseActivityStreamsObject(CoreType):

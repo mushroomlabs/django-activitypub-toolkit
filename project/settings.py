@@ -14,7 +14,6 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.messages",
-    "django.contrib.postgres",
     "rest_framework",
     "activitypub",
 ]
@@ -36,7 +35,7 @@ ROOT_URLCONF = "project.urls"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",  # PostgreSQL is required
-        "HOST": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_HOST", "127.0.0.1"),
+        "HOST": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_HOST", "postgres"),
         "PORT": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_PORT", 5432),
         "NAME": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_NAME", "activitypub_toolkit"),
         "USER": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_USER", "activitypub_toolkit"),
