@@ -1,6 +1,7 @@
 variables:
   DJANGO_SETTINGS_MODULE: "project.settings"
   ACTIVITYPUB_TOOLKIT_DATABASE_PASSWORD: "activitypub_toolkit_ci"
+  PYTEST_ADDOPTS: "--disable-socket --allow-hosts=postgres"
 
 stages:
   - build_docs
@@ -41,9 +42,9 @@ pages:
     - if: '$CI_COMMIT_REF_NAME == "master"'
       changes:
         - docs/*
-        - mkdocs.yml    
+        - mkdocs.yml
   allow_failure: true
-  
+
 test:
   stage: test
   image: python:3.12
