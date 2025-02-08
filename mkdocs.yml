@@ -35,6 +35,9 @@ nav:
       - Background Tasks: topics/tasks.md
       - Activity Handlers: topics/activity_handlers.md
       - Configuration and Customization: topics/application_settings.md
+  - Reference:
+      - references/index.md
+      - Models: references/models.md
 
   - HOWTOs:
       - howtos/index.md
@@ -44,11 +47,20 @@ nav:
 
 plugins:
   - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            allow_inspection: true
+            show_root_heading: true
+            show_source: false
+            heading_level: 3
   - macros:
       include_dir: docs/snippets
 
 repo_name: mushroomlabs/django-activitypub-toolkit
-repo_url: https://github.com/mushroomlabs/django-activitypub-toolkit
+repo_url: https://codeberg.org/mushroomlabs/django-activitypub-toolkit
 
 site_url: https://activitypub.mushroomlabs.com
 site_name: Django ActivityPub ToolKit
@@ -56,6 +68,8 @@ site_name: Django ActivityPub ToolKit
 theme:
   custom_dir: docs/overrides
   name: material
+  icon:
+    repo: fontawesome/brands/git-alt
   font:
     text: Ubuntu
     code: Ubuntu Mono

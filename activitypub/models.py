@@ -8,7 +8,7 @@ import re
 import ssl
 import sys
 from functools import cached_property
-from typing import Optional, cast
+from typing import Dict, Optional, cast
 from urllib.parse import urlparse
 
 import rdflib
@@ -136,6 +136,10 @@ class MessageManager(models.Manager):
 
 
 class LinkedDataModel(models.Model):
+    """
+    An abstract model class that can handle conversion to/from JSON-LD to the Django model
+    """
+
     NAMESPACES = set([LDP])
     LINKED_DATA_FIELDS = {}
     EXTRA_LINKED_DATA_FIELDS = {}
@@ -306,7 +310,11 @@ class LinkedDataModel(models.Model):
 
         return data
 
-    def serialize(self, *args, **kw):
+    def serialize(self, *args, **kw) -> Dict:
+        """
+        Serializes the model class into a dictionary just with its attributes.
+        This is the method that most classes will be interested in overriding.
+        """
         data = {}
 
         doc_id = getattr(self, "reference_id", None)
@@ -321,15 +329,16 @@ class LinkedDataModel(models.Model):
 
         return data
 
-    def to_jsonld(self, include_context=True):
+    def to_jsonld(self):
+        """
+        Takes the serialized data and enriches with the entries
+        related to associated JSON-lD contexts
+        """
         data = self.serialize()
 
-        if include_context:
-            context = self.namespaces
-            data["@context"] = [str(nm) for nm in context]
-            return jsonld.compact(data, context)
-
-        return data
+        context = self.namespaces
+        data["@context"] = [str(nm) for nm in context]
+        return jsonld.compact(data, context)
 
     @classmethod
     def load(cls, document):
