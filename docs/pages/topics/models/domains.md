@@ -9,7 +9,7 @@ The `Domain` model is used to:
  - Provide a [shared
    inbox](https://w3c.github.io/activitypub/#shared-inbox-delivery)
    for the local domains hosted on our server.
- - Generate instances of the [ActivityPub models](./activitypub) with
+ - Generate instances of the [ActivityPub models](./activitypub.md) with
    a proper reference.
 
 ## Nodeinfo
@@ -43,7 +43,7 @@ outside of the request cycle, `reverse_view` provides a convenience
 method that can generate an absolute URI for you.
 
 Let's say that your application has an [custom endpoint for
-posts](./application_settings), which has the url_pattern
+posts](../application_settings.md), which has the url_pattern
 `/posts/<str:pk>` with the `ap:post-detail` view name.
 
 ```
