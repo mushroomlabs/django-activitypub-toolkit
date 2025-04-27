@@ -51,10 +51,10 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["django-activitypub-toolkit"]
+packages = ["activitypub"]
 
 [tool.setuptools.package-dir]
-"django-activitypub-toolkit" = "activitypub"
+"activitypub" = "activitypub"
 
 [tool.poetry]
 packages = [
