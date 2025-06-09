@@ -561,11 +561,7 @@ class Link(CoreType):
     height = models.PositiveIntegerField(null=True)
     width = models.PositiveIntegerField(null=True)
     preview = models.ForeignKey(
-        Reference,
-        related_name="link_previews",
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
+        Reference, related_name="link_previews", null=True, blank=True, on_delete=models.CASCADE
     )
 
     @property
@@ -753,7 +749,6 @@ class BaseActivityStreamsObject(CoreType):
         return self.reference_id
 
     def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
-
         if self.reference and self.reference.domain and self.reference.domain.blocked:
             raise ValueError(f"{self.reference.domain.name} is blocked")
 
@@ -1182,7 +1177,6 @@ class Actor(BaseActivityStreamsObject):
         return Collection.make(uri=uri, name=name, ordering_method=Collection.OrderingMethods.KEY)
 
     def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
-
         to_native = lambda x: x and x.toPython()
 
         self.type = to_native(g.value(subject=subject_uri, predicate=RDF.type))
