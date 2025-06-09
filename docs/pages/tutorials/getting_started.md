@@ -39,7 +39,9 @@ pip install django-activitypub-toolkit
 
 ## Creating Your Microblogging Server
 
-In this section, we'll create a simple microblogging server called "adapt" (A Django ActivityPub Toolkit). We'll use Django's admin interface to compose and manage blog posts.
+In this section, we'll create a simple microblogging server called
+"adapt" (A Django ActivityPub Toolkit). We'll use Django's admin
+interface to compose and manage blog posts.
 
 ### 1. Create the Django Project and App
 
@@ -229,4 +231,7 @@ Let's break down what we've created:
 - Read the [Reference](../references/index.md) for detailed API documentation
 - Explore the [Topics](../topics/index.md) section for in-depth explanations of ActivityPub concepts
 
-Remember, this is just the beginning! ActivityPub is a powerful protocol, and our framework makes it easy to build sophisticated social applications. As you continue learning, you'll discover more features and capabilities that you can add to your server.
+Remember, this is just the beginning! ActivityPub is a powerful
+protocol, and our framework makes it easy to build sophisticated
+social applications. As you continue learning, you'll discover more
+features and capabilities that you can add to your server.
