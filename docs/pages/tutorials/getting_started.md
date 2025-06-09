@@ -193,7 +193,6 @@ python manage.py createsuperuser
    - Go to the admin interface
    - Create a new Django User
    - Create a new UserAccount and associate it with the User
-   - The system will automatically create an ActivityPub Account
 
 5. Create a blog post:
    - In the admin interface, go to ActivityPub Objects
