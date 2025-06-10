@@ -1,7 +1,5 @@
 variables:
-  DJANGO_SETTINGS_MODULE: "project.settings"
-  ACTIVITYPUB_TOOLKIT_DATABASE_PASSWORD: "activitypub_toolkit_ci"
-  PYTEST_ADDOPTS: "--disable-socket --allow-hosts=postgres"
+  PYTEST_ADDOPTS: "--disable-socket"
 
 stages:
   - build_docs
@@ -48,19 +46,12 @@ pages:
 test:
   stage: test
   image: python:3.12
-  services:
-    - postgres:latest
-
-  variables:
-    POSTGRES_DB: activitypub_toolkit
-    POSTGRES_USER: activitypub_toolkit
-    POSTGRES_PASSWORD: "$ACTIVITYPUB_TOOLKIT_DATABASE_PASSWORD"
 
   script:
     - export
     - pip install poetry
     - poetry install
-    - poetry run pytest
+    - poetry run activitypub/tests/runtests.py
 
   rules:
     - changes:

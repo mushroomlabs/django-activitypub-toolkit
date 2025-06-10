@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
-import os
 import sys
 
 import django
+from celery import Celery
 from django.conf import settings
 from django.core.management import call_command
 
@@ -18,7 +18,6 @@ def runtests():
                 "django.contrib.auth",
                 "django.contrib.contenttypes",
                 "django.contrib.messages",
-                "django.contrib.postgres",
                 "rest_framework",
                 "activitypub",
             ],
@@ -31,17 +30,9 @@ def runtests():
                 "django.contrib.messages.middleware.MessageMiddleware",
                 "django.middleware.clickjacking.XFrameOptionsMiddleware",
             ],
+            ROOT_URLCONF="activitypub.tests.urls",
             APPEND_SLASH=False,
-            DATABASES={
-                "default": {
-                    "ENGINE": "django.db.backends.postgresql",  # PostgreSQL is required
-                    "HOST": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_HOST", "db"),
-                    "PORT": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_PORT", 5432),
-                    "NAME": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_NAME", "activitypub_toolkit"),
-                    "USER": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_USER", "activitypub_toolkit"),
-                    "PASSWORD": os.getenv("ACTIVITYPUB_TOOLKIT_DATABASE_PASSWORD"),
-                }
-            },
+            DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
             CELERY_BROKER_URL="memory://",
             CELERY_BROKER_USE_SSL=False,
             CELERY_TASK_EAGER_MODE=True,
@@ -76,6 +67,9 @@ def runtests():
         )
 
     django.setup()
+    app = Celery("activitypub_toolkit_test")
+    app.config_from_object("django.conf:settings", namespace="CELERY")
+    app.autodiscover_tasks()
     failures = call_command("test", "activitypub", interactive=False, failfast=False, verbosity=2)
 
     sys.exit(bool(failures))

@@ -22,7 +22,6 @@ from django.db.models.functions import Concat
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import classproperty
-from django_ulid.models import ULIDField
 from django_ulid.models import default as new_ulid
 from model_utils.choices import Choices
 from model_utils.fields import MonitorField
@@ -106,6 +105,14 @@ def _get_normalized_hash(data):
     digest = hashes.Hash(hashes.SHA256())
     digest.update(norm_form.encode("utf8"))
     return digest.finalize().hex().encode("ascii")
+
+
+class ULIDField(models.CharField):
+    def __init__(self, *args, **kw):
+        kw.setdefault("max_length", 26)
+        kw.setdefault("default", generate_ulid)
+
+        super().__init__(*args, **kw)
 
 
 class AccountManager(models.Manager):
@@ -535,7 +542,7 @@ class Reference(StatusModel):
 class CoreType(LinkedDataModel):
     NAMESPACES = set([AS2])
 
-    id = ULIDField(default=generate_ulid, primary_key=True)
+    id = ULIDField(primary_key=True)
     objects = InheritanceManager()
 
     @property
@@ -647,6 +654,8 @@ class BaseActivityStreamsObject(CoreType):
         "location": "location",
         "preview": "preview",
         "replies": "replies",
+        "likes": "likes",
+        "shares": "shares",
         "url": "url",
         "tags": "tag",
         "in_reply_to": "inReplyTo",
@@ -672,6 +681,12 @@ class BaseActivityStreamsObject(CoreType):
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.DurationField(null=True, blank=True)
+    likes = models.OneToOneField(
+        "Collection", related_name="likes_for", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    shares = models.OneToOneField(
+        "Collection", related_name="shares_for", null=True, blank=True, on_delete=models.SET_NULL
+    )
 
     replies = models.OneToOneField(
         "Collection",
@@ -1142,8 +1157,8 @@ class Actor(BaseActivityStreamsObject):
                 )
             )
             .exclude(target_inbox=None)
-            .distinct("target_inbox")
             .values_list("target_inbox", flat=True)
+            .distinct()
         )
 
     @property
@@ -2036,7 +2051,7 @@ class HttpMessageSignature(models.Model):
         RSA_SHA56 = "rsa-sha256"
         HIDDEN = "hs2019"
 
-    id = ULIDField(default=generate_ulid, primary_key=True)
+    id = ULIDField(primary_key=True)
     algorithm = models.CharField(max_length=20, choices=SignatureAlgorithms.choices)
     signature = models.BinaryField()
     message = models.TextField()
@@ -2087,7 +2102,7 @@ class HttpMessageSignature(models.Model):
 
 
 class Message(models.Model):
-    id = ULIDField(default=generate_ulid, primary_key=True)
+    id = ULIDField(primary_key=True)
     sender = models.ForeignKey(Reference, related_name="messages_sent", on_delete=models.CASCADE)
     recipient = models.ForeignKey(
         Reference, related_name="messages_targeted", on_delete=models.CASCADE
