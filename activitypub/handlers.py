@@ -11,7 +11,7 @@ def on_message_created_process(sender, **kw):
     message = kw["instance"]
 
     if kw["created"]:
-        tasks.process_message.delay_on_commit(str(message.id))
+        tasks.process_message.delay(str(message.id))
 
 
 @receiver(post_save, sender=Domain)
