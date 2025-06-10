@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 dependencies = [
-  "django >= 4.2",
+  "django >= 4.2.23",
   "django-model-utils >= 4.2",
   "djangorestframework >= 3.13",
   "celery >= 5.4",
