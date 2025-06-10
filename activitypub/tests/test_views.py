@@ -24,7 +24,7 @@ class InboxViewTestCase(BaseTestCase):
         self.assertEqual(self.account.actor.inbox.uri, "http://testserver/users/bob/inbox")
         resolve("/users/bob/index")
 
-    @patch("activitypub.tasks.process_message.delay_on_commit")
+    @patch("activitypub.tasks.process_message.delay")
     def test_can_post_activity(self, process_message):
         message = {
             "id": "https://remote.example.com/0cc0a50f-9043-4d9b-b82a-ab3cd13ab906",
