@@ -30,7 +30,6 @@ dependencies = [
   "django >= 4.2",
   "django-model-utils >= 4.2",
   "djangorestframework >= 3.13",
-  "psycopg2-binary >= 2.9",
   "celery >= 5.4",
   "django-ulid",
   "pyld >= 2.0.4",
