@@ -2,7 +2,7 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from . import tasks
-from .models import Activity, Collection, Domain, Message, Object
+from .models import Activity, Domain, Message, Object
 from .signals import activity_received
 
 
@@ -34,8 +34,7 @@ def on_ap_object_create_define_related_collections(sender, **kw):
     match (instance.type, instance.replies):
         case (Activity.Types.QUESTION | Object.Types.NOTE, None):
             instance.replies = reference.domain.build_collection(
-                name=f"Replies to {reference.uri}",
-                ordering_method=Collection.OrderingMethods.NONE,
+                name=f"Replies to {reference.uri}"
             )
         case _:
             pass

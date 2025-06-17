@@ -569,22 +569,6 @@ files = [
 Django = ">=3.2,<6.0"
 
 [[package]]
-name = "django-ulid"
-version = "0.0.4"
-description = "Universally Unique Lexicographically Sortable Identifier (ULID) support in Django"
-optional = false
-python-versions = ">=3.5"
-groups = ["main"]
-files = [
-    {file = "django-ulid-0.0.4.tar.gz", hash = "sha256:56c3b302c740d01c29677f65390c72648afbe3a3109e1077ddaac2add254cbb3"},
-    {file = "django_ulid-0.0.4-py2.py3-none-any.whl", hash = "sha256:886be1fa873d28617a51cb0c1b4d9946fff30889ef031e546ac407d8160dbb74"},
-]
-
-[package.dependencies]
-Django = ">=2.1"
-ulid-py = ">=0.1.0"
-
-[[package]]
 name = "djangorestframework"
 version = "3.15.2"
 description = "Web APIs for Django, made easy."
@@ -1797,6 +1781,21 @@ files = [
 six = ">=1.5"
 
 [[package]]
+name = "python-ulid"
+version = "3.0.0"
+description = "Universally unique lexicographically sortable identifier"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "python_ulid-3.0.0-py3-none-any.whl", hash = "sha256:e4c4942ff50dbd79167ad01ac725ec58f924b4018025ce22c858bfcff99a5e31"},
+    {file = "python_ulid-3.0.0.tar.gz", hash = "sha256:e50296a47dc8209d28629a22fc81ca26c00982c78934bd7766377ba37ea49a9f"},
+]
+
+[package.extras]
+pydantic = ["pydantic (>=2.0)"]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.2"
 description = "YAML parser and emitter for Python"
@@ -2225,18 +2224,6 @@ files = [
 ]
 
 [[package]]
-name = "ulid-py"
-version = "1.1.0"
-description = "Universally Unique Lexicographically Sortable Identifier"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "ulid-py-1.1.0.tar.gz", hash = "sha256:dc6884be91558df077c3011b9fb0c87d1097cb8fc6534b11f310161afd5738f0"},
-    {file = "ulid_py-1.1.0-py2.py3-none-any.whl", hash = "sha256:b56a0f809ef90d6020b21b89a87a48edc7c03aea80e5ed5174172e82d76e3987"},
-]
-
-[[package]]
 name = "urllib3"
 version = "2.3.0"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -2348,4 +2335,4 @@ dev = ["factory-boy", "httpretty", "pytest", "pytest-django", "pytest-env", "pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">= 3.9,<4"
-content-hash = "069531465adc94962a96f25a0446fcece1c1734fb991145488a074aab9900788"
+content-hash = "e0946bf52f0276554de162f865c2426b22919783219f0d9e81d5d47fabe34bfd"

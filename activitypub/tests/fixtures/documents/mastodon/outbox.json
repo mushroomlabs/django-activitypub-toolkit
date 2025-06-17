@@ -1,8 +1,8 @@
 {
   "@context": "https://www.w3.org/ns/activitystreams",
-  "id": "https://mastodon.communick.com/users/raphael/outbox",
+  "id": "https://mastodon.example.com/users/tester/outbox",
   "type": "OrderedCollection",
   "totalItems": 1550,
-  "first": "https://mastodon.communick.com/users/raphael/outbox?page=true",
-  "last": "https://mastodon.communick.com/users/raphael/outbox?min_id=0&page=true"
+  "first": "https://mastodon.example.com/users/tester/outbox?page=true",
+  "last": "https://mastodon.example.com/users/tester/outbox?min_id=0&page=true"
 }

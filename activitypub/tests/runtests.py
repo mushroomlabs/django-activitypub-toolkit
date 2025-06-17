@@ -7,63 +7,28 @@ from celery import Celery
 from django.conf import settings
 from django.core.management import call_command
 
+from activitypub.tests import settings as test_settings
+
 
 def runtests():
     if not settings.configured:
         settings.configure(
-            SECRET_KEY="testing-key-11234567890",
-            ALLOWED_HOSTS=["*"],
-            INSTALLED_APPS=[
-                "django.contrib.admin",
-                "django.contrib.auth",
-                "django.contrib.contenttypes",
-                "django.contrib.messages",
-                "rest_framework",
-                "activitypub",
-            ],
-            MIDDLEWARE=[
-                "django.middleware.security.SecurityMiddleware",
-                "django.contrib.sessions.middleware.SessionMiddleware",
-                "django.middleware.common.CommonMiddleware",
-                "django.middleware.csrf.CsrfViewMiddleware",
-                "django.contrib.auth.middleware.AuthenticationMiddleware",
-                "django.contrib.messages.middleware.MessageMiddleware",
-                "django.middleware.clickjacking.XFrameOptionsMiddleware",
-            ],
-            ROOT_URLCONF="activitypub.tests.urls",
-            APPEND_SLASH=False,
-            DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
-            CELERY_BROKER_URL="memory://",
-            CELERY_BROKER_USE_SSL=False,
-            CELERY_TASK_EAGER_MODE=True,
-            CELERY_TASK_EAGER_PROPAGATES=True,
-            DEFAULT_AUTO_FIELD="django.db.models.BigAutoField",
-            LANGUAGE_CODE="en-us",
-            TIME_ZONE="UTC",
-            USE_I18N=True,
-            USE_TZ=True,
-            REST_FRAMEWORK={
-                "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
-                "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-                "DEFAULT_AUTHENTICATION_CLASSES": [
-                    "rest_framework.authentication.TokenAuthentication"
-                ],
-            },
-            TEMPLATES=[
-                {
-                    "BACKEND": "django.template.backends.django.DjangoTemplates",
-                    "APP_DIRS": True,
-                    "OPTIONS": {
-                        "context_processors": [
-                            "django.template.context_processors.debug",
-                            "django.template.context_processors.request",
-                            "django.contrib.auth.context_processors.auth",
-                            "django.contrib.messages.context_processors.messages",
-                        ]
-                    },
-                }
-            ],
-            FEDERATION={"DEFAULT_DOMAIN": "testserver", "SOFTWARE_NAME": "activitypub_toolkit"},
+            SECRET_KEY=test_settings.SECRET_KEY,
+            ALLOWED_HOSTS=test_settings.ALLOWED_HOSTS,
+            INSTALLED_APPS=test_settings.INSTALLED_APPS,
+            MIDDLEWARE=test_settings.MIDDLEWARE,
+            ROOT_URLCONF=test_settings.ROOT_URLCONF,
+            APPEND_SLASH=test_settings.APPEND_SLASH,
+            DATABASES=test_settings.DATABASES,
+            USE_TZ=test_settings.USE_TZ,
+            CELERY_BROKER_URL=test_settings.CELERY_BROKER_URL,
+            CELERY_BROKER_USE_SSL=test_settings.CELERY_BROKER_USE_SSL,
+            CELERY_TASK_EAGER_MODE=test_settings.CELERY_TASK_EAGER_MODE,
+            CELERY_TASK_EAGER_PROPAGATES=test_settings.CELERY_TASK_EAGER_PROPAGATES,
+            DEFAULT_AUTO_FIELD=test_settings.DEFAULT_AUTO_FIELD,
+            REST_FRAMEWORK=test_settings.REST_FRAMEWORK,
+            TEMPLATES=test_settings.TEMPLATES,
+            FEDERATION=test_settings.FEDERATION,
         )
 
     django.setup()

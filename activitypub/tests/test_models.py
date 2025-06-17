@@ -203,7 +203,7 @@ class ActivityTestCase(BaseTestCase):
         )
         accept.do()
 
-        self.assertTrue(follower in followed.followers.items)
+        self.assertTrue(follower in followed.followers.items.all())
 
     def test_can_do_unfollow(self):
         followed = factories.ActorFactory()
@@ -221,7 +221,7 @@ class ActivityTestCase(BaseTestCase):
         )
         unfollow.do()
 
-        self.assertFalse(follower in followed.followers.items)
+        self.assertFalse(follower in followed.followers.items.all())
 
 
 class LinkedDataModelTestCase(BaseTestCase):

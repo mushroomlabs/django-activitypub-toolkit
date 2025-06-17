@@ -19,16 +19,19 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from django.db import models, transaction
 from django.db.models import Case, Exists, F, Max, OuterRef, Q, Value, When
 from django.db.models.functions import Concat
+from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
+
+from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import classproperty
-from django_ulid.models import default as new_ulid
 from model_utils.choices import Choices
 from model_utils.fields import MonitorField
 from model_utils.managers import InheritanceManager, QueryManager
 from model_utils.models import StatusModel
 from pyld import jsonld
 from requests_http_message_signatures import HTTPSignatureHeaderAuth
+from ulid import ULID
 
 from . import signals
 from .exceptions import DropMessage, UnprocessableJsonLd
@@ -59,9 +62,9 @@ def _is_pointer_field(model_field):
 
 
 def generate_ulid():
-    # If we use new_ulid directly, django will generate the migration
+    # If we use the callable directly, django will generate the migration
     # indefinitely. See https://code.djangoproject.com/ticket/32689
-    return new_ulid()
+    return str(ULID())
 
 
 def _file_location(instance, filename):
@@ -393,6 +396,8 @@ class LinkedDataModel(models.Model):
             klass = Actor
         elif str(as2_type) in (AS2.Collection, AS2.OrderedCollection):
             klass = Collection
+        elif str(as2_type) in (AS2.CollectionPage, AS2.OrderedCollectionPage):
+            klass = CollectionPage
         elif str(as2_type) in Object.Types:
             klass = Object
         elif str(as2_type) in Activity.Types:
@@ -682,70 +687,42 @@ class BaseActivityStreamsObject(CoreType):
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.DurationField(null=True, blank=True)
     likes = models.OneToOneField(
-        "Collection", related_name="likes_for", null=True, blank=True, on_delete=models.SET_NULL
+        "Collection", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
     shares = models.OneToOneField(
-        "Collection", related_name="shares_for", null=True, blank=True, on_delete=models.SET_NULL
+        "Collection", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     replies = models.OneToOneField(
-        "Collection",
-        related_name="replies_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        "Collection", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     url = models.ForeignKey(
-        Link, related_name="links", null=True, blank=True, on_delete=models.SET_NULL
+        Link, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     context = models.ForeignKey(
-        CoreType,
-        related_name="items_in_context",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     generator = models.ForeignKey(
-        CoreType,
-        related_name="generators_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     icon = models.ForeignKey(
-        CoreType,
-        related_name="icons_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     image = models.ForeignKey(
-        CoreType,
-        related_name="generic_images_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     location = models.ForeignKey(
-        CoreType,
-        related_name="generic_locations_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
     preview = models.ForeignKey(
-        CoreType,
-        related_name="generic_previews_of",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
     tags = models.ManyToManyField(CoreType, related_name="tags")
     in_reply_to = models.ManyToManyField(CoreType, related_name="in_reply_to")
@@ -791,6 +768,8 @@ class BaseActivityStreamsObject(CoreType):
         self.image = to_related(predicate=AS2.image)
         self.preview = to_related(predicate=AS2.preview)
         self.replies = to_related(predicate=AS2.replies)
+        self.likes = to_related(predicate=AS2.likes)
+        self.shares = to_related(predicate=AS2.shares)
         self.save()
 
         for tag in to_list(AS2.tag):
@@ -830,70 +809,62 @@ class BaseActivityStreamsObject(CoreType):
         return self.reference_id
 
 
-class Collection(BaseActivityStreamsObject):
-    EXTRA_LINKED_DATA_FIELDS = {
-        "type": "type",
-        "total_items": "totalItems",
-        "current": "current",
-        "first": "first",
-        "last": "last",
-        "items": "items",
-    }
+class CollectionItem(models.Model):
+    MAX_ORDER_VALUE = sys.float_info.max
+    id = ULIDField(primary_key=True)
 
-    class OrderingMethods(models.TextChoices):
-        NONE = "Not Ordered"
-        CREATE_TIME = "Creation Time"
-        KEY = "Order Key"
-
-    ordering_method = models.CharField(
-        max_length=16, choices=OrderingMethods.choices, default=OrderingMethods.NONE
-    )
-    collection_items = models.ManyToManyField(
-        CoreType, through="CollectionItem", related_name="collections"
-    )
-
-    base_object = models.OneToOneField(
-        BaseActivityStreamsObject,
-        related_name="as_collection",
-        parent_link=True,
-        on_delete=models.CASCADE,
-    )
+    container_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    container_object_id = ULIDField()
+    container = GenericForeignKey("container_type", "container_object_id")
+    item = models.ForeignKey(CoreType, related_name="in_collections", on_delete=models.CASCADE)
+    order = models.FloatField(default=0.0)
 
     @property
-    def is_ordered(self):
-        return self.ordering_method != self.OrderingMethods.NONE
+    def created(self):
+        return self.id.datetime
 
-    @property
-    def type(self):
-        return "OrderedCollection" if self.is_ordered else "Collection"
+    class Meta:
+        unique_together = ("container_type", "container_object_id", "item")
 
+
+class CollectionModelMixin:
     @property
     def total_items(self):
-        return self.collection_items.count()
+        return self.items.count()
 
     @property
-    def order_by_key(self):
-        return {
-            self.OrderingMethods.KEY: "collections__collection_items__in_collections__order",
-            self.OrderingMethods.CREATE_TIME: "collections__collection_items__in_collections__id",
-        }.get(self.ordering_method)
+    def as2_item_key(self):
+        return "orderedItems" if self.is_ordered else "items"
 
     @property
     def items(self) -> models.QuerySet:
-        qs = CoreType.objects.filter(collections=self).select_subclasses()
-        order_by = self.order_by_key
-        if order_by is not None:
-            qs = qs.order_by(order_by)
+        content_type = ContentType.objects.get_for_model(self)
 
-        return qs
+        qs = CoreType.objects.filter(
+            in_collections__container_type=content_type,
+            in_collections__container_object_id=self.id,
+        )
 
-    @property
-    def ordered_collection_items(self):
-        return CollectionItem.objects.filter(collection=self)
+        # Counter-intuitive: "Ordered" Collections in AS2 refer to
+        # have items be reverse ordered by creation date. At the same
+        # time, we would like to keep items added to an unordered
+        # collection in a fixed position.
+
+        # Collection items have ULIDs as their primary keys, so we can get
+        # reverse-chrono items by using the ids, while for *unordered*
+        # items we must look into the "order" field.
+
+        ordered_key = "-in_collections__id"
+        unordered_key = "in_collections__order"
+
+        order_key = ordered_key if self.is_ordered else unordered_key
+        qs = qs.order_by(order_key)
+
+        return qs.select_subclasses()
 
     @property
     def highest_order_value(self):
-        return self.ordered_collection_items.aggregate(highest=Max("order")).get("highest", 0)
+        return self.collection_items.aggregate(highest=Max("order")).get("highest", 0)
 
     def _should_be_inlined(self, reference_field, value=None):
         if reference_field.name == "items":
@@ -904,89 +875,172 @@ class Collection(BaseActivityStreamsObject):
     def _serialize_collection_items(self, start, end):
         return [it.uri for it in self.items[start:end]]
 
-    def serialize(self, *args, **kw):
-        collection_size = self.total_items
-        page_number = int(kw.pop("page_number", 1))
-
-        should_paginate = page_number > 1 or kw.pop(
-            "paginate", collection_size > app_settings.Instance.collection_page_size
-        )
-        logger.debug(f"Will paginate {self.uri}? {should_paginate}")
-
-        data = {
-            "id": self.uri,
-            "type": self.type,
-            "totalItems": self.total_items,
-        }
-
-        if not should_paginate:
-            attr_name = "orderedItems" if self.is_ordered else "items"
-            data.update({attr_name: self._serialize_collection_items(0, collection_size)})
-        else:
-            data.update({"first": f"{self.uri}?page=1"})
-
-        return data
-
     def reset_ordering(self):
         for idx, item in enumerate(self.items.all(), start=1):
             item.order = idx
             item.save()
 
     def append(self, item: CoreType) -> "CollectionItem":
-        existing = self.collection_items.filter(id=item.id).first()
-
-        if existing:
-            return existing
-
-        if self.ordering_method == self.OrderingMethods.NONE:
-            return self.collection_items.add(item)
-
-        if self.ordering_method == self.OrderingMethods.CREATE_TIME:
-            return CollectionItem.objects.create(
-                collection=self, item=item, order=timezone.now().timestamp()
-            )
-
-        if self.total_items == 0:
-            return CollectionItem.objects.create(collection=self, item=item, order=1.0)
-
-        new_item_order = max(self.highest_order_value, self.total_items) + 1
-        if new_item_order >= CollectionItem.MAX_ORDER_VALUE:
-            new_item_order = (CollectionItem.MAX_ORDER_VALUE + new_item_order) / 2.0
-
-        return CollectionItem.objects.create(collection=self, item=item, order=new_item_order)
-
-    def prepend(self, item: CoreType) -> "CollectionItem":
         existing = self.collection_items.filter(item=item).first()
 
         if existing:
             return existing
 
-        if self.ordering_method == self.OrderingMethods.NONE:
-            return self.collection_items.create(item=item)
+        params = {
+            "container_type": ContentType.objects.get_for_model(self),
+            "container_object_id": self.id,
+            "item": item,
+        }
 
-        if self.ordering_method == self.OrderingMethods.CREATE_TIME:
-            return self.collection_items.create(item=item, order=timezone.now().timestamp())
+        if self.is_ordered:
+            new_item_order = timezone.now().timestamp()
 
-        if self.total_items == 0:
-            return self.collection_items.create(item=item, order=1.0)
+        elif self.total_items == 0:
+            new_item_order = 1.0
 
-        first_item = CollectionItem.objects.filter(collection=self).order_by("order").first()
-        lowest_order_value = first_item.order
+        else:
+            new_item_order = max(self.highest_order_value, self.total_items) + 1
+            if new_item_order >= CollectionItem.MAX_ORDER_VALUE:
+                new_item_order = (CollectionItem.MAX_ORDER_VALUE + new_item_order) / 2.0
 
-        if lowest_order_value < 0:
-            self.reset_ordering()
-            lowest_order_value = 1
-        new_item_order = lowest_order_value / 2.0
-
-        return self.collection_items.create(item=item, order=new_item_order)
+        return CollectionItem.objects.create(order=new_item_order, **params)
 
 
-class CollectionItem(models.Model):
-    MAX_ORDER_VALUE = sys.float_info.max
-    collection = models.ForeignKey(Collection, on_delete=models.CASCADE)
-    created = models.DateTimeField(auto_now_add=True)
-    item = models.ForeignKey(CoreType, related_name="in_collections", on_delete=models.CASCADE)
-    order = models.FloatField(default=0.0)
+class Collection(BaseActivityStreamsObject, CollectionModelMixin):
+    EXTRA_LINKED_DATA_FIELDS = {
+        "type": "type",
+        "total_items": "totalItems",
+        "current": "current",
+        "first": "first",
+        "last": "last",
+        "items": "items",
+    }
+
+    base_object = models.OneToOneField(
+        BaseActivityStreamsObject,
+        related_name="as_collection",
+        related_query_name="as_collection",
+        parent_link=True,
+        on_delete=models.CASCADE,
+    )
+    collection_items = GenericRelation(
+        CollectionItem,
+        content_type_field="container_type",
+        object_id_field="container_object_id",
+    )
+    is_ordered = models.BooleanField(default=False)
+
+    @property
+    def collection_size(self):
+        is_paginated = self.pages.exists()
+        if is_paginated:
+            page_ids = self.pages.values_list("id", flat=True)
+            content_type = ContentType.objects.get_for_model(CollectionPage)
+            return CollectionItem.objects.filter(
+                container_type=content_type, container_object_id__in=page_ids
+            ).count()
+        return self.total_items
+
+    @property
+    def type(self):
+        return "OrderedCollection" if self.is_ordered else "Collection"
+
+    def serialize(self, *args, **kw):
+        collection_size = self.collection_size
+        first_page = self.pages.filter(previous=None).first()
+
+        data = {
+            "id": self.uri,
+            "type": self.type,
+            "totalItems": collection_size,
+        }
+
+        if first_page is None:
+            data.update({self.as2_item_key: self._serialize_collection_items(0, collection_size)})
+        else:
+            data.update({"first": first_page.uri})
+
+        return data
+
+    def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
+        as2_type = g.value(subject=subject_uri, predicate=RDF.type)
+
+        self.type = as2_type and as2_type.toPython()
+        self.is_ordered = as2_type == AS2.OrderedCollection
+
+        super().load_from_graph(subject_uri=subject_uri, g=g)
+
+
+class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
+    PAGE_SIZE = app_settings.Instance.collection_page_size
+
+    EXTRA_LINKED_DATA_FIELDS = {
+        "type": "type",
+        "total_items": "totalItems",
+        "current": "current",
+        "next": "next",
+        "previous": "next",
+        "part_of": "partOf",
+    }
+
+    base_object = models.OneToOneField(
+        BaseActivityStreamsObject,
+        related_name="as_collection_page",
+        related_query_name="as_collection_page",
+        parent_link=True,
+        on_delete=models.CASCADE,
+    )
+    part_of = models.ForeignKey(Collection, related_name="pages", on_delete=models.CASCADE)
+    next = models.OneToOneField(
+        "self", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    previous = models.OneToOneField(
+        "self", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    collection_items = GenericRelation(
+        CollectionItem,
+        content_type_field="container_type",
+        object_id_field="container_object_id",
+    )
+    is_ordered = models.BooleanField(default=False)
+
+    @property
+    def type(self):
+        return "OrderedCollectionPage" if self.is_ordered else "CollectionPage"
+
+    def serialize(self, *args, **kw):
+        serialize_item = lambda it: it.serialize() if self.inlined_items else it.uri
+        return {
+            "id": self.uri,
+            "type": self.type,
+            "totalItems": self.total_items,
+            "partOf": self.part_of.uri,
+            "prev": self.previous and self.previous.uri,
+            "next": self.next and self.next.uri,
+            self.as2_item_key: [serialize_item(item) for item in self.items.all()],
+        }
+
+    def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
+        as2_type = g.value(subject=subject_uri, predicate=RDF.type)
+
+        self.type = as2_type and as2_type.toPython()
+        self.is_ordered = as2_type == AS2.OrderedCollectionPage
+        self.part_of = LinkedDataModel.deserialize(
+            g.value(subject=subject_uri, predicate=AS2.partOf),
+            g=g,
+            default_model=Collection,
+        )
+        self.next = LinkedDataModel.deserialize(
+            g.value(subject=subject_uri, predicate=AS2.next),
+            g=g,
+            default_model=CollectionPage,
+        )
+        self.previous = LinkedDataModel.deserialize(
+            g.value(subject=subject_uri, predicate=AS2.prev),
+            g=g,
+            default_model=CollectionPage,
+        )
+        super().load_from_graph(subject_uri=subject_uri, g=g)
 
 
 class Object(BaseActivityStreamsObject):
@@ -995,6 +1049,7 @@ class Object(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_object",
+        related_query_name="as_object",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1067,6 +1122,7 @@ class Actor(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_actor",
+        related_query_name="as_actor",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1189,7 +1245,7 @@ class Actor(BaseActivityStreamsObject):
         return data
 
     def make_box(self, uri, name) -> Collection:
-        return Collection.make(uri=uri, name=name, ordering_method=Collection.OrderingMethods.KEY)
+        return Collection.make(uri=uri, name=name, is_ordered=True)
 
     def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         to_native = lambda x: x and x.toPython()
@@ -1297,6 +1353,7 @@ class Activity(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_activity",
+        related_query_name="as_activity",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1443,9 +1500,9 @@ class Activity(BaseActivityStreamsObject):
         followed = self.object and self.object.as2_item
 
         if follower and follower.following is not None:
-            follower.following.collection_items.remove(self.object)
+            follower.following.collection_items.filter(item=self.object).delete()
         if followed and followed.followers is not None:
-            followed.followers.collection_items.remove(self.actor)
+            followed.followers.collection_items.filter(item=self.actor).delete()
 
     def _do_accept(self):
         # Accepted activity is the object of this activity. We just do it.

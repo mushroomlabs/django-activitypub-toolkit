@@ -31,11 +31,11 @@ dependencies = [
   "django-model-utils >= 4.2",
   "djangorestframework >= 3.13",
   "celery >= 5.4",
-  "django-ulid",
   "pyld >= 2.0.4",
   "rdflib >= 7.0.0",
   "requests-http-message-signatures >= 0.3.1",
   "django-celery-beat >= 2.7.0",
+  "python-ulid (>=3.0.0,<4.0.0)",
 ]
 
 [project.optional-dependencies]

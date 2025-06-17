@@ -75,6 +75,7 @@ activity = Activity.objects.create(actor=my_bot, type=Activity.Types.CREATE, obj
 
 
 ```
+
 #### [Collection](https://www.w3.org/TR/activitystreams-core/#collections)
 
 Collections are containers for other
@@ -83,13 +84,28 @@ Collections are containers for other
 `Collection` or `OrderedCollection`. The collection has a many-to-many
 relationship to `CollectionItem`.
 
-Ordering of the collection is defined by  the `ordering_method`
-attribute, which is one of the choices from the OrderingMethods Enum class.
+If the collection is set with `is_ordered`, then all items in the
+collections will be listed in the order they were added to the
+collection (reverse-chronologically), and it will be of type
+`as:OrderedCollection`, If the list is not ordered, then the items
+will be listed by the order of the "order" attribute.
 
- - OrderingMethods.NONE (collection is not ordered, no guarantee about order)
- - OrderingMethods.CREATE_TIME (collection is ordered by creation time)
- - OrderingMethods.KEY (collection is ordered by the "order" value of the collection item)
+#### [Collection Page](https://www.w3.org/TR/activitystreams-core/#collections)
 
+Collection Pages are also containers for other
+[`Object`][activitypub.models.Object] or
+[`Link`][activitypub.models.Link] resources, but which should be seen
+as a 'slice' of the Collection. They can be of type `CollectionPage`
+or `OrderedCollectionPage` and also have a many-to-many relationship
+to `CollectionItem`. They are used when the collection itself can grow
+too too large - e.g, an outbox containing thousands of activities from
+an actor).
+
+Collection Pages are first-class models in ActivityPub Toolkit. They
+are not just artificial constructs to have a paginated view of the
+collection items at the view layer. As such, collections should not
+have collection items directly assigned to them if they are meant to
+be part of the paginated view.
 
 ### [Link](https://www.w3.org/TR/activitystreams-core/#link)
 

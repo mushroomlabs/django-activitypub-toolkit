@@ -95,8 +95,15 @@ class CryptographicKeyPairAdmin(admin.ModelAdmin):
 
 @admin.register(models.Collection)
 class CollectionAdmin(admin.ModelAdmin):
-    list_display = ("uri", "name", "ordering_method")
-    list_filter = ("ordering_method",)
+    list_display = ("uri", "name", "is_ordered")
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(models.CollectionPage)
+class CollectionPageAdmin(admin.ModelAdmin):
+    list_display = ("uri", "name", "part_of")
 
     def has_change_permission(self, request, obj=None):
         return False

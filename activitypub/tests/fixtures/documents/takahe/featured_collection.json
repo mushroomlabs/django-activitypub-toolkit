@@ -19,7 +19,7 @@
       }
     }
   ],
-  "id": "https://activitypub.lullis.net/@raphael@lullis.net/collections/featured/",
+  "id": "https://activitypub.example.com/@tester@example.net/collections/featured/",
   "type": "OrderedCollection",
   "orderedItems": [],
   "totalItems": 0
