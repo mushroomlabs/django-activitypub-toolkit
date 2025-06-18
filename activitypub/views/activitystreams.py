@@ -14,13 +14,11 @@ from ..decorators import calculate_digest, collect_signature
 from ..models import (
     Actor,
     BaseActivityStreamsObject,
-    Collection,
     HttpSignatureProof,
     LinkedDataModel,
     Message,
     Reference,
 )
-from ..pagination import CollectionPagination
 from ..parsers import ActivityStreamsJsonParser, JsonLdParser
 from ..renderers import ActivityJsonRenderer, JsonLdRenderer
 from ..schemas import AS2
@@ -53,14 +51,6 @@ class ActivityPubObjectDetailView(APIView):
 
     def get(self, *args, **kw):
         as_object = self.get_object(*args, **kw)
-        if isinstance(as_object, Collection) and "page" in self.request.GET:
-            paginator = CollectionPagination(collection=as_object)
-            queryset = as_object.items.reverse()
-            collection_items = paginator.paginate_queryset(
-                queryset, request=self.request, view=self
-            )
-            return paginator.get_paginated_response(collection_items)
-
         return Response(as_object.to_jsonld())
 
     def post(self, *args, **kwargs):

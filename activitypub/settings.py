@@ -72,7 +72,6 @@ app_settings = AppSettings()
 
 
 def reload_settings(*args, **kw):
-    global app_settings
     setting = kw["setting"]
     if setting == "FEDERATION":
         app_settings.load()
