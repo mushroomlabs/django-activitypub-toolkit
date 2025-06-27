@@ -6,9 +6,9 @@ class UnprocessableJsonLd(Exception):
     pass
 
 
-class MessageAdapterException(Exception):
+class MessageProcessorException(Exception):
     pass
 
 
-class DropMessage(MessageAdapterException):
+class DropMessage(MessageProcessorException):
     pass

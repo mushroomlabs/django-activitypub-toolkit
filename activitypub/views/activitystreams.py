@@ -101,7 +101,7 @@ class ActorDetailView(ActivityPubObjectDetailView):
         return Actor.objects.get(account__username=username, account__domain__name=domain)
 
     def _get_by_username(self):
-        domain = self.request.META.get("HOST", app_settings.Instance.default_domain)
+        domain = self.request.META.get("HTTP_HOST", app_settings.Instance.default_domain)
         return Actor.objects.get(
             account__username=self.kwargs["username"],
             account__domain__name=domain,

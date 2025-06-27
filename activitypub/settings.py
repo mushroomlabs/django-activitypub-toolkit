@@ -29,11 +29,11 @@ class AppSettings:
         remote_object_fetching = timedelta(minutes=10)
 
     class Middleware:
-        message_adapters = ["activitypub.adapters.ActorDeletionMessageAdapter"]
+        message_processors = ["activitypub.adapters.ActorDeletionMessageProcessor"]
 
     @property
-    def MESSAGE_ADAPTERS(self):
-        classes = [import_string(s) for s in self.Middleware.message_adapters]
+    def MESSAGE_PROCESSORS(self):
+        classes = [import_string(s) for s in self.Middleware.message_processors]
         return [c() for c in classes]
 
     def __init__(self):
@@ -54,7 +54,7 @@ class AppSettings:
             "SOFTWARE_NAME": (self.NodeInfo, "software_name"),
             "SOFTWARE_VERSION": (self.NodeInfo, "software_version"),
             "RATE_LIMIT_REMOTE_FETCH": (self.RateLimit, "remote_object_fetching"),
-            "MESSAGE_ADAPTERS": (self.Middleware, "message_adapters"),
+            "MESSAGE_PROCESSORS": (self.Middleware, "message_processors"),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 

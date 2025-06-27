@@ -28,7 +28,7 @@ from django.utils.functional import classproperty
 from model_utils.choices import Choices
 from model_utils.fields import MonitorField
 from model_utils.managers import InheritanceManager, QueryManager
-from model_utils.models import StatusModel
+from model_utils.models import StatusModel, TimeStampedModel
 from pyld import jsonld
 from requests_http_message_signatures import HTTPSignatureHeaderAuth
 from ulid import ULID
@@ -559,6 +559,7 @@ class Link(CoreType):
     class Types(models.TextChoices):
         LINK = str(AS2.Link)
         MENTION = str(AS2.Mention)
+        EMOJI = str(AS2.Emoji)
 
     core_type = models.OneToOneField(CoreType, parent_link=True, on_delete=models.CASCADE)
 
@@ -806,7 +807,7 @@ class BaseActivityStreamsObject(CoreType):
         return obj
 
     def __str__(self):
-        return self.reference_id
+        return self.reference_id or f"Unreferenced object #{self.id}"
 
 
 class CollectionItem(models.Model):
@@ -1069,6 +1070,7 @@ class Object(BaseActivityStreamsObject):
         TOMBSTONE = str(AS2.Tombstone)
         VIDEO = str(AS2.Video)
         HASHTAG = str(AS2.Hashtag)
+        EMOJI = str(AS2.Emoji)
 
     type = models.CharField(max_length=128, choices=Types.choices)
 
@@ -1295,7 +1297,7 @@ class Actor(BaseActivityStreamsObject):
             logger.warning(f"Failed to get keypair from {subject_uri}: {exc}")
 
     def __str__(self):
-        return self.uri
+        return self.uri or f"Unreferenced actor {self.id}"
 
     @classproperty
     def PUBLIC(cls):
@@ -1869,7 +1871,7 @@ class CryptographicKeyPair(LinkedDataModel):
 # help us in supporting business logic.
 
 
-class Domain(models.Model):
+class Domain(TimeStampedModel):
     class Software(models.TextChoices):
         MASTODON = "Mastodon"
         FEDIBIRD = "Fedibird"
@@ -1954,6 +1956,10 @@ class Domain(models.Model):
     local = models.BooleanField()
     blocked = models.BooleanField(default=False)
     actor = models.OneToOneField(Actor, null=True, blank=True, on_delete=models.SET_NULL)
+
+    @property
+    def full_software_identifier(self):
+        return f"{self.software or ''} {self.version or ''}".strip()
 
     @property
     def is_mastodon_compatible(self):
@@ -2046,7 +2052,7 @@ class Domain(models.Model):
 
     @classmethod
     def get_requested_domain(cls, request):
-        host = request.META.get("HOST", "").strip()
+        host = request.META.get("HTTP_HOST", "").strip()
 
         if bool(host):
             is_local = host == app_settings.Instance.default_domain
@@ -2063,15 +2069,13 @@ class Domain(models.Model):
         return domain
 
     @classmethod
-    def make(cls, uri):
+    def make(cls, uri, **kw):
         parsed = urlparse(uri)
 
         if not parsed.hostname:
             raise ValueError(f"{uri} does not have a FQDN")
 
-        is_local = parsed.hostname == app_settings.Instance.default_domain
-
-        domain, _ = cls.objects.get_or_create(name=parsed.hostname, defaults={"local": is_local})
+        domain, _ = cls.objects.get_or_create(name=parsed.hostname, defaults=kw)
         return domain
 
 

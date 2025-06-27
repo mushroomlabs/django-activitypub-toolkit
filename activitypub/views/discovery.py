@@ -12,7 +12,7 @@ class NodeInfo(View):
 
     def get(self, request):
         default_domain = Domain.get_default()
-        host = request.META.get("HOST", default_domain)
+        host = request.META.get("HTTP_HOST", default_domain)
         scheme = "http://" if not request.is_secure() else "https://"
         return JsonResponse(
             {
@@ -32,7 +32,7 @@ class NodeInfo2(View):
 
     def get_usage(self, request):
         default_domain = Domain.get_default()
-        host = request.META.get("HOST", default_domain.name).split(":", 1)[0]
+        host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
         return {"users": {"total": Account.objects.filter(domain__name=host).count()}}
 
     def get(self, request):
@@ -116,15 +116,13 @@ class Webfinger(View):
 class HostMeta(View):
     def get(self, request):
         CONTENT_TYPE = "application/xrd+xml"
-        host = request.META.get("HOST", Domain.get_default().name)
+        host = request.META.get("HTTP_HOST", Domain.get_default().name)
         scheme = "http://" if not request.is_secure() else "https://"
         xml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
         <Link rel="lrdd" template="{0}{1}/.well-known/webfinger?resource={{uri}}"/>
-        </XRD>""".format(
-            scheme, host
-        )
+        </XRD>""".format(scheme, host)
         return HttpResponse(xml.strip().replace(8 * " ", ""), content_type=CONTENT_TYPE)
 
 

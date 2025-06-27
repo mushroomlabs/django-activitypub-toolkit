@@ -9,7 +9,7 @@ from .schemas import AS2, RDF
 logger = logging.getLogger(__name__)
 
 
-class MessageAdapter:
+class MessageProcessor:
     def process_outgoing(self, message: Message):
         pass
 
@@ -17,7 +17,7 @@ class MessageAdapter:
         pass
 
 
-class ActorDeletionMessageAdapter(MessageAdapter):
+class ActorDeletionMessageProcessor(MessageProcessor):
     def process_incoming(self, message: Message):
         """
         Mastodon is constantly sending DELETE messages for all
