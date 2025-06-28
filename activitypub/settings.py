@@ -29,7 +29,7 @@ class AppSettings:
         remote_object_fetching = timedelta(minutes=10)
 
     class Middleware:
-        message_processors = ["activitypub.adapters.ActorDeletionMessageProcessor"]
+        message_processors = ["activitypub.message_processors.ActorDeletionMessageProcessor"]
 
     @property
     def MESSAGE_PROCESSORS(self):

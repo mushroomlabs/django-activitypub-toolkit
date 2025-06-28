@@ -2,7 +2,7 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from . import tasks
-from .models import Activity, Domain, Message, Object
+from .models import Activity, Domain, Message, Object, FollowRequest
 from .signals import activity_received
 
 
@@ -45,3 +45,13 @@ def on_activity_received_process_standard_flows(sender, **kw):
     activity = kw["activity"]
 
     tasks.process_standard_activity_flows(activity_uri=activity.uri)
+
+
+@receiver(post_save, sender=FollowRequest)
+def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
+    follow_request = kw["instance"]
+
+    if follow_request.status == FollowRequest.STATUS.pending:
+        to_follow = follow_request.followed
+        if not to_follow.manually_approves_followers:
+            follow_request.accept()

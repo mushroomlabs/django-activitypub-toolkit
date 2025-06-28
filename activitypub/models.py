@@ -151,6 +151,7 @@ class LinkedDataModel(models.Model):
     """
 
     NAMESPACES = set([LDP])
+    EXTRA_CONTEXTS = {}
     LINKED_DATA_FIELDS = {}
     EXTRA_LINKED_DATA_FIELDS = {}
 
@@ -213,6 +214,16 @@ class LinkedDataModel(models.Model):
             for nm in getattr(field.related_model, "NAMESPACES", []):
                 current.add(nm)
         return [n.removesuffix("#") for n in current]
+
+    @cached_property
+    def contexts(self):
+        current = copy.deepcopy(self.EXTRA_CONTEXTS)
+
+        for field in self.related_fields:
+            extra_contexts = getattr(field.related_model, "EXTRA_CONTEXTS", {})
+            for key, value in extra_contexts.keys():
+                current.update({key: value})
+        return current
 
     def _should_be_inlined(self, reference_field, value=None) -> bool:
         if reference_field.name in [
@@ -346,8 +357,14 @@ class LinkedDataModel(models.Model):
         """
         data = self.serialize()
 
-        context = self.namespaces
-        data["@context"] = [str(nm) for nm in context]
+        context = []
+        for namespace in self.namespaces:
+            context.append(str(namespace))
+
+        if self.contexts:
+            context.append(self.contexts)
+
+        data["@context"] = context
         return jsonld.compact(data, context)
 
     @classmethod
@@ -435,13 +452,6 @@ class Reference(StatusModel):
             return None
 
     @property
-    def is_resolved(self):
-        try:
-            return self.item is not None
-        except Reference.item.RelatedObjectDoesNotExist:
-            return False
-
-    @property
     def is_local(self):
         return self.domain and self.domain.local
 
@@ -470,17 +480,18 @@ class Reference(StatusModel):
         return LinkedDataModel.deserialize(subject_uri=rdflib.URIRef(self.uri), g=g)
 
     def resolve(self, force=False):
-        if self.is_resolved and not force:
-            if self.status != self.STATUS.resolved:
-                self.status = self.STATUS.resolved
-                self.save()
-            return
+        try:
+            is_resolved = any(
+                [self.uri.startswith(Actor.PUBLIC.uri), self.is_local, self.item is not None]
+            )
+        except Reference.item.RelatedObjectDoesNotExist:
+            is_resolved = False
 
-        # References to known, unresolvable items
-        if any([self.uri.startswith(Actor.PUBLIC.uri), self.is_local]):
+        if is_resolved:
             self.status = self.STATUS.resolved
-            self.save()
-            return
+            if not force:
+                self.save()
+                return
 
         try:
             domain = Domain.get_default()
@@ -495,6 +506,7 @@ class Reference(StatusModel):
             data = response.json()
             self.load(data)
             self.status = self.STATUS.resolved
+            self.save()
         except (TypeError, AssertionError, requests.HTTPError):
             logger.exception(f"failed to resolve {self.uri}")
             self.status = self.STATUS.failed
@@ -581,7 +593,7 @@ class Link(CoreType):
     def relations(self):
         return self.related.values_list("type", flat=True)
 
-    def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
+    def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         to_native = lambda x: x and x.toPython()
 
         self.type = g.value(subject=subject_uri, predicate=RDF.type)
@@ -741,7 +753,7 @@ class BaseActivityStreamsObject(CoreType):
     def uri(self):
         return self.reference_id
 
-    def load_from_graph(self, g: rdflib.Graph, subject_uri: rdflib.URIRef | rdflib.BNode):
+    def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         if self.reference and self.reference.domain and self.reference.domain.blocked:
             raise ValueError(f"{self.reference.domain.name} is blocked")
 
@@ -920,7 +932,6 @@ class Collection(BaseActivityStreamsObject, CollectionModelMixin):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_collection",
-        related_query_name="as_collection",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -987,7 +998,6 @@ class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_collection_page",
-        related_query_name="as_collection_page",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1050,7 +1060,6 @@ class Object(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_object",
-        related_query_name="as_object",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1112,6 +1121,10 @@ class Actor(BaseActivityStreamsObject):
         "followers": "followers",
         "liked": "liked",
         "preferred_username": "preferredUsername",
+        "manually_approves_followers": "manuallyApprovesFollowers",
+    }
+    EXTRA_CONTEXTS = {
+        "manuallyApprovesFollowers": str(AS2.manuallyApprovesFollowers),
     }
 
     class Types(models.TextChoices):
@@ -1124,12 +1137,12 @@ class Actor(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_actor",
-        related_query_name="as_actor",
         parent_link=True,
         on_delete=models.CASCADE,
     )
     type = models.CharField(max_length=64, choices=Types.choices)
     preferred_username = models.CharField(max_length=100, null=True, blank=True)
+    manually_approves_followers = models.BooleanField(default=False)
 
     shared_inbox = models.ForeignKey(
         Collection,
@@ -1225,6 +1238,13 @@ class Actor(BaseActivityStreamsObject):
             return self.account.username
         except AttributeError:
             return None
+
+    @property
+    def collections(self):
+        references = [
+            r for r in [self.inbox, self.outbox, self.followers, self.following] if r is not None
+        ]
+        return Collection.objects.filter(reference__in=references)
 
     @property
     def is_local(self):
@@ -1355,7 +1375,6 @@ class Activity(BaseActivityStreamsObject):
     base_object = models.OneToOneField(
         BaseActivityStreamsObject,
         related_name="as_activity",
-        related_query_name="as_activity",
         parent_link=True,
         on_delete=models.CASCADE,
     )
@@ -1451,74 +1470,61 @@ class Activity(BaseActivityStreamsObject):
         pass
 
     def _do_follow(self):
-        follower = self.actor and self.actor.as2_item
-        followed = self.object and self.object.as2_item
-
-        has_accept = Activity.objects.filter(
-            actor=self.object, type=Activity.Types.ACCEPT, object=self
-        ).exists()
-
-        try:
-            approval_required = (
-                followed is not None and followed.account.manually_approves_followers
-            )
-        except Actor.account.RelatedObjectDoesNotExist:
-            approval_required = False
-
-        can_accept = has_accept or not approval_required
-
-        if not can_accept:
-            return
-
-        if (
-            follower
-            and follower.following is not None
-            and self.object not in follower.following.items
-        ):
-            follower.following.append(item=self.object)
-
-        if (
-            followed
-            and followed.followers is not None
-            and self.actor not in followed.followers.items
-        ):
-            followed.followers.append(item=self.actor)
-
-            if followed.is_local:
-                logger.info(f"{followed} accepts follow from {follower}")
-
-                accept = followed.account.domain.build_activity(
-                    actor=self.object, type=Activity.Types.ACCEPT, object=self
-                )
-                Message.objects.create(
-                    activity=accept.reference,
-                    sender=followed.reference,
-                    recipient=follower.inbox.reference,
-                    document=accept.to_jsonld(),
-                )
+        FollowRequest.objects.get_or_create(activity=self)
 
     def _undo_follow(self):
         follower = self.actor and self.actor.as2_item
         followed = self.object and self.object.as2_item
+
+        FollowRequest.objects.filter(activity=self).delete()
 
         if follower and follower.following is not None:
             follower.following.collection_items.filter(item=self.object).delete()
         if followed and followed.followers is not None:
             followed.followers.collection_items.filter(item=self.actor).delete()
 
+    def _do_add(self):
+        collection = self.target and self.target.as2_item
+        actor = self.actor and self.actor.as2_item
+
+        try:
+            assert actor is not None, f"Could not find actor {self.actor}"
+            assert collection is not None, f"Could not find collection {self.target}"
+            assert collection in actor.collections, f"{collection} is not owned by {actor}"
+            collection.append(self.object)
+        except AssertionError as exc:
+            logger.warning(str(exc))
+
+    def _do_remove(self):
+        collection = self.target and self.target.as2_item
+        actor = self.actor and self.actor.as2_item
+
+        try:
+            assert actor is not None, f"Could not find actor {self.actor}"
+            assert collection is not None, f"Could not find collection {self.target}"
+            assert collection in actor.collections, f"{collection} is not owned by {actor}"
+            collection.collection_items.filter(item=self.object).delete()
+        except AssertionError as exc:
+            logger.warning(str(exc))
+
     def _do_accept(self):
-        # Accepted activity is the object of this activity. We just do it.
-        if self.object is not None:
-            self.object.as2_item.do()
+        accepted_activity = self.object.as2_item
+
+        if accepted_activity.type == self.Types.FOLLOW:
+            request = FollowRequest.objects.filter(activity=accepted_activity).first()
+            if request is not None:
+                request.accept()
+
+    def _do_reject(self):
+        rejected_activity = self.object.as2_item
+
+        if rejected_activity.type == self.Types.FOLLOW:
+            request = FollowRequest.objects.filter(activity=rejected_activity).first()
+            if request is not None:
+                request.reject()
 
     def _do_create(self):
-        if all(
-            [
-                self.actor is not None,
-                self.actor.outbox is not None,
-                Actor.PUBLIC in self.to.all() or Actor.PUBLIC in self.cc.all(),
-            ]
-        ):
+        if all([self.actor is not None, self.actor.is_local, self.actor.outbox is not None]):
             self.actor.outbox.append(self)
 
     def _do_question(self):
@@ -1537,10 +1543,6 @@ class Activity(BaseActivityStreamsObject):
         return
 
     def do(self):
-        if self.activities_as_object.filter(type=Activity.Types.UNDO).exists():
-            logger.warning("Ignoring this task as it will be undone")
-            return
-
         if not self.actor:
             logger.warning("Can not do anything with activity that has no actor")
             return
@@ -1953,7 +1955,7 @@ class Domain(TimeStampedModel):
     version = models.CharField(max_length=60, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
-    local = models.BooleanField()
+    local = models.BooleanField(default=False)
     blocked = models.BooleanField(default=False)
     actor = models.OneToOneField(Actor, null=True, blank=True, on_delete=models.SET_NULL)
 
@@ -2095,10 +2097,6 @@ class Account(models.Model):
     @property
     def subject_name(self):
         return getattr(self, "_subject_name", f"@{self.username}@{self.domain_id}")
-
-    @property
-    def manually_approves_followers(self):
-        return True
 
     def __str__(self):
         return self.subject_name
@@ -2250,10 +2248,10 @@ class Message(models.Model):
     def process(self, force=False):
         try:
             if self.is_incoming:
-                for adapter in app_settings.MESSAGE_ADAPTERS:
+                for adapter in app_settings.MESSAGE_PROCESSORS:
                     adapter.process_incoming(self)
             if self.is_outgoing:
-                for adapter in app_settings.MESSAGE_ADAPTERS:
+                for adapter in app_settings.MESSAGE_PROCESSORS:
                     adapter.process_outgoing(self)
         except DropMessage:
             return self.results.create(result=MessageProcessResult.Types.DROPPED)
@@ -2344,3 +2342,87 @@ class MessageIntegrityVerification(models.Model):
     signing_key = models.ForeignKey(
         CryptographicKeyPair, related_name="signed_integrity_proofs", on_delete=models.CASCADE
     )
+
+
+class FollowRequest(StatusModel, TimeStampedModel):
+    STATUS = Choices("pending", "accepted", "rejected")
+    activity = models.OneToOneField(
+        Activity, related_name="follow_request", on_delete=models.CASCADE
+    )
+
+    @property
+    def follower(self):
+        return self.activity.actor and self.activity.actor.as2_item
+
+    @property
+    def followed(self):
+        return self.activity.object and self.activity.object.as2_item
+
+    @transaction.atomic()
+    def accept(self):
+        if self.status == self.STATUS.accepted:
+            return
+
+        self.status = self.STATUS.accepted
+        self.save()
+
+        follower = self.follower
+        followed = self.followed
+
+        if (
+            follower
+            and follower.following is not None
+            and followed.reference not in follower.following.items
+        ):
+            follower.following.append(item=followed)
+
+        if (
+            followed
+            and followed.followers is not None
+            and follower.reference not in followed.followers.items
+        ):
+            followed.followers.append(item=follower)
+
+            if followed.is_local:
+                logger.info(f"{followed} accepts follow from {follower}")
+
+                accept = followed.account.domain.build_activity(
+                    actor=followed,
+                    type=Activity.Types.ACCEPT,
+                    object=self.activity,
+                )
+                Message.objects.create(
+                    activity=accept.reference,
+                    sender=followed.reference,
+                    recipient=follower.inbox.reference,
+                    document=accept.to_jsonld(),
+                )
+
+    @transaction.atomic()
+    def rejected(self):
+        if self.status == self.STATUS.rejected:
+            return
+
+        self.status = self.STATUS.rejected
+        self.save()
+
+        follower: Optional[Actor] = self.activity.actor and self.activity.actor.as2_item
+        followed: Optional[Actor] = self.activity.object and self.activity.object.as2_item
+
+        if followed is None or follower is None:
+            return
+
+        if followed.is_local and not follower.is_local:
+            logger.info(f"{followed} rejects follow from {follower}")
+
+            reject = followed.account.domain.build_activity(
+                actor=followed.reference,
+                type=Activity.Types.REJECT,
+                object=self.activity.reference,
+            )
+            Message.objects.create(
+                activity=reject.reference,
+                sender=followed.reference,
+                recipient=follower.inbox.reference,
+                document=reject.to_jsonld(),
+            )

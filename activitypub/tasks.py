@@ -49,15 +49,7 @@ def fetch_nodeinfo(domain_name):
 def process_standard_activity_flows(activity_uri):
     try:
         activity = Activity.objects.get(reference_id=activity_uri)
-        actor = activity.actor and activity.actor.as2_item
-        object = activity.object and activity.object.as2_item
-        actor_uri = actor and actor.uri
-        object_uri = object and object.uri
-        match (actor_uri, activity.type, object_uri):
-            case (_, Activity.Types.UNDO, _):
-                activity.undo()
-            case _:
-                logger.info(f"No standard flow to execute for {activity_uri}")
+        activity.do()
     except Activity.DoesNotExist:
         logger.warning(f"Activity {activity_uri} does not exist")
 

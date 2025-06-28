@@ -95,7 +95,7 @@ class CryptographicKeyPairAdmin(admin.ModelAdmin):
 
 @admin.register(models.Collection)
 class CollectionAdmin(admin.ModelAdmin):
-    list_display = ("uri", "name", "is_ordered")
+    list_display = ("uri", "name", "is_ordered", "total_items")
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -176,6 +176,12 @@ class MessageAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(models.FollowRequest)
+class FollowRequestAdmin(admin.ModelAdmin):
+    list_display = ("activity", "follower", "followed", "status")
+    list_filter = ("status",)
+
+
 __all__ = [
     "MessageAdmin",
     "LinkAdmin",
@@ -188,4 +194,5 @@ __all__ = [
     "ActorAdmin",
     "ActivityAdmin",
     "BaseActivityStreamsObjectAdmin",
+    "FollowRequestAdmin",
 ]
