@@ -45,7 +45,6 @@ dev = [
   "pytest-django",
   "pytest-env",
   "pytest-socket",
-  "responses",
   "httpretty",
 ]
 
@@ -68,7 +67,6 @@ flake8 = "*"
 ipython = "*"
 pytest-env = "*"
 pytest-socket = "*"
-responses = "*"
 httpretty = "*"
 
 [tool.poetry.group.docs.dependencies]

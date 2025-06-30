@@ -242,9 +242,6 @@ class LinkedDataModel(models.Model):
 
         return True
 
-    def _should_paginate_collection(self, collection_field, value=None, page_number=1) -> bool:
-        return False
-
     def _serialize_native_attributes(self, *args, **kw):
         data = {}
 
@@ -304,7 +301,6 @@ class LinkedDataModel(models.Model):
         for field in self.link_fields:
             attr_name = self.linked_data_map[field.name]
             attr_value = getattr(self, field.name, None)
-            # TODO: Add logic to inline Link relationships.
             data[attr_name] = attr_value and attr_value.href
 
         return data
@@ -319,14 +315,7 @@ class LinkedDataModel(models.Model):
             if collection is None:
                 continue
             should_inline = self._should_be_inlined(reference_field=field, value=collection)
-            if should_inline:
-                attr_value = collection.serialize(
-                    paginate=self._should_paginate_collection(
-                        collection_field=field, value=collection
-                    )
-                )
-            else:
-                attr_value = collection.uri
+            attr_value = collection.serialize() if should_inline else collection.uri
             data[attr_name] = attr_value
 
         return data
@@ -347,6 +336,11 @@ class LinkedDataModel(models.Model):
         data.update(**self._serialize_reference_list_fields(*args, **kw))
         data.update(**self._serialize_link_fields(*args, **kw))
         data.update(**self._serialize_collection_fields(*args, **kw))
+
+        url_link = data.get("url")
+
+        if type(url_link) is Link:
+            data["url"] = url_link.serialize()
 
         return data
 
@@ -456,6 +450,10 @@ class Reference(StatusModel):
         return self.domain and self.domain.local
 
     @property
+    def is_remote(self):
+        return not self.is_local
+
+    @property
     def is_a_box(self):
         return Collection.objects.filter(
             Q(shared_inbox_actors__shared_inbox__reference=self)
@@ -480,18 +478,25 @@ class Reference(StatusModel):
         return LinkedDataModel.deserialize(subject_uri=rdflib.URIRef(self.uri), g=g)
 
     def resolve(self, force=False):
-        try:
-            is_resolved = any(
-                [self.uri.startswith(Actor.PUBLIC.uri), self.is_local, self.item is not None]
-            )
-        except Reference.item.RelatedObjectDoesNotExist:
-            is_resolved = False
+        unresolvable = self.uri.startswith(Actor.PUBLIC.uri) or self.is_local
 
-        if is_resolved:
+        if unresolvable:
             self.status = self.STATUS.resolved
-            if not force:
-                self.save()
-                return
+            self.save()
+            return
+
+        if self.status in (self.STATUS.resolved, self.STATUS.failed) and not force:
+            return
+
+        try:
+            has_resolved = self.item is not None
+        except Reference.item.RelatedObjectDoesNotExist:
+            has_resolved = False
+
+        if has_resolved and not force:
+            self.status = self.STATUS.resolved
+            self.save()
+            return
 
         try:
             domain = Domain.get_default()
@@ -515,7 +520,7 @@ class Reference(StatusModel):
     def __str__(self):
         return self.uri
 
-    def generate_keypair(self, alias=None, force=False):
+    def generate_keypair(self, force=False):
         if not self.is_local:
             raise ValueError("Can only generate keypairs for local resources")
 
@@ -534,18 +539,16 @@ class Reference(StatusModel):
             .decode("ascii")
         )
 
-        key_id = f"{self.uri}#{alias or str(generate_ulid())}"
-        key_reference = Reference.make(key_id)
-        if not force:
-            return self.keypairs.create(
-                reference=key_reference, private_pem=private_pem, public_pem=public_pem
-            )
+        ulid = str(generate_ulid())
+        if app_settings.Instance.keypair_view_name:
+            uri = self.reverse_view(app_settings.Instance.keypair_view_name, pk=ulid)
         else:
-            key, _ = self.keypairs.update_or_create(
-                reference=key_reference,
-                defaults={"public_pem": public_pem, "private_pem": private_pem},
-            )
-            return key
+            uri = f"{self.domain.scheme}{self.domain.name}/keys/{ulid}"
+        key_reference = Reference.make(uri)
+
+        return self.keypairs.create(
+            reference=key_reference, private_pem=private_pem, public_pem=public_pem
+        )
 
     @classmethod
     def make(cls, uri: str):
@@ -606,7 +609,7 @@ class Link(CoreType):
 
 
 class LinkRelation(models.Model):
-    class RelationTypes(models.TextChoices):
+    class Types(models.TextChoices):
         ALTERNATE = ("alternate", "Designates a substitute for the link's context")
         APPENDIX = ("appendix", "Refers to an appendix.")
         BOOKMARK = ("bookmark", "Refers to a bookmark or entry point.")
@@ -649,9 +652,7 @@ class LinkRelation(models.Model):
         WORKING_COPY_OF = ("working-copy-of", "versioned resource originating this working copy")
 
     link = models.ForeignKey(Link, related_name="related", on_delete=models.CASCADE)
-    type = models.CharField(
-        max_length=50, choices=RelationTypes.choices, default=RelationTypes.ALTERNATE
-    )
+    type = models.CharField(max_length=50, choices=Types.choices, default=Types.ALTERNATE)
 
 
 class BaseActivityStreamsObject(CoreType):
@@ -674,7 +675,7 @@ class BaseActivityStreamsObject(CoreType):
         "replies": "replies",
         "likes": "likes",
         "shares": "shares",
-        "url": "url",
+        "object_url": "url",
         "tags": "tag",
         "in_reply_to": "inReplyTo",
         "attributed_to": "attributedTo",
@@ -710,7 +711,8 @@ class BaseActivityStreamsObject(CoreType):
         "Collection", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
-    url = models.ForeignKey(
+    url = models.URLField(null=True, blank=True)
+    url_link = models.ForeignKey(
         Link, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
 
@@ -783,6 +785,8 @@ class BaseActivityStreamsObject(CoreType):
         self.replies = to_related(predicate=AS2.replies)
         self.likes = to_related(predicate=AS2.likes)
         self.shares = to_related(predicate=AS2.shares)
+        self.url = to_native(predicate=AS2.url)
+        self.url_link = to_related(predicate=AS2.url)
         self.save()
 
         for tag in to_list(AS2.tag):
@@ -811,6 +815,10 @@ class BaseActivityStreamsObject(CoreType):
 
         for bcc in to_list(AS2.bcc):
             self.bcc.add(bcc)
+
+    @property
+    def object_url(self):
+        return self.url_link or self.url
 
     @classmethod
     def make(cls, uri, **kw):
@@ -841,6 +849,14 @@ class CollectionItem(models.Model):
 
 
 class CollectionModelMixin:
+    def _get_item_queryset(self):
+        content_type = ContentType.objects.get_for_model(self)
+
+        return CoreType.objects.filter(
+            in_collections__container_type=content_type,
+            in_collections__container_object_id=self.id,
+        )
+
     @property
     def total_items(self):
         return self.items.count()
@@ -851,12 +867,7 @@ class CollectionModelMixin:
 
     @property
     def items(self) -> models.QuerySet:
-        content_type = ContentType.objects.get_for_model(self)
-
-        qs = CoreType.objects.filter(
-            in_collections__container_type=content_type,
-            in_collections__container_object_id=self.id,
-        )
+        qs = self._get_item_queryset()
 
         # Counter-intuitive: "Ordered" Collections in AS2 refer to
         # have items be reverse ordered by creation date. At the same
@@ -877,7 +888,7 @@ class CollectionModelMixin:
 
     @property
     def highest_order_value(self):
-        return self.collection_items.aggregate(highest=Max("order")).get("highest", 0)
+        return self.collection_items.aggregate(highest=Max("order")).get("highest") or 0
 
     def _should_be_inlined(self, reference_field, value=None):
         if reference_field.name == "items":
@@ -893,26 +904,33 @@ class CollectionModelMixin:
             item.order = idx
             item.save()
 
-    def append(self, item: CoreType) -> "CollectionItem":
-        existing = self.collection_items.filter(item=item).first()
+    def _get_append_target(self):
+        return self
+
+    def append(self, item: CoreType) -> CollectionItem:
+        existing = self.items.filter(id=item.id).first()
 
         if existing:
             return existing
 
+        target = self._get_append_target()
+
         params = {
-            "container_type": ContentType.objects.get_for_model(self),
-            "container_object_id": self.id,
+            "container_type": ContentType.objects.get_for_model(target),
+            "container_object_id": target.id,
             "item": item,
         }
 
-        if self.is_ordered:
+        target_size = target.collection_items.count()
+
+        if target.is_ordered:
             new_item_order = timezone.now().timestamp()
 
-        elif self.total_items == 0:
+        elif target_size == 0:
             new_item_order = 1.0
 
         else:
-            new_item_order = max(self.highest_order_value, self.total_items) + 1
+            new_item_order = max(target.highest_order_value, target_size) + 1
             if new_item_order >= CollectionItem.MAX_ORDER_VALUE:
                 new_item_order = (CollectionItem.MAX_ORDER_VALUE + new_item_order) / 2.0
 
@@ -940,26 +958,46 @@ class Collection(BaseActivityStreamsObject, CollectionModelMixin):
         content_type_field="container_type",
         object_id_field="container_object_id",
     )
+    first = models.ForeignKey(
+        CoreType, null=True, blank=True, related_name="+", on_delete=models.SET_NULL
+    )
+    last = models.ForeignKey(
+        CoreType, null=True, blank=True, related_name="+", on_delete=models.SET_NULL
+    )
     is_ordered = models.BooleanField(default=False)
 
     @property
     def collection_size(self):
-        is_paginated = self.pages.exists()
-        if is_paginated:
-            page_ids = self.pages.values_list("id", flat=True)
-            content_type = ContentType.objects.get_for_model(CollectionPage)
-            return CollectionItem.objects.filter(
-                container_type=content_type, container_object_id__in=page_ids
-            ).count()
-        return self.total_items
+        return self._get_item_queryset().count()
+
+    def _get_append_target(self):
+        if not self.pages.exists():
+            return self
+
+        if self.last is not None:
+            return self.last.as2_item._get_append_target()
+
+        return self.reference.domain.build_collection_page(collection=self)
+
+    def _get_item_queryset(self):
+        if not self.pages.exists():
+            return super()._get_item_queryset()
+
+        content_type = ContentType.objects.get_for_model(CollectionPage)
+        page_ids = self.pages.values_list("id", flat=True)
+
+        return CoreType.objects.filter(
+            in_collections__container_type=content_type,
+            in_collections__container_object_id__in=page_ids,
+        )
 
     @property
     def type(self):
-        return "OrderedCollection" if self.is_ordered else "Collection"
+        return str(AS2.OrderedCollection) if self.is_ordered else str(AS2.Collection)
 
     def serialize(self, *args, **kw):
         collection_size = self.collection_size
-        first_page = self.pages.filter(previous=None).first()
+        first_page = self.first and self.first.as2_item
 
         data = {
             "id": self.uri,
@@ -991,7 +1029,7 @@ class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
         "total_items": "totalItems",
         "current": "current",
         "next": "next",
-        "previous": "next",
+        "previous": "prev",
         "part_of": "partOf",
     }
 
@@ -1002,11 +1040,11 @@ class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
         on_delete=models.CASCADE,
     )
     part_of = models.ForeignKey(Collection, related_name="pages", on_delete=models.CASCADE)
-    next = models.OneToOneField(
-        "self", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
+    next = models.ForeignKey(
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    previous = models.OneToOneField(
-        "self", related_name="+", null=True, blank=True, on_delete=models.SET_NULL
+    previous = models.ForeignKey(
+        CoreType, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
     collection_items = GenericRelation(
         CollectionItem,
@@ -1017,17 +1055,26 @@ class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
 
     @property
     def type(self):
-        return "OrderedCollectionPage" if self.is_ordered else "CollectionPage"
+        return str(AS2.OrderedCollectionPage) if self.is_ordered else str(AS2.CollectionPage)
+
+    def _get_append_target(self):
+        if self.collection_items.count() < self.PAGE_SIZE:
+            return self
+
+        return self.reference.domain.build_collection_page(collection=self.part_of)
 
     def serialize(self, *args, **kw):
-        serialize_item = lambda it: it.serialize() if self.inlined_items else it.uri
+        serialize_item = lambda it: it.serialize() if it.is_local else it.uri
+        previous_page = self.previous and self.previous.as2_item
+        next_page = self.next and self.next.as2_item
+
         return {
             "id": self.uri,
             "type": self.type,
             "totalItems": self.total_items,
             "partOf": self.part_of.uri,
-            "prev": self.previous and self.previous.uri,
-            "next": self.next and self.next.uri,
+            "prev": previous_page and previous_page.uri,
+            "next": next_page and next_page.uri,
             self.as2_item_key: [serialize_item(item) for item in self.items.all()],
         }
 
@@ -1084,7 +1131,7 @@ class Object(BaseActivityStreamsObject):
     type = models.CharField(max_length=128, choices=Types.choices)
 
     def _should_be_inlined(self, reference_field, value=None):
-        if reference_field.name == "replies":
+        if reference_field.name in ("replies", "shares", "likes"):
             return True
 
         return super()._should_be_inlined(reference_field=reference_field, value=value)
@@ -1266,9 +1313,6 @@ class Actor(BaseActivityStreamsObject):
 
         return data
 
-    def make_box(self, uri, name) -> Collection:
-        return Collection.make(uri=uri, name=name, is_ordered=True)
-
     def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         to_native = lambda x: x and x.toPython()
 
@@ -1327,7 +1371,8 @@ class Actor(BaseActivityStreamsObject):
     def PUBLIC_INBOX(cls):
         actor = cls.PUBLIC
         if actor.inbox is None:
-            actor.inbox = actor.make_box(str(AS2["Public/Inbox"], name="Public Inbox"))
+            inbox_uri = str(AS2["Public/Inbox"])
+            actor.inbox = Collection.make(uri=inbox_uri, name="Public Inbox", is_ordered=True)
             actor.save()
         return actor.inbox
 
@@ -1457,12 +1502,17 @@ class Activity(BaseActivityStreamsObject):
             assert self.actor is not None, f"Activity {self.uri} has no actor"
             assert self.actor.is_local, f"Activity {self.uri} is not from a local actor"
             for inbox in self.actor.followers_inboxes:
-                Message.objects.create(
+                message = Message.objects.create(
                     activity=self.reference,
                     sender=self.actor.reference,
                     recipient=inbox.reference,
                     document=document,
                 )
+                message.process()
+            # We add the posted activity to the actor outbox if Public
+            # is part of the intended audience
+            if Actor.PUBLIC in self.to.all() or Actor.PUBLIC in self.cc.all():
+                self.actor.outbox.append(self)
         except AssertionError as exc:
             logger.warning(exc)
 
@@ -1470,7 +1520,9 @@ class Activity(BaseActivityStreamsObject):
         pass
 
     def _do_follow(self):
-        FollowRequest.objects.get_or_create(activity=self)
+        FollowRequest.objects.update_or_create(
+            activity=self, defaults={"status": FollowRequest.STATUS.pending}
+        )
 
     def _undo_follow(self):
         follower = self.actor and self.actor.as2_item
@@ -1523,13 +1575,6 @@ class Activity(BaseActivityStreamsObject):
             if request is not None:
                 request.reject()
 
-    def _do_create(self):
-        if all([self.actor is not None, self.actor.is_local, self.actor.outbox is not None]):
-            self.actor.outbox.append(self)
-
-    def _do_question(self):
-        return self._do_create()
-
     def _do_undo(self):
         to_undo = self.object and self.object.as2_item
         if not isinstance(to_undo, Activity):
@@ -1553,7 +1598,7 @@ class Activity(BaseActivityStreamsObject):
             str(AS2.Announce): self._do_nothing,
             str(AS2.Arrive): self._do_nothing,
             str(AS2.Block): self._do_nothing,
-            str(AS2.Create): self._do_create,
+            str(AS2.Create): self._do_nothing,
             str(AS2.Delete): self._do_nothing,
             str(AS2.Dislike): self._do_nothing,
             str(AS2.Flag): self._do_nothing,
@@ -1566,7 +1611,7 @@ class Activity(BaseActivityStreamsObject):
             str(AS2.Listen): self._do_nothing,
             str(AS2.Move): self._do_nothing,
             str(AS2.Offer): self._do_nothing,
-            str(AS2.Question): self._do_question,
+            str(AS2.Question): self._do_nothing,
             str(AS2.Reject): self._do_nothing,
             str(AS2.Read): self._do_nothing,
             str(AS2.Remove): self._do_nothing,
@@ -2022,14 +2067,50 @@ class Domain(TimeStampedModel):
         url = reverse(view_name, args=args, kwargs=kwargs)
         return f"{self.scheme}{self.name}{url}"
 
-    def build_collection(self, **kw):
+    def build_collection_page(self, collection, **kw):
+        current_page = collection.first and collection.first.as2_item
+
+        while (current_page and current_page.next) is not None:
+            current_page = current_page.next.as2_item
+
+        ulid = str(generate_ulid())
+        if app_settings.Instance.collection_page_view_name:
+            uri = self.reverse_view(app_settings.Instance.collection_page_view_name, pk=ulid)
+        else:
+            uri = f"{self.scheme}{self.name}/pages/{ulid}"
+        reference = Reference.make(uri)
+
+        page = CollectionPage.objects.create(
+            reference=reference,
+            id=ulid,
+            part_of=collection,
+            previous=current_page,
+            is_ordered=collection.is_ordered,
+            **kw,
+        )
+
+        if current_page is None:
+            collection.first = page
+        else:
+            current_page.next = page
+            current_page.save()
+
+        collection.last = page
+        collection.save()
+
+        return page
+
+    def build_collection(self, paginated: bool = False, **kw):
         ulid = str(generate_ulid())
         if app_settings.Instance.collection_view_name:
             uri = self.reverse_view(app_settings.Instance.collection_view_name, pk=ulid)
         else:
             uri = f"{self.scheme}{self.name}/collections/{ulid}"
         reference = Reference.make(uri)
-        return Collection.objects.create(reference=reference, id=ulid, **kw)
+        collection = Collection.objects.create(reference=reference, id=ulid, **kw)
+        if paginated:
+            self.build_collection_page(collection)
+        return collection
 
     def build_activity(self, **kw):
         ulid = str(generate_ulid())
@@ -2213,9 +2294,12 @@ class Message(models.Model):
             return None
 
     def authenticate(self, fetch_missing_keys=False):
-        self.sender.resolve(force=fetch_missing_keys)
+        is_remote = not self.sender.is_local
+        if is_remote:
+            self.sender.resolve(force=fetch_missing_keys)
+
         for proof in self.proofs.select_subclasses():
-            proof.verify(fetch_missing_keys=fetch_missing_keys)
+            proof.verify(fetch_missing_keys=fetch_missing_keys and is_remote)
 
     @transaction.atomic()
     def _process_receive(self):
@@ -2233,6 +2317,7 @@ class Message(models.Model):
         logger.info(f"Sending message to {self.recipient.uri}")
         try:
             signing_key = self.sender.keypairs.exclude(revoked=True, private_pem=None).first()
+            assert signing_key is not None
             headers = {"Content-Type": "application/activity+json"}
             response = requests.post(
                 self.recipient.uri,
@@ -2242,6 +2327,8 @@ class Message(models.Model):
             )
             response.raise_for_status()
             return self.results.create(result=MessageProcessResult.Types.OK)
+        except AssertionError:
+            return self.results.create(result=Message.ProcessResult.Types.UNAUTHENTICATED)
         except requests.HTTPError:
             return self.results.create(result=MessageProcessResult.Types.BAD_REQUEST)
 
@@ -2271,6 +2358,7 @@ class Message(models.Model):
 
 class MessageProcessResult(models.Model):
     class Types(models.IntegerChoices):
+        UNAUTHENTICATED = (0, "Unauthenticated")
         OK = (1, "Ok")
         UNAUTHORIZED = (2, "Unauthorized")
         BAD_TARGET = (3, "Target is not a valid box")
@@ -2372,14 +2460,14 @@ class FollowRequest(StatusModel, TimeStampedModel):
         if (
             follower
             and follower.following is not None
-            and followed.reference not in follower.following.items
+            and followed not in follower.following.items
         ):
             follower.following.append(item=followed)
 
         if (
             followed
             and followed.followers is not None
-            and follower.reference not in followed.followers.items
+            and follower not in followed.followers.items
         ):
             followed.followers.append(item=follower)
 
@@ -2391,12 +2479,13 @@ class FollowRequest(StatusModel, TimeStampedModel):
                     type=Activity.Types.ACCEPT,
                     object=self.activity,
                 )
-                Message.objects.create(
+                message = Message.objects.create(
                     activity=accept.reference,
                     sender=followed.reference,
                     recipient=follower.inbox.reference,
                     document=accept.to_jsonld(),
                 )
+                message.process()
 
     @transaction.atomic()
     def rejected(self):
@@ -2420,9 +2509,10 @@ class FollowRequest(StatusModel, TimeStampedModel):
                 type=Activity.Types.REJECT,
                 object=self.activity.reference,
             )
-            Message.objects.create(
+            message = Message.objects.create(
                 activity=reject.reference,
                 sender=followed.reference,
                 recipient=follower.inbox.reference,
                 document=reject.to_jsonld(),
             )
+            message.process()

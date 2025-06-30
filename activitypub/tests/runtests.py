@@ -4,6 +4,7 @@ import sys
 
 import django
 from celery import Celery
+from celery.contrib.django.task import DjangoTask
 from django.conf import settings
 from django.core.management import call_command
 
@@ -21,9 +22,9 @@ def runtests():
             APPEND_SLASH=test_settings.APPEND_SLASH,
             DATABASES=test_settings.DATABASES,
             USE_TZ=test_settings.USE_TZ,
-            CELERY_BROKER_URL=test_settings.CELERY_BROKER_URL,
-            CELERY_BROKER_USE_SSL=test_settings.CELERY_BROKER_USE_SSL,
-            CELERY_TASK_EAGER_MODE=test_settings.CELERY_TASK_EAGER_MODE,
+            # CELERY_BROKER_URL=test_settings.CELERY_BROKER_URL,
+            # CELERY_BROKER_USE_SSL=test_settings.CELERY_BROKER_USE_SSL,
+            CELERY_TASK_ALWAYS_EAGER=test_settings.CELERY_TASK_ALWAYS_EAGER,
             CELERY_TASK_EAGER_PROPAGATES=test_settings.CELERY_TASK_EAGER_PROPAGATES,
             DEFAULT_AUTO_FIELD=test_settings.DEFAULT_AUTO_FIELD,
             REST_FRAMEWORK=test_settings.REST_FRAMEWORK,
@@ -32,7 +33,7 @@ def runtests():
         )
 
     django.setup()
-    app = Celery("activitypub_toolkit_test")
+    app = Celery("activitypub_toolkit_test", task_cls=DjangoTask)
     app.config_from_object("django.conf:settings", namespace="CELERY")
     app.autodiscover_tasks()
     failures = call_command("test", "activitypub", interactive=False, failfast=False, verbosity=2)

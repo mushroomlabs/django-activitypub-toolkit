@@ -17,7 +17,9 @@ class AppSettings:
         actor_view_name = None
         system_actor_view_name = None
         collection_view_name = None
+        collection_page_view_name = None
         object_view_name = None
+        keypair_view_name = None
         force_http = False
         collection_page_size = 25
 
@@ -49,7 +51,9 @@ class AppSettings:
             "ACTIVITY_VIEW": (self.Instance, "activity_view_name"),
             "OBJECT_VIEW": (self.Instance, "object_view_name"),
             "COLLECTION_VIEW": (self.Instance, "collection_view_name"),
+            "COLLECTION_PAGE_VIEW": (self.Instance, "collection_page_view_name"),
             "ACTOR_VIEW": (self.Instance, "actor_view_name"),
+            "KEYPAIR_VIEW": (self.Instance, "keypair_view_name"),
             "COLLECTION_PAGE_SIZE": (self.Instance, "collection_page_size"),
             "SOFTWARE_NAME": (self.NodeInfo, "software_name"),
             "SOFTWARE_VERSION": (self.NodeInfo, "software_version"),

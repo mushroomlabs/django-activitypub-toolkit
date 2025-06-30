@@ -1,15 +1,10 @@
-import json
-import os
-from functools import wraps
-from unittest import SkipTest
-
 from django.core.exceptions import ValidationError
+import httpretty
 
 from activitypub import factories
 from activitypub.models import (
     Activity,
     Actor,
-    BaseActivityStreamsObject,
     Link,
     LinkedDataModel,
     Object,
@@ -17,34 +12,20 @@ from activitypub.models import (
 )
 from activitypub.schemas import AS2
 
-from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase
-
-
-def with_document_file(path):
-    def decorator(function_at_test):
-        @wraps(function_at_test)
-        def inner(*args, **kw):
-            full_path = os.path.join(TEST_DOCUMENTS_FOLDER, path)
-            if not os.path.exists(full_path):
-                raise SkipTest("Document {full_path} not found")
-            with open(full_path) as f:
-                document = json.load(f)
-                as_object = BaseActivityStreamsObject.load(document)
-                new_args = args + (as_object,)
-                return function_at_test(*new_args, **kw)
-
-        return inner
-
-    return decorator
+from .base import BaseTestCase, with_document_file, use_nodeinfo
 
 
 class CoreTestCase(BaseTestCase):
+    @httpretty.activate
+    @use_nodeinfo("mastodon.example.com", "nodeinfo/mastodon.json")
     @with_document_file("mastodon/actor.json")
     def test_can_load_mastodon_actor(self, actor):
         self.assertEqual(actor.inbox.uri, "https://mastodon.example.com/users/tester/inbox")
         self.assertIsNotNone(actor.published)
         self.assertEqual(actor.published.year, 1999)
 
+    @httpretty.activate
+    @use_nodeinfo("community.nodebb.org", "nodeinfo/nodebb.json")
     @with_document_file("nodebb/actor.json")
     def test_can_load_nodebb_actor(self, actor):
         self.assertEqual(actor.uri, "https://community.nodebb.org/uid/2")
@@ -54,6 +35,8 @@ class CoreTestCase(BaseTestCase):
 
 
 class ReferenceTestCase(BaseTestCase):
+    @httpretty.activate
+    @use_nodeinfo("actor.example.com", "nodeinfo/mastodon.json")
     def test_can_reference_from_existing_object(self):
         actor = factories.ActorFactory(reference__uri="https://actor.example.com")
         self.assertEqual(actor.uri, "https://actor.example.com")
@@ -165,6 +148,9 @@ class LinkTestCase(BaseTestCase):
 
 
 class ActivityTestCase(BaseTestCase):
+    @httpretty.activate
+    @use_nodeinfo("remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("testserver", "nodeinfo/testserver.json")
     def test_can_deserialize_inbox_message(self):
         message = {
             "id": "https://remote.example.com/0cc0a50f-9043-4d9b-b82a-ab3cd13ab906",
@@ -227,7 +213,6 @@ class ActivityTestCase(BaseTestCase):
 class LinkedDataModelTestCase(BaseTestCase):
     def test_can_determine_collection_attributes(self):
         collection = factories.CollectionFactory()
-
         self.assertListEqual(
             collection.native_attributes,
             [
@@ -243,8 +228,7 @@ class LinkedDataModelTestCase(BaseTestCase):
                 "type",
                 "total_items",
                 "current",
-                "first",
-                "last",
                 "items",
+                "object_url",
             ],
         )

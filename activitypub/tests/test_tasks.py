@@ -13,7 +13,7 @@ from activitypub.factories import (
 from activitypub.models import Activity, Actor
 from activitypub.tasks import process_standard_activity_flows
 
-from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase
+from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase, use_nodeinfo
 
 
 class MessageProcessingTestCase(BaseTestCase):
@@ -22,6 +22,8 @@ class MessageProcessingTestCase(BaseTestCase):
         self.account = AccountFactory(username="bob", domain=self.domain)
 
     @httpretty.activate
+    @use_nodeinfo("remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("testserver", "nodeinfo/testserver.json")
     def test_message_authentication_resolves_sender(self):
         document = {
             "id": "https://remote.example.com/0cc0a50f-9043-4d9b-b82a-ab3cd13ab906",

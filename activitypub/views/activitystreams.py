@@ -10,6 +10,7 @@ from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from ..tasks import process_message
 from ..decorators import calculate_digest, collect_signature
 from ..models import (
     Actor,
@@ -51,6 +52,8 @@ class ActivityPubObjectDetailView(APIView):
 
     def get(self, *args, **kw):
         as_object = self.get_object(*args, **kw)
+        if as_object.reference.is_an_inbox:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
         return Response(as_object.to_jsonld())
 
     def post(self, *args, **kwargs):
@@ -82,6 +85,9 @@ class ActivityPubObjectDetailView(APIView):
                 HttpSignatureProof.objects.create(
                     message=message, http_message_signature=self.request.signature
                 )
+
+            process_message.delay_on_commit(str(message.id))
+
             return Response(status=status.HTTP_202_ACCEPTED)
         except (KeyError, AssertionError) as exc:
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
