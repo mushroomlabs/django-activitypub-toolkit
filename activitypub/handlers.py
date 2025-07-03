@@ -26,15 +26,12 @@ def on_ap_object_create_define_related_collections(sender, **kw):
     if reference.is_remote:
         return
 
-    match (instance.type, instance.replies):
-        case (Activity.Types.QUESTION | Object.Types.NOTE, None):
+    if type(instance) is Object or instance.type == Activity.Types.QUESTION:
+        if not instance.replies:
             instance.replies = reference.domain.build_collection(
                 paginated=True, name=f"Replies to {reference.uri}"
             )
-        case _:
-            pass
 
-    if type(instance) is Object:
         if not instance.shares:
             instance.shares = reference.domain.build_collection(
                 paginated=True, name=f"shares for {reference.uri}"
