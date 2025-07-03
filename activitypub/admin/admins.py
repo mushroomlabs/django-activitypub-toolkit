@@ -1,23 +1,7 @@
 from django.contrib import admin
 
 from .. import models
-from ..schemas import AS2
 from . import actions, filters
-
-
-@admin.register(models.BaseActivityStreamsObject)
-class BaseActivityStreamsObjectAdmin(admin.ModelAdmin):
-    list_display = ("id", "uri", "activitypub_type")
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def activitypub_type(self, obj):
-        return AS2[obj.__class__.__name__]
-
-    def get_queryset(self, *args, **kw):
-        qs = super().get_queryset(*args, **kw)
-        return qs.select_subclasses()
 
 
 @admin.register(models.Reference)
@@ -96,6 +80,7 @@ class CryptographicKeyPairAdmin(admin.ModelAdmin):
 @admin.register(models.Collection)
 class CollectionAdmin(admin.ModelAdmin):
     list_display = ("uri", "name", "is_ordered", "total_items")
+    list_filter = ("is_ordered",)
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -104,6 +89,55 @@ class CollectionAdmin(admin.ModelAdmin):
 @admin.register(models.CollectionPage)
 class CollectionPageAdmin(admin.ModelAdmin):
     list_display = ("uri", "name", "part_of")
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(models.CollectionItem)
+class CollectionItemAdmin(admin.ModelAdmin):
+    list_display = ("get_collection", "get_collection_name", "get_item", "order")
+    list_select_related = ("item__baseactivitystreamsobject__reference",)
+    search_fields = ("item__baseactivitystreamsobject__reference__uri",)
+
+    def get_search_results(self, request, queryset, search_term):
+        pages = models.CollectionPage.objects.filter(
+            part_of__reference__uri=search_term
+        ).values_list("id", flat=True)
+
+        queryset = queryset.order_by("order")
+
+        if pages:
+            queryset = models.CollectionItem.objects.filter(
+                container_object_id__in=pages
+            ).order_by("order")
+            return queryset, False
+
+        collection = models.Collection.objects.filter(reference__uri=search_term).first()
+        if collection:
+            queryset = models.CollectionItem.objects.filter(
+                container_object_id=collection.id
+            ).order_by("order")
+            return queryset, False
+
+        return super().get_search_results(request, queryset, search_term)
+
+    @admin.display(description="Collection")
+    def get_collection(self, obj):
+        container = obj.container
+
+        if type(container) is models.CollectionPage:
+            return container.part_of
+        return container
+
+    @admin.display(description="Collection Name")
+    def get_collection_name(self, obj):
+        collection = self.get_collection(obj)
+        return collection.name
+
+    @admin.display(description="Item")
+    def get_item(self, obj):
+        return obj.item.as2_item
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -187,12 +221,13 @@ __all__ = [
     "LinkAdmin",
     "ObjectAdmin",
     "CollectionAdmin",
+    "CollectionPageAdmin",
+    "CollectionItemAdmin",
     "CryptographicKeyPairAdmin",
     "DomainAdmin",
     "ReferenceAdmin",
     "AccountAdmin",
     "ActorAdmin",
     "ActivityAdmin",
-    "BaseActivityStreamsObjectAdmin",
     "FollowRequestAdmin",
 ]
