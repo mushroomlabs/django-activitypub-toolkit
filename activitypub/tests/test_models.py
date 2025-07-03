@@ -25,6 +25,18 @@ class CoreTestCase(BaseTestCase):
         self.assertEqual(actor.published.year, 1999)
 
     @httpretty.activate
+    @use_nodeinfo("mastodon.example.com", "nodeinfo/mastodon.json")
+    @with_document_file("mastodon/actor.json")
+    def test_can_load_hashtags_actor(self, actor):
+        self.assertEqual(actor.tags.count(), 3)
+        self.assertEqual(Link.objects.count(), 3)
+        tag_names = list(Link.objects.order_by("name").values_list("name", flat=True))
+        self.assertListEqual(tag_names, ["#activitypub", "#django", "#fediverse"])
+        for link in Link.objects.all():
+            self.assertEqual(link.type, str(AS2.Hashtag))
+            self.assertIsNotNone(link.href)
+
+    @httpretty.activate
     @use_nodeinfo("community.nodebb.org", "nodeinfo/nodebb.json")
     @with_document_file("nodebb/actor.json")
     def test_can_load_nodebb_actor(self, actor):

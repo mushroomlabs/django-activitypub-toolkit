@@ -402,6 +402,7 @@ class LinkedDataModel(models.Model):
             return obj
 
         as2_type = g.value(subject=subject_uri, predicate=RDF.type)
+        href = g.value(subject=subject_uri, predicate=AS2.href)
 
         if str(as2_type) in Actor.Types:
             klass = Actor
@@ -409,12 +410,14 @@ class LinkedDataModel(models.Model):
             klass = Collection
         elif str(as2_type) in (AS2.CollectionPage, AS2.OrderedCollectionPage):
             klass = CollectionPage
-        elif str(as2_type) in Object.Types:
-            klass = Object
-        elif str(as2_type) in Activity.Types:
-            klass = Activity
+        elif str(as2_type) == Object.Types.HASHTAG and href is not None:
+            klass = Link
         elif as2_type == AS2.Link:
             klass = Link
+        elif str(as2_type) in Activity.Types:
+            klass = Activity
+        elif str(as2_type) in Object.Types:
+            klass = Object
         else:
             logger.warning(f"Failed to determine type for {subject_uri}")
             return None
@@ -1166,7 +1169,7 @@ class Object(BaseActivityStreamsObject):
         super().load_from_graph(subject_uri=subject_uri, g=g)
 
     def __str__(self):
-        return self.uri or f"Unreferenced object #{self.id} ({self.get_type_display()}"
+        return self.uri or f"Unreferenced object #{self.id} ({self.get_type_display()})"
 
 
 class Actor(BaseActivityStreamsObject):

@@ -86,5 +86,22 @@
   },
   "endpoints": {
     "sharedInbox": "https://mastodon.example.com/inbox"
-  }
+  },
+  "tag": [
+    {
+      "type": "Hashtag",
+      "href": "https://mastodon.example.com/tags/fediverse",
+      "name": "#fediverse"
+    },
+    {
+      "type": "Hashtag",
+      "href": "https://mastodon.example.com/tags/activitypub",
+      "name": "#activitypub"
+    },
+    {
+      "type": "Hashtag",
+      "href": "https://mastodon.example.com/tags/django",
+      "name": "#django"
+    }
+  ]
 }
