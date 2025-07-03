@@ -543,7 +543,7 @@ class Reference(StatusModel):
         if app_settings.Instance.keypair_view_name:
             uri = self.reverse_view(app_settings.Instance.keypair_view_name, pk=ulid)
         else:
-            uri = f"{self.domain.scheme}{self.domain.name}/keys/{ulid}"
+            uri = f"{self.uri}#key-{ulid}"
         key_reference = Reference.make(uri)
 
         return self.keypairs.create(
@@ -1510,12 +1510,13 @@ class Activity(BaseActivityStreamsObject):
     def post(self):
         try:
             document = self.to_jsonld()
-            assert self.actor is not None, f"Activity {self.uri} has no actor"
-            assert self.actor.is_local, f"Activity {self.uri} is not from a local actor"
-            for inbox in self.actor.followers_inboxes:
+            actor = self.actor and self.actor.as2_item
+            assert actor is not None, f"Activity {self.uri} has no actor"
+            assert actor.is_local, f"Activity {self.uri} is not from a local actor"
+            for inbox in actor.followers_inboxes:
                 message = Message.objects.create(
                     activity=self.reference,
-                    sender=self.actor.reference,
+                    sender=actor.reference,
                     recipient=inbox.reference,
                     document=document,
                 )
@@ -1523,7 +1524,7 @@ class Activity(BaseActivityStreamsObject):
             # We add the posted activity to the actor outbox if Public
             # is part of the intended audience
             if Actor.PUBLIC in self.to.all() or Actor.PUBLIC in self.cc.all():
-                self.actor.outbox.append(self)
+                actor.outbox.append(self)
         except AssertionError as exc:
             logger.warning(exc)
 
@@ -2327,7 +2328,9 @@ class Message(models.Model):
     def _process_send(self):
         logger.info(f"Sending message to {self.recipient.uri}")
         try:
-            signing_key = self.sender.keypairs.exclude(revoked=True, private_pem=None).first()
+            signing_key = (
+                self.sender.keypairs.exclude(revoked=True).exclude(private_pem=None).first()
+            )
             assert signing_key is not None
             headers = {"Content-Type": "application/activity+json"}
             response = requests.post(
@@ -2336,10 +2339,11 @@ class Message(models.Model):
                 headers=headers,
                 auth=signing_key.signed_request_auth,
             )
+            assert response.status_code != 401
             response.raise_for_status()
             return self.results.create(result=MessageProcessResult.Types.OK)
         except AssertionError:
-            return self.results.create(result=Message.ProcessResult.Types.UNAUTHENTICATED)
+            return self.results.create(result=MessageProcessResult.Types.UNAUTHENTICATED)
         except requests.HTTPError:
             return self.results.create(result=MessageProcessResult.Types.BAD_REQUEST)
 
