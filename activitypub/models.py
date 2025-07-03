@@ -907,6 +907,12 @@ class CollectionModelMixin:
     def _get_append_target(self):
         return self
 
+    def remove(self, item: CoreType):
+        content_type = ContentType.objects.get_for_model(self)
+        CollectionItem.objects.filter(
+            container_type=content_type, container_object_id=self.id, item=item
+        ).delete()
+
     def append(self, item: CoreType) -> CollectionItem:
         existing = self.items.filter(id=item.id).first()
 
@@ -990,6 +996,11 @@ class Collection(BaseActivityStreamsObject, CollectionModelMixin):
             in_collections__container_type=content_type,
             in_collections__container_object_id__in=page_ids,
         )
+
+    def remove(self, item: CoreType):
+        super().remove(item)
+        for page in self.pages.filter(collection_items__item=item):
+            page.remove(item)
 
     @property
     def type(self):
@@ -1531,9 +1542,9 @@ class Activity(BaseActivityStreamsObject):
         FollowRequest.objects.filter(activity=self).delete()
 
         if follower and follower.following is not None:
-            follower.following.collection_items.filter(item=self.object).delete()
+            follower.following.remove(self.object)
         if followed and followed.followers is not None:
-            followed.followers.collection_items.filter(item=self.actor).delete()
+            followed.followers.remove(self.actor)
 
     def _do_add(self):
         collection = self.target and self.target.as2_item
