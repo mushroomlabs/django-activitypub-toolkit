@@ -67,13 +67,13 @@ def generate_ulid():
     return str(ULID())
 
 
-def _file_location(instance, filename):
+def _file_location(_, filename):
     _, ext = os.path.splitext(filename)
 
-    new_filename = generate_ulid()
-    now = new_filename.timestamp().datetime
-    subfolder = str(new_filename.randomness())[:2]
-    return f"{now.year}/{now.month:02d}/{now.day:02d}/{subfolder}/{new_filename}{ext}"
+    ulid = ULID()
+    now = ulid.datetime
+    subfolder = str(ulid.hex)[-2:]
+    return f"{now.year}/{now.month:02d}/{now.day:02d}/{subfolder}/{ulid}{ext}"
 
 
 def _get_public_actor():
@@ -301,7 +301,7 @@ class LinkedDataModel(models.Model):
         for field in self.link_fields:
             attr_name = self.linked_data_map[field.name]
             attr_value = getattr(self, field.name, None)
-            data[attr_name] = attr_value and attr_value.href
+            data[attr_name] = attr_value and attr_value.serialize()
 
         return data
 
@@ -336,11 +336,6 @@ class LinkedDataModel(models.Model):
         data.update(**self._serialize_reference_list_fields(*args, **kw))
         data.update(**self._serialize_link_fields(*args, **kw))
         data.update(**self._serialize_collection_fields(*args, **kw))
-
-        url_link = data.get("url")
-
-        if type(url_link) is Link:
-            data["url"] = url_link.serialize()
 
         return data
 
@@ -574,6 +569,16 @@ class CoreType(LinkedDataModel):
 
 
 class Link(CoreType):
+    LINKED_DATA_FIELDS = {
+        "type": "type",
+        "name": "name",
+        "href": "href",
+        "media_type": "mediaType",
+        "height": "height",
+        "width": "width",
+        "language": "hreflang",
+    }
+
     class Types(models.TextChoices):
         LINK = str(AS2.Link)
         MENTION = str(AS2.Mention)
@@ -598,6 +603,11 @@ class Link(CoreType):
     @property
     def relations(self):
         return self.related.values_list("type", flat=True)
+
+    def serialize(self, *args, **kw):
+        data = super().serialize(*args, **kw)
+        data.pop("id", None)
+        return data
 
     def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         to_native = lambda x: x and x.toPython()
@@ -678,7 +688,6 @@ class BaseActivityStreamsObject(CoreType):
         "replies": "replies",
         "likes": "likes",
         "shares": "shares",
-        "object_url": "url",
         "tags": "tag",
         "in_reply_to": "inReplyTo",
         "attributed_to": "attributedTo",
@@ -688,6 +697,12 @@ class BaseActivityStreamsObject(CoreType):
         "cc": "cc",
         "bto": "bto",
         "bcc": "bcc",
+        # This one is a bit tricky. AS2.url can be both a simple URL
+        # or a Link. So, both model fields map to the same attribute,
+        # and serialization will overwrite the native url with the
+        # link it is present.
+        "url": "url",
+        "url_link": "url",
     }
 
     reference = models.OneToOneField(
@@ -757,6 +772,15 @@ class BaseActivityStreamsObject(CoreType):
     @property
     def uri(self):
         return self.reference_id
+
+    def is_intended_audience(self, item: CoreType):
+        return any(
+            [
+                self.to.filter(id=item.id).exists(),
+                self.cc.filter(id=item.id).exists(),
+                self.audience.filter(id=item.id).exists(),
+            ]
+        )
 
     def load_from_graph(self, subject_uri: rdflib.URIRef | rdflib.BNode, g: rdflib.Graph):
         if self.reference and self.reference.domain and self.reference.domain.blocked:
@@ -1078,7 +1102,9 @@ class CollectionPage(BaseActivityStreamsObject, CollectionModelMixin):
         return self.reference.domain.build_collection_page(collection=self.part_of)
 
     def serialize(self, *args, **kw):
-        serialize_item = lambda it: it.serialize() if it.is_local else it.uri
+        serialize_item = (
+            lambda it: it.serialize() if it.is_intended_audience(Actor.PUBLIC) else it.uri
+        )
         previous_page = self.previous and self.previous.as2_item
         next_page = self.next and self.next.as2_item
 
@@ -1510,6 +1536,7 @@ class Activity(BaseActivityStreamsObject):
         self.instrument = parse(predicate=AS2.instrument)
         self.save()
 
+    @transaction.atomic()
     def post(self):
         try:
             document = self.to_jsonld()
@@ -1517,17 +1544,22 @@ class Activity(BaseActivityStreamsObject):
             assert actor is not None, f"Activity {self.uri} has no actor"
             assert actor.is_local, f"Activity {self.uri} is not from a local actor"
             for inbox in actor.followers_inboxes:
-                message = Message.objects.create(
-                    activity=self.reference,
-                    sender=actor.reference,
-                    recipient=inbox.reference,
-                    document=document,
-                )
-                message.process()
+                try:
+                    message = Message.objects.create(
+                        activity=self.reference,
+                        sender=actor.reference,
+                        recipient=inbox.reference,
+                        document=document,
+                    )
+                    message.process()
+                except Exception as exc:
+                    logger.warning(f"Failed to process message: {exc}")
+
             # We add the posted activity to the actor outbox if Public
             # is part of the intended audience
-            if Actor.PUBLIC in self.to.all() or Actor.PUBLIC in self.cc.all():
+            if self.is_intended_audience(Actor.PUBLIC):
                 actor.outbox.append(self)
+            self.do()
         except AssertionError as exc:
             logger.warning(exc)
 
@@ -1570,9 +1602,47 @@ class Activity(BaseActivityStreamsObject):
             assert actor is not None, f"Could not find actor {self.actor}"
             assert collection is not None, f"Could not find collection {self.target}"
             assert collection in actor.collections, f"{collection} is not owned by {actor}"
-            collection.collection_items.filter(item=self.object).delete()
+            collection.remove(item=self.object)
         except AssertionError as exc:
             logger.warning(str(exc))
+
+    def _do_announce(self):
+        object = self.object and self.object.as2_item
+
+        if object is not None and object.is_local:
+            object.likes.append(self)
+
+    def _undo_announce(self):
+        object = self.object and self.object.as2_item
+
+        if object is not None and object.is_local:
+            object.likes.remove(self)
+
+    def _do_like(self):
+        actor = self.actor and self.actor.as2_item
+        object = self.object and self.object.as2_item
+
+        if actor is None or object is None:
+            return
+
+        if actor.reference.is_local and self.is_intended_audience(Actor.PUBLIC):
+            actor.liked.append(object)
+
+        if object.is_local and object.likes is not None:
+            object.likes.append(self)
+
+    def _undo_like(self):
+        actor = self.actor and self.actor.as2_item
+        object = self.object and self.object.as2_item
+
+        if actor is None or object is None:
+            return
+
+        if actor.reference.is_local:
+            actor.liked.remove(object)
+
+        if object.is_local and object.likes is not None:
+            object.likes.remove(self)
 
     def _do_accept(self):
         accepted_activity = self.object.as2_item
@@ -1610,7 +1680,7 @@ class Activity(BaseActivityStreamsObject):
         action = {
             str(AS2.Accept): self._do_accept,
             str(AS2.Add): self._do_nothing,
-            str(AS2.Announce): self._do_nothing,
+            str(AS2.Announce): self._do_announce,
             str(AS2.Arrive): self._do_nothing,
             str(AS2.Block): self._do_nothing,
             str(AS2.Create): self._do_nothing,
@@ -1622,7 +1692,7 @@ class Activity(BaseActivityStreamsObject):
             str(AS2.Invite): self._do_nothing,
             str(AS2.Join): self._do_nothing,
             str(AS2.Leave): self._do_nothing,
-            str(AS2.Like): self._do_nothing,
+            str(AS2.Like): self._do_like,
             str(AS2.Listen): self._do_nothing,
             str(AS2.Move): self._do_nothing,
             str(AS2.Offer): self._do_nothing,
@@ -1646,7 +1716,7 @@ class Activity(BaseActivityStreamsObject):
         action = {
             str(AS2.Accept): self._do_nothing,
             str(AS2.Add): self._do_nothing,
-            str(AS2.Announce): self._do_nothing,
+            str(AS2.Announce): self._undo_announce,
             str(AS2.Arrive): self._do_nothing,
             str(AS2.Block): self._do_nothing,
             str(AS2.Create): self._do_nothing,
@@ -1658,7 +1728,7 @@ class Activity(BaseActivityStreamsObject):
             str(AS2.Invite): self._do_nothing,
             str(AS2.Join): self._do_nothing,
             str(AS2.Leave): self._do_nothing,
-            str(AS2.Like): self._do_nothing,
+            str(AS2.Like): self._undo_like,
             str(AS2.Listen): self._do_nothing,
             str(AS2.Move): self._do_nothing,
             str(AS2.Offer): self._do_nothing,
