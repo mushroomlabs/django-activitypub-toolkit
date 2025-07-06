@@ -1,9 +1,14 @@
-from django.db.models.signals import post_save, pre_save
+import logging
+
+from django.db.models.signals import post_save, pre_save, m2m_changed
 from django.dispatch import receiver
 
 from . import tasks
-from .models import Activity, Domain, Object, FollowRequest
+from .models import Activity, CoreType, Domain, Object, FollowRequest
 from .signals import activity_received
+
+
+logger = logging.getLogger(__name__)
 
 
 @receiver(post_save, sender=Domain)
@@ -43,6 +48,21 @@ def on_ap_object_create_define_related_collections(sender, **kw):
             )
 
 
+@receiver(m2m_changed, sender=CoreType.in_reply_to.through)
+def on_new_reply_add_to_replies_collection(sender, **kw):
+    action = kw["action"]
+    instance = kw["instance"]
+    pk_set = kw["pk_set"]
+    if action == "post_add":
+        for pk in pk_set:
+            try:
+                as2_item = CoreType.objects.get_subclass(id=pk)
+                if as2_item.reference.is_local and as2_item.replies is not None:
+                    as2_item.replies.append(instance)
+            except Exception as exc:
+                logger.warning(exc)
+
+
 @receiver(activity_received, sender=Activity)
 def on_activity_received_process_standard_flows(sender, **kw):
     activity = kw["activity"]
@@ -58,3 +78,11 @@ def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
         to_follow = follow_request.followed
         if not to_follow.manually_approves_followers:
             follow_request.accept()
+
+
+__all__ = (
+    "on_domain_created_fetch_nodeinfo",
+    "on_ap_object_create_define_related_collections",
+    "on_activity_received_process_standard_flows",
+    "on_follow_request_created_check_if_it_can_be_accepted",
+)

@@ -79,6 +79,24 @@ class ObjectTestCase(BaseTestCase):
         self.assertEqual(json_ld_doc["type"], "Note")
         self.assertEqual(json_ld_doc["content"], "This is a simple note")
 
+    def test_replies_get_added_to_collection(self):
+        note = factories.ObjectFactory(
+            reference__uri="https://local.example.com/objects/first-note",
+            reference__domain__local=True,
+            type=Object.Types.NOTE,
+            content="This is a simple note",
+        )
+        reply = factories.ObjectFactory(
+            reference__uri="https://remote.example.com/objects/reply-to-note",
+            reference__domain__local=False,
+            type=Object.Types.NOTE,
+            content="This is a reply",
+        )
+
+        reply.in_reply_to.add(note)
+
+        self.assertTrue(note.replies.items.filter(id=reply.id).exists())
+
 
 class AccountTestCase(BaseTestCase):
     def test_can_get_subject_name(self):
@@ -237,10 +255,10 @@ class LinkedDataModelTestCase(BaseTestCase):
                 "start_time",
                 "end_time",
                 "duration",
+                "url",
                 "type",
                 "total_items",
                 "current",
                 "items",
-                "object_url",
             ],
         )
