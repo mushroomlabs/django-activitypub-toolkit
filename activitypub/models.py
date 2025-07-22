@@ -773,6 +773,13 @@ class BaseActivityStreamsObject(CoreType):
     def uri(self):
         return self.reference_id
 
+    @property
+    def is_local(self):
+        try:
+            return self.reference.is_local
+        except AttributeError:
+            return False
+
     def is_intended_audience(self, item: CoreType):
         return any(
             [
@@ -1333,13 +1340,6 @@ class Actor(BaseActivityStreamsObject):
         ]
         return Collection.objects.filter(reference__in=references)
 
-    @property
-    def is_local(self):
-        try:
-            return self.account.domain.local
-        except AttributeError:
-            return False
-
     def _should_be_inlined(self, reference_field, value=None):
         if isinstance(value, Collection):
             return False
@@ -1609,36 +1609,36 @@ class Activity(BaseActivityStreamsObject):
     def _do_announce(self):
         object = self.object and self.object.as2_item
 
-        if object is not None and object.is_local:
-            object.likes.append(self)
+        if object is not None and object.shares is not None:
+            object.shares.append(self)
 
     def _undo_announce(self):
         object = self.object and self.object.as2_item
 
-        if object is not None and object.is_local:
-            object.likes.remove(self)
+        if object is not None and object.shares is not None:
+            object.shares.remove(self)
 
     def _do_like(self):
         actor = self.actor and self.actor.as2_item
         object = self.object and self.object.as2_item
 
-        if actor is None or object is None:
+        if object is None:
             return
 
-        if actor.reference.is_local and self.is_intended_audience(Actor.PUBLIC):
+        if actor is not None and actor.liked is not None:
             actor.liked.append(object)
 
-        if object.is_local and object.likes is not None:
+        if object.likes is not None:
             object.likes.append(self)
 
     def _undo_like(self):
         actor = self.actor and self.actor.as2_item
         object = self.object and self.object.as2_item
 
-        if actor is None or object is None:
+        if object is None:
             return
 
-        if actor.reference.is_local:
+        if actor is not None and actor.liked is not None:
             actor.liked.remove(object)
 
         if object.is_local and object.likes is not None:

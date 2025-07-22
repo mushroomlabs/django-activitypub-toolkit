@@ -79,24 +79,6 @@ class ObjectTestCase(BaseTestCase):
         self.assertEqual(json_ld_doc["type"], "Note")
         self.assertEqual(json_ld_doc["content"], "This is a simple note")
 
-    def test_replies_get_added_to_collection(self):
-        note = factories.ObjectFactory(
-            reference__uri="https://local.example.com/objects/first-note",
-            reference__domain__local=True,
-            type=Object.Types.NOTE,
-            content="This is a simple note",
-        )
-        reply = factories.ObjectFactory(
-            reference__uri="https://remote.example.com/objects/reply-to-note",
-            reference__domain__local=False,
-            type=Object.Types.NOTE,
-            content="This is a reply",
-        )
-
-        reply.in_reply_to.add(note)
-
-        self.assertTrue(note.replies.items.filter(id=reply.id).exists())
-
 
 class AccountTestCase(BaseTestCase):
     def test_can_get_subject_name(self):
@@ -238,6 +220,56 @@ class ActivityTestCase(BaseTestCase):
         unfollow.do()
 
         self.assertFalse(follower in followed.followers.items.all())
+
+    def test_replies_get_added_to_collection(self):
+        note = factories.ObjectFactory(
+            reference__uri="https://local.example.com/objects/first-note",
+            reference__domain__local=True,
+            type=Object.Types.NOTE,
+            content="This is a simple note",
+        )
+        reply = factories.ObjectFactory(
+            reference__uri="https://remote.example.com/objects/reply-to-note",
+            reference__domain__local=False,
+            type=Object.Types.NOTE,
+            content="This is a reply",
+        )
+
+        reply.in_reply_to.add(note)
+
+        self.assertTrue(note.replies.items.filter(id=reply.id).exists())
+
+    def test_likes_get_added_to_likes_collection(self):
+        note = factories.ObjectFactory(
+            reference__uri="https://local.example.com/objects/first-note",
+            reference__domain__local=True,
+            type=Object.Types.NOTE,
+            content="This is a simple note",
+        )
+        like = factories.ActivityFactory(
+            reference__uri="https://remote.example.com/activity/like-note",
+            reference__domain__local=False,
+            type=Activity.Types.LIKE,
+            object=note,
+        )
+        like.do()
+        self.assertTrue(note.likes.items.filter(id=like.id).exists())
+
+    def test_announces_get_added_to_shares_collection(self):
+        note = factories.ObjectFactory(
+            reference__uri="https://local.example.com/objects/first-note",
+            reference__domain__local=True,
+            type=Object.Types.NOTE,
+            content="This is a simple note",
+        )
+        announce = factories.ActivityFactory(
+            reference__uri="https://remote.example.com/activity/share-note",
+            reference__domain__local=False,
+            type=Activity.Types.ANNOUNCE,
+            object=note,
+        )
+        announce.do()
+        self.assertTrue(note.shares.items.filter(id=announce.id).exists())
 
 
 class LinkedDataModelTestCase(BaseTestCase):
