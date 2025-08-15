@@ -1,0 +1,368 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1",
+    {
+      "RsaSignature2017": "https://w3id.org/security#RsaSignature2017"
+    },
+    {
+      "pt": "https://joinpeertube.org/ns#",
+      "sc": "http://schema.org/",
+      "Hashtag": "as:Hashtag",
+      "category": "sc:category",
+      "licence": "sc:license",
+      "subtitleLanguage": "sc:subtitleLanguage",
+      "automaticallyGenerated": "pt:automaticallyGenerated",
+      "sensitive": "as:sensitive",
+      "language": "sc:inLanguage",
+      "identifier": "sc:identifier",
+      "isLiveBroadcast": "sc:isLiveBroadcast",
+      "liveSaveReplay": {
+        "@type": "sc:Boolean",
+        "@id": "pt:liveSaveReplay"
+      },
+      "permanentLive": {
+        "@type": "sc:Boolean",
+        "@id": "pt:permanentLive"
+      },
+      "latencyMode": {
+        "@type": "sc:Number",
+        "@id": "pt:latencyMode"
+      },
+      "Infohash": "pt:Infohash",
+      "tileWidth": {
+        "@type": "sc:Number",
+        "@id": "pt:tileWidth"
+      },
+      "tileHeight": {
+        "@type": "sc:Number",
+        "@id": "pt:tileHeight"
+      },
+      "tileDuration": {
+        "@type": "sc:Number",
+        "@id": "pt:tileDuration"
+      },
+      "aspectRatio": {
+        "@type": "sc:Float",
+        "@id": "pt:aspectRatio"
+      },
+      "uuid": {
+        "@type": "sc:identifier",
+        "@id": "pt:uuid"
+      },
+      "originallyPublishedAt": "sc:datePublished",
+      "uploadDate": "sc:uploadDate",
+      "hasParts": "sc:hasParts",
+      "views": {
+        "@type": "sc:Number",
+        "@id": "pt:views"
+      },
+      "state": {
+        "@type": "sc:Number",
+        "@id": "pt:state"
+      },
+      "size": {
+        "@type": "sc:Number",
+        "@id": "pt:size"
+      },
+      "fps": {
+        "@type": "sc:Number",
+        "@id": "pt:fps"
+      },
+      "commentsEnabled": {
+        "@type": "sc:Boolean",
+        "@id": "pt:commentsEnabled"
+      },
+      "canReply": "pt:canReply",
+      "commentsPolicy": {
+        "@type": "sc:Number",
+        "@id": "pt:commentsPolicy"
+      },
+      "downloadEnabled": {
+        "@type": "sc:Boolean",
+        "@id": "pt:downloadEnabled"
+      },
+      "waitTranscoding": {
+        "@type": "sc:Boolean",
+        "@id": "pt:waitTranscoding"
+      },
+      "support": {
+        "@type": "sc:Text",
+        "@id": "pt:support"
+      },
+      "likes": {
+        "@id": "as:likes",
+        "@type": "@id"
+      },
+      "dislikes": {
+        "@id": "as:dislikes",
+        "@type": "@id"
+      },
+      "shares": {
+        "@id": "as:shares",
+        "@type": "@id"
+      },
+      "comments": {
+        "@id": "as:comments",
+        "@type": "@id"
+      },
+      "PropertyValue": "sc:PropertyValue",
+      "value": "sc:value"
+    },
+    {
+      "ptlc": "urn:peertube-plugin-livechat",
+      "peertubeLiveChat": {
+        "@id": "ptlc:peertubeLiveChat",
+        "@type": "@json"
+      }
+    }
+  ],
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://peertube.example.com/accounts/videoproducer/followers"
+  ],
+  "type": "Video",
+  "id": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef",
+  "name": "Videoproducer Sample File",
+  "duration": "PT348S",
+  "uuid": "deadbeef-dead-beef-beef-deadbeef",
+  "category": {
+    "identifier": "15",
+    "name": "Science & Technology"
+  },
+  "language": {
+    "identifier": "en",
+    "name": "English"
+  },
+  "views": 42,
+  "sensitive": false,
+  "waitTranscoding": true,
+  "state": 1,
+  "commentsEnabled": true,
+  "canReply": null,
+  "commentsPolicy": 1,
+  "downloadEnabled": true,
+  "published": "1970-01-01T11:58:00.000Z",
+  "originallyPublishedAt": null,
+  "updated": "1970-01-01T11:58:00.000Z",
+  "tag": [],
+  "mediaType": "text/markdown",
+  "content": "Test Video Object",
+  "support": "https://activitypub.mushroomlabs.com",
+  "subtitleLanguage": [
+    {
+      "identifier": "en",
+      "name": "English",
+      "automaticallyGenerated": true,
+      "url": "https://storage.example.com/captions/test.vtt"
+    }
+  ],
+  "icon": [
+    {
+      "type": "Image",
+      "url": "https://peertube.example.com/thumbnails/thumbnail.jpg",
+      "mediaType": "image/jpeg",
+      "width": 280,
+      "height": 157
+    },
+    {
+      "type": "Image",
+      "url": "https://peertube.example.com/previews/preview.jpg",
+      "mediaType": "image/jpeg",
+      "width": 850,
+      "height": 480
+    }
+  ],
+  "preview": [
+    {
+      "type": "Image",
+      "rel": [
+        "storyboard"
+      ],
+      "url": [
+        {
+          "mediaType": "image/jpeg",
+          "href": "https://peertube.example.com/storyboards/storyboard.jpg",
+          "width": 2112,
+          "height": 1188,
+          "tileWidth": 192,
+          "tileHeight": 108,
+          "tileDuration": "PT3S"
+        }
+      ]
+    }
+  ],
+  "aspectRatio": 1.7778,
+  "url": [
+    {
+      "type": "Link",
+      "mediaType": "text/html",
+      "href": "https://peertube.example.com/w/xlYCXwqC0g1nHQyYFhh6"
+    },
+    {
+      "type": "Link",
+      "mediaType": "text/html",
+      "href": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef"
+    },
+    {
+      "type": "Link",
+      "mediaType": "application/x-mpegURL",
+      "href": "https://media-streaming.example.com/streaming-playlistshls/playlist.m3u8",
+      "tag": [
+        {
+          "type": "Infohash",
+          "name": "dcfd07001a74aaa083afda8b3bde7db5ad97bda6153ca8e36d6c04b8490bea62"
+        },
+        {
+          "type": "Infohash",
+          "name": "f218a88249022cbf1d605f88f81164ec5be9e9d5ab48571928afdac2994bc25d"
+        },
+        {
+          "type": "Link",
+          "name": "sha256",
+          "mediaType": "application/json",
+          "href": "https://media-streaming.example.com/sample.json"
+        },
+        {
+          "type": "Link",
+          "mediaType": "video/mp4",
+          "href": "https://media-streaming.example.com/the-video.mp4",
+          "height": 1080,
+          "width": 1920,
+          "size": 1111111,
+          "fps": 25,
+          "attachment": [
+            {
+              "type": "PropertyValue",
+              "name": "ffprobe_codec_type",
+              "value": "audio"
+            },
+            {
+              "type": "PropertyValue",
+              "name": "ffprobe_codec_type",
+              "value": "video"
+            },
+            {
+              "type": "PropertyValue",
+              "name": "peertube_format_flag",
+              "value": "fragmented"
+            }
+          ]
+        },
+        {
+          "type": "Link",
+          "rel": [
+            "metadata",
+            "video/mp4"
+          ],
+          "mediaType": "application/json",
+          "href": "https://peertube.example.com/api/v1/videos/deadbeef-dead-beef-beef-deadbeef/metadata/598812",
+          "height": 1080,
+          "width": 1920,
+          "fps": 25
+        },
+        {
+          "type": "Link",
+          "mediaType": "application/x-bittorrent",
+          "href": "https://peertube.example.com/lazy-static/torrents/8385ea36-ba0b-402f-910a-fa968d414112-1080-hls.torrent",
+          "height": 1080,
+          "width": 1920,
+          "fps": 25
+        },
+        {
+          "type": "Link",
+          "mediaType": "video/mp4",
+          "href": "https://media-streaming.example.com/deadbeef-dead-beef-beef-deadbeef/the-video.mp4",
+          "height": 360,
+          "width": 640,
+          "size": 8111111,
+          "fps": 25,
+          "attachment": [
+            {
+              "type": "PropertyValue",
+              "name": "ffprobe_codec_type",
+              "value": "audio"
+            },
+            {
+              "type": "PropertyValue",
+              "name": "ffprobe_codec_type",
+              "value": "video"
+            },
+            {
+              "type": "PropertyValue",
+              "name": "peertube_format_flag",
+              "value": "fragmented"
+            }
+          ]
+        },
+        {
+          "type": "Link",
+          "rel": [
+            "metadata",
+            "video/mp4"
+          ],
+          "mediaType": "application/json",
+          "href": "https://peertube.example.com/api/v1/videos/deadbeef-dead-beef-beef-deadbeef/metadata/111111",
+          "height": 360,
+          "width": 640,
+          "fps": 25
+        },
+        {
+          "type": "Link",
+          "mediaType": "application/x-bittorrent",
+          "href": "https://peertube.example.com/lazy-static/torrents/2fee629f-978e-4843-9bc4-db6a08536940-360-hls.torrent",
+          "height": 360,
+          "width": 640,
+          "fps": 25
+        },
+        {
+          "type": "Link",
+          "mediaType": "application/x-bittorrent;x-scheme-handler/magnet",
+          "href": "magnet:?xs=magnet.peertube.example.com",
+          "height": 360,
+          "width": 640,
+          "fps": 25
+        }
+      ]
+    },
+    {
+      "type": "Link",
+      "name": "tracker-http",
+      "rel": [
+        "tracker",
+        "http"
+      ],
+      "href": "https://peertube.example.com/tracker/announce"
+    },
+    {
+      "type": "Link",
+      "name": "tracker-websocket",
+      "rel": [
+        "tracker",
+        "websocket"
+      ],
+      "href": "wss://peertube.example.com:443/tracker/socket"
+    }
+  ],
+  "likes": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef/likes",
+  "dislikes": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef/dislikes",
+  "shares": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef/announces",
+  "comments": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef/comments",
+  "hasParts": "https://peertube.example.com/videos/watch/deadbeef-dead-beef-beef-deadbeef/chapters",
+  "attributedTo": [
+    {
+      "type": "Person",
+      "id": "https://peertube.example.com/accounts/videoproducer"
+    },
+    {
+      "type": "Group",
+      "id": "https://peertube.example.com/video-channels/videoproducer"
+    }
+  ],
+  "isLiveBroadcast": false,
+  "liveSaveReplay": null,
+  "permanentLive": null,
+  "latencyMode": null
+}
