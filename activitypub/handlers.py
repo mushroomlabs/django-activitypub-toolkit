@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def on_domain_created_fetch_nodeinfo(sender, **kw):
     domain = kw["instance"]
 
-    if kw["created"]:
+    if kw["created"] and not domain.local:
         tasks.fetch_nodeinfo.delay(domain_name=domain.name)
 
 
