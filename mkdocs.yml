@@ -14,35 +14,40 @@ nav:
   - Home: index.md
   - Tutorials:
       - tutorials/index.md
-      - Getting started: tutorials/getting_started.md
+      - Getting Started: tutorials/getting_started.md
+      - Creating Custom Context Models: tutorials/creating_custom_context_models.md
+      - Handling Incoming Activities: tutorials/handling_incoming_activities.md
+      - Publishing to the Fediverse: tutorials/publishing_to_fediverse.md
       - Integrating with your existing Django project: tutorials/integration_with_existing_project.md
       - Using it as a Standalone ActivityPub API Server: tutorials/standalone.md
-      - Creating activity handlers: tutorials/activity_handlers.md
 
   - Topic Guides:
       - topics/index.md
-      - Fundamentals of ActivityPub: topics/activitypub_fundamentals.md
-      - Models:
-          - topics/models/linked_data.md
-          - topics/models/activitypub.md
-          - topics/models/domains.md
-          - topics/models/accounts.md
-          - topics/models/messages.md
-      - Message Adapters: topics/message_adapters.md
-      - Views: topics/views.md
-      - Authentication: topics/authn.md
-      - Authorization: topics/authz.md
-      - Background Tasks: topics/tasks.md
-      - Activity Handlers: topics/activity_handlers.md
+      - Understanding Linked Data and RDF: topics/linked_data_fundamentals.md
+      - References and Context Models: topics/reference_context_architecture.md
+      - From JSON-LD to Django Models: topics/jsonld_to_django.md
+      - Pull-Based Federation: topics/pull_based_federation.md
+      - Authentication and Authorization: topics/authentication_authorization.md
       - Configuration and Customization: topics/application_settings.md
   - Reference:
       - references/index.md
       - Models: references/models.md
+      - Message Processors: references/message_processors.md
+      - Serializers: references/serializers.md
+      - Frames: references/frames.md
+      - Settings: references/settings.md
 
   - HOWTOs:
       - howtos/index.md
+      - Install the Toolkit: howtos/install_toolkit.md
+      - Configure the Toolkit: howtos/configure_toolkit.md
+      - Run Database Migrations: howtos/run_migrations.md
+      - Federate Existing Content: howtos/federate_existing_content.md
+      - Handle Incoming Activities: howtos/handle_incoming_activities.md
+      - Send Activities: howtos/send_activities.md
       - Register Domain: howtos/register_domain.md
       - Register account: howtos/register_account.md
+      - Block Spam and Moderate: howtos/block_spam.md
   - FAQ: faq.md
 
 plugins:

@@ -4,19 +4,7 @@ from .. import models
 from . import actions, filters
 
 
-@admin.register(models.Reference)
-class ReferenceAdmin(admin.ModelAdmin):
-    list_display = ("uri", "domain", "status")
-    list_filter = ("status",)
-    list_select_related = ("domain",)
-    search_fields = ("uri",)
-    actions = (actions.resolve_references,)
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
-
-@admin.register(models.Actor)
+@admin.register(models.ActorContext)
 class ActorAdmin(admin.ModelAdmin):
     list_display = ("uri", "type", "inbox_url", "outbox_url", "following_url", "followers_url")
     list_filter = ("type",)
@@ -68,25 +56,27 @@ class ActivityAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(models.CryptographicKeyPair)
-class CryptographicKeyPairAdmin(admin.ModelAdmin):
-    list_display = ("actor", "key_id")
-    list_select_related = ("actor",)
+@admin.register(models.SecV1Context)
+class SecV1ContextAdmin(admin.ModelAdmin):
+    list_display = ("owned_by", "key_id")
+
+    def owned_by(self, object):
+        return self.owner.first()
 
     def has_change_permission(self, request, obj=None):
         return False
 
 
-@admin.register(models.Collection)
+@admin.register(models.CollectionContext)
 class CollectionAdmin(admin.ModelAdmin):
-    list_display = ("uri", "name", "is_ordered", "total_items")
-    list_filter = ("is_ordered",)
+    list_display = ("uri", "name", "type", "total_items")
+    list_filter = ("type",)
 
     def has_change_permission(self, request, obj=None):
         return False
 
 
-@admin.register(models.CollectionPage)
+@admin.register(models.CollectionPageContext)
 class CollectionPageAdmin(admin.ModelAdmin):
     list_display = ("uri", "name", "part_of")
 
@@ -97,13 +87,13 @@ class CollectionPageAdmin(admin.ModelAdmin):
 @admin.register(models.CollectionItem)
 class CollectionItemAdmin(admin.ModelAdmin):
     list_display = ("get_collection", "get_collection_name", "get_item", "order")
-    list_select_related = ("item__baseactivitystreamsobject__reference",)
-    search_fields = ("item__baseactivitystreamsobject__reference__uri",)
+    list_select_related = ("item",)
+    search_fields = ("item__uri",)
 
     def get_search_results(self, request, queryset, search_term):
-        pages = models.CollectionPage.objects.filter(
-            part_of__reference__uri=search_term
-        ).values_list("id", flat=True)
+        pages = models.CollectionPageContext.objects.filter(part_of__uri=search_term).values_list(
+            "id", flat=True
+        )
 
         queryset = queryset.order_by("order")
 
@@ -113,7 +103,7 @@ class CollectionItemAdmin(admin.ModelAdmin):
             ).order_by("order")
             return queryset, False
 
-        collection = models.Collection.objects.filter(reference__uri=search_term).first()
+        collection = models.CollectionContext.objects.filter(reference__uri=search_term).first()
         if collection:
             queryset = models.CollectionItem.objects.filter(
                 container_object_id=collection.id
@@ -137,13 +127,13 @@ class CollectionItemAdmin(admin.ModelAdmin):
 
     @admin.display(description="Item")
     def get_item(self, obj):
-        return obj.item.as2_item
+        return obj.item.uri
 
     def has_change_permission(self, request, obj=None):
         return False
 
 
-@admin.register(models.Object)
+@admin.register(models.ObjectContext)
 class ObjectAdmin(admin.ModelAdmin):
     list_display = ("uri", "type", "name", "content")
     list_filter = ("type", "media_type")
@@ -153,7 +143,7 @@ class ObjectAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(models.Link)
+@admin.register(models.LinkContext)
 class LinkAdmin(admin.ModelAdmin):
     list_display = ("href", "media_type")
     list_filter = ("media_type",)
@@ -162,22 +152,17 @@ class LinkAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(models.Message)
-class MessageAdmin(admin.ModelAdmin):
+@admin.register(models.Notification)
+class NotificationAdmin(admin.ModelAdmin):
     list_display = (
-        "activity",
+        "resource",
         "sender",
-        "recipient",
+        "target",
         "get_activity_type",
         "get_processed",
         "get_verified",
     )
-    list_select_related = (
-        "sender",
-        "activity",
-        "recipient",
-        "activity__item__as_activity",
-    )
+    list_select_related = ("sender", "target", "resource")
     list_filter = (
         filters.MessageDirectionFilter,
         filters.MessageVerifiedFilter,
@@ -201,9 +186,9 @@ class MessageAdmin(admin.ModelAdmin):
     @admin.display(description="Activity Type")
     def get_activity_type(self, obj):
         try:
-            activity = obj.activity.item.as_activity
+            activity = obj.message.reference.activitypub_activitycontext_context
             return activity.get_type_display()
-        except models.Reference.item.RelatedObjectDoesNotExist:
+        except models.Reference.RelatedObjectDoesNotExist:
             return None
 
     def has_change_permission(self, request, obj=None):
@@ -217,15 +202,14 @@ class FollowRequestAdmin(admin.ModelAdmin):
 
 
 __all__ = [
-    "MessageAdmin",
+    "NotificationAdmin",
     "LinkAdmin",
     "ObjectAdmin",
     "CollectionAdmin",
     "CollectionPageAdmin",
     "CollectionItemAdmin",
-    "CryptographicKeyPairAdmin",
+    "SecV1ContextAdmin",
     "DomainAdmin",
-    "ReferenceAdmin",
     "AccountAdmin",
     "ActorAdmin",
     "ActivityAdmin",

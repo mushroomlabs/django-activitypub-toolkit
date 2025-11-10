@@ -6,6 +6,10 @@ class UnprocessableJsonLd(Exception):
     pass
 
 
+class DocumentResolutionError(Exception):
+    pass
+
+
 class MessageProcessorException(Exception):
     pass
 

@@ -10,3 +10,6 @@ class NodeInfoSerializer(serializers.Serializer):
     version = serializers.CharField()
     software = NodeInfoSoftwareSerializer()
     protocols = serializers.ListSerializer(child=serializers.CharField())
+
+
+__all__ = ("NodeInfoSerializer", "NodeInfoSoftwareSerializer")

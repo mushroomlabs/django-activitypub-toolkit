@@ -7,30 +7,11 @@ steps:
 
   test:
     image: python:3.12
-    environment:
-      DJANGO_SETTINGS_MODULE: activitypub_toolkit.services.base.settings
-      ACTIVITYPUB_TOOLKIT_STATIC_ROOT: /var/activitypub_toolkit/static
-      ACTIVITYPUB_TOOLKIT_MEDIA_ROOT: /var/activitypub_toolkit/media
-      ACTIVITYPUB_TOOLKIT_DATABASE_HOST: db
-      ACTIVITYPUB_TOOLKIT_DATABASE_PORT: "5432"
-      ACTIVITYPUB_TOOLKIT_DATABASE_NAME: ci
-      ACTIVITYPUB_TOOLKIT_DATABASE_USER: ci
-      ACTIVITYPUB_TOOLKIT_DATABASE_PASSWORD: ci_password
-      ACTIVITYPUB_TOOLKIT_SECRET_KEY: ci-test-secret-key
     commands:
       - apt-get update
       - pip install uv
       - uv sync --extra dev
-      - uv run django-admin collectstatic --no-input
       - uv run pytest
-
-services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: ci
-      POSTGRES_USER: ci
-      POSTGRES_PASSWORD: ci_password
 
 when:
   event: [push, pull_request, manual]

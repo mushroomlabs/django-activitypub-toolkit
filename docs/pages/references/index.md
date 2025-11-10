@@ -1,4 +1,21 @@
-This section is meant to provide a reference for all the modules
-provided by Django ActivityPub Toolkit for other developers who want
-to have a better understanding of the internal workings and/or wish to
-extend to add new functionality.
+---
+hide:
+  - toc
+---
+
+
+# Reference Guides
+
+This section provides technical reference documentation for Django ActivityPub Toolkit components. Use these pages to understand the internal APIs, configuration options, and extension points.
+
+## Core Components
+
+**[Models](models.md)** - Database models for ActivityPub data structures, references, and context models.
+
+**[Message Processors](message_processors.md)** - Classes for processing incoming and outgoing ActivityPub messages.
+
+**[Serializers](serializers.md)** - JSON-LD serialization and deserialization utilities.
+
+**[Frames](frames.md)** - JSON-LD framing classes for controlling data structure and embedding.
+
+**[Settings](settings.md)** - Configuration options and customization settings.

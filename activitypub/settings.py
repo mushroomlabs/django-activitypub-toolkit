@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class AppSettings:
     class Instance:
         open_registrations = True
-        default_domain = "example.com"
+        default_url = "http://example.com"
         shared_inbox_view_name = None
         activity_view_name = None
         actor_view_name = None
@@ -31,12 +31,51 @@ class AppSettings:
         remote_object_fetching = timedelta(minutes=10)
 
     class Middleware:
-        message_processors = ["activitypub.message_processors.ActorDeletionMessageProcessor"]
+        message_processors = [
+            "activitypub.message_processors.ActorDeletionMessageProcessor",
+            "activitypub.message_processors.CompactJsonLdMessageProcessor",
+        ]
+
+    class LinkedData:
+        document_resolvers = [
+            "activitypub.resolvers.ConstantDocumentResolver",
+            "activitypub.resolvers.HttpDocumentResolver",
+        ]
+        autoloaded_context_models = [
+            "activitypub.models.LinkContext",
+            "activitypub.models.ObjectContext",
+            "activitypub.models.ActorContext",
+            "activitypub.models.ActivityContext",
+            "activitypub.models.EndpointContext",
+            "activitypub.models.QuestionContext",
+            "activitypub.models.CollectionContext",
+            "activitypub.models.CollectionPageContext",
+            "activitypub.models.SecV1Context",
+        ]
+        custom_serializers = {
+            "activitypub.models.CollectionContext": "activitypub.serializers.CollectionContextSerializer",  # noqa
+            "activitypub.models.CollectionPageContext": "activitypub.serializers.CollectionContextSerializer",  # noqa
+        }
+
+    @property
+    def DOCUMENT_RESOLVERS(self):
+        return [import_string(s) for s in self.LinkedData.document_resolvers]
+
+    @property
+    def AUTOLOADED_CONTEXT_MODELS(self):
+        return [import_string(s) for s in self.LinkedData.autoloaded_context_models]
 
     @property
     def MESSAGE_PROCESSORS(self):
         classes = [import_string(s) for s in self.Middleware.message_processors]
         return [c() for c in classes]
+
+    @property
+    def CUSTOM_SERIALIZERS(self):
+        return {
+            import_string(model_path): import_string(serializer_path)
+            for model_path, serializer_path in self.LinkedData.custom_serializers.items()
+        }
 
     def __init__(self):
         self.load()
@@ -44,7 +83,7 @@ class AppSettings:
     def load(self):
         ATTRS = {
             "OPEN_REGISTRATIONS": (self.Instance, "open_registrations"),
-            "DEFAULT_DOMAIN": (self.Instance, "default_domain"),
+            "DEFAULT_URL": (self.Instance, "default_url"),
             "FORCE_INSECURE_HTTP": (self.Instance, "force_http"),
             "SHARED_INBOX_VIEW": (self.Instance, "shared_inbox_view_name"),
             "SYSTEM_ACTOR_VIEW": (self.Instance, "system_actor_view_name"),
@@ -59,6 +98,9 @@ class AppSettings:
             "SOFTWARE_VERSION": (self.NodeInfo, "software_version"),
             "RATE_LIMIT_REMOTE_FETCH": (self.RateLimit, "remote_object_fetching"),
             "MESSAGE_PROCESSORS": (self.Middleware, "message_processors"),
+            "DOCUMENT_RESOLVERS": (self.LinkedData, "document_resolvers"),
+            "AUTOLOADED_CONTEXT_MODELS": (self.LinkedData, "autoloaded_context_models"),
+            "CUSTOM_SERIALIZERS": (self.LinkedData, "custom_serializers"),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 

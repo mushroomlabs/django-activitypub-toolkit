@@ -1,55 +1,127 @@
 # Model Reference
 
-## Linked Data
+Django ActivityPub Toolkit uses several categories of models to represent ActivityPub data structures, federation state, and application-specific entities.
 
-These are model classes that are used to map [Linked
-Data](https://www.w3.org/wiki/LinkedData) resources as Django model
-Objects
+## Core Federation Models
 
-::: activitypub.models.LinkedDataModel
+These models manage the fundamental entities for ActivityPub federation.
+
+### Domains and References
+
+::: activitypub.models.Domain
+    options:
+      heading_level: 4
 
 ::: activitypub.models.Reference
+    options:
+      heading_level: 4
 
-## ActivityStreams Vocabulary
+::: activitypub.models.LinkedDataDocument
+    options:
+      heading_level: 4
 
-These models are to hold the "proper" data objects that according to
-[ActivityStreams](https://www.w3.org/TR/activitystreams-core/):
+### Accounts and Actors
+
+::: activitypub.models.Account
+    options:
+      heading_level: 4
+
+::: activitypub.models.ActivityPubServer
+    options:
+      heading_level: 4
+
+## ActivityStreams Context Models
+
+These models store ActivityStreams 2.0 vocabulary data attached to references.
 
 ### Core Types
 
-::: activitypub.models.CoreType
+::: activitypub.models.LinkContext
+    options:
+      heading_level: 4
 
-::: activitypub.models.Link
+::: activitypub.models.as2.AbstractAs2ObjectContext
+    options:
+      heading_level: 4
 
-::: activitypub.models.BaseActivityStreamsObject
+::: activitypub.models.ActorContext
+    options:
+      heading_level: 4
 
-::: activitypub.models.Collection
+::: activitypub.models.ActivityContext
+    options:
+      heading_level: 4
+
+::: activitypub.models.QuestionContext
+    options:
+      heading_level: 4
+
+### Collections
+
+::: activitypub.models.CollectionContext
+    options:
+      heading_level: 4
+
+::: activitypub.models.CollectionPageContext
+    options:
+      heading_level: 4
 
 ::: activitypub.models.CollectionItem
+    options:
+      heading_level: 4
 
-::: activitypub.models.Object
+### Extended Properties
 
-::: activitypub.models.Actor
-
-::: activitypub.models.Activity
-
-
-### Helper / Extended attributes
-
-Model Classes that hold data from AS types that extend the basic Object/Link attributes
+::: activitypub.models.EndpointContext
+    options:
+      heading_level: 4
 
 ::: activitypub.models.LinkRelation
-
-::: activitypub.models.QuestionExtraData
+    options:
+      heading_level: 4
 
 ::: activitypub.models.RelationshipProperties
+    options:
+      heading_level: 4
 
+::: activitypub.models.LinkedFile
+    options:
+      heading_level: 4
 
-## Keypair Management
+## Security and Integrity
 
-The integrity of the messages being exchanged between servers rely on
-cryptographically signed messages. To exchange information about keys
-and who owns them, the [Security
-Vocabulary](https://w3c-ccg.github.io/security-vocab/) is used by ActivityPub.
+Models for cryptographic operations and message integrity verification.
 
-::: activitypub.models.CryptographicKeyPair
+::: activitypub.models.SecV1Context
+    options:
+      heading_level: 4
+
+::: activitypub.models.HttpMessageSignature
+    options:
+      heading_level: 4
+
+## Notifications and Processing
+
+Models for handling incoming activities and background processing.
+
+::: activitypub.models.Notification
+    options:
+      heading_level: 4
+
+::: activitypub.models.NotificationProcessResult
+    options:
+      heading_level: 4
+
+::: activitypub.models.NotificationIntegrityProof
+    options:
+      heading_level: 4
+
+::: activitypub.models.NotificationProofVerification
+    options:
+      heading_level: 4
+
+## Social Features
+
+::: activitypub.models.FollowRequest
+    options:
+      heading_level: 4

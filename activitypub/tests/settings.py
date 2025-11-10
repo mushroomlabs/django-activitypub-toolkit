@@ -26,14 +26,9 @@ ROOT_URLCONF = "activitypub.tests.urls"
 APPEND_SLASH = False
 
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
-
-CELERY_TASK_ALWAYS_EAGER = True
-CELERY_TASK_EAGER_PROPAGATES = True
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LANGUAGE_CODE = "en-us"
-
 
 TIME_ZONE = "UTC"
 
@@ -61,4 +56,4 @@ TEMPLATES = [
     }
 ]
 
-FEDERATION = {"DEFAULT_DOMAIN": "testserver", "SOFTWARE_NAME": "activitypub_toolkit"}
+FEDERATION = {"DEFAULT_URL": "http://testserver", "SOFTWARE_NAME": "activitypub_toolkit"}

@@ -6,7 +6,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 SECRET_KEY = "testing-key-11234567890"
 ALLOWED_HOSTS = ["*"]
-DEBUG = "ACTIVITYPUB_TOOLKIT_DEBUG" in os.environ
+DEBUG = True
 
 # Application definitionn
 INSTALLED_APPS = [
@@ -79,6 +79,49 @@ TEMPLATES = [
 ]
 
 STATIC_URL = "/static/"
+STATIC_ROOT = os.getenv("ACTIVITYPUB_TOOLKIT_STATIC_ROOT", "static")
 
 # ActivityPub
-FEDERATION = {"DEFAULT_DOMAIN": "testserver", "SOFTWARE_NAME": "activitypub_toolkit"}
+FEDERATION = {"DEFAULT_URL": "http://testserver", "SOFTWARE_NAME": "activitypub_toolkit"}
+
+LOG_LEVEL = "DEBUG" if DEBUG else "INFO"
+LOGGING_HANDLERS = {
+    "null": {"level": "DEBUG", "class": "logging.NullHandler"},
+    "console": {
+        "level": LOG_LEVEL,
+        "class": "logging.StreamHandler",
+        "formatter": "verbose",
+    },
+}
+
+LOGGING_HANDLER_METHODS = ["console"]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": "ACTIVITYPUB_LOG_DISABLE_EXISTING_LOGGERS" in os.environ,
+    "formatters": {
+        "verbose": {
+            "format": "%(asctime)s %(levelname)s:%(pathname)s %(process)d %(lineno)d %(message)s"
+        },
+        "simple": {"format": "%(levelname)s:%(module)s %(lineno)d %(message)s"},
+    },
+    "handlers": LOGGING_HANDLERS,
+    "loggers": {
+        "django": {"handlers": ["null"], "propagate": True, "level": "INFO"},
+        "django.db.backends:": {
+            "handlers": LOGGING_HANDLER_METHODS,
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": LOGGING_HANDLER_METHODS,
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "activitypub": {
+            "handlers": LOGGING_HANDLER_METHODS,
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+    },
+}

@@ -5,17 +5,32 @@ from factory import fuzzy
 from . import models
 
 
+class ContextModelSubFactory(factory.SubFactory):
+    def evaluate(self, instance, step, extra):
+        related_obj = super().evaluate(instance, step, extra)
+        return related_obj.reference if related_obj else None
+
+
 @factory.django.mute_signals(post_save)
 class DomainFactory(factory.django.DjangoModelFactory):
     name = factory.Sequence(lambda n: f"test-domain-{n:03d}.com")
     local = False
+    scheme = "https"
 
     class Meta:
         model = models.Domain
 
 
+@factory.django.mute_signals(post_save)
+class InstanceFactory(factory.django.DjangoModelFactory):
+    domain = factory.SubFactory(DomainFactory, local=True)
+
+    class Meta:
+        model = models.ActivityPubServer
+
+
 class ReferenceFactory(factory.django.DjangoModelFactory):
-    uri = factory.LazyAttribute(lambda obj: f"{obj.domain.scheme}{obj.domain.name}{obj.path}")
+    uri = factory.LazyAttribute(lambda obj: f"{obj.domain.url}{obj.path}")
     domain = factory.SubFactory(DomainFactory)
     path = factory.Sequence(lambda n: f"/item-{n:03d}")
 
@@ -24,8 +39,14 @@ class ReferenceFactory(factory.django.DjangoModelFactory):
         exclude = ("path",)
 
 
+class LinkedDataDocumentFactory(factory.django.DjangoModelFactory):
+    reference = factory.SubFactory(ReferenceFactory)
+
+    class Meta:
+        model = models.LinkedDataDocument
+
+
 class BaseActivityStreamsObjectFactory(factory.django.DjangoModelFactory):
-    id = factory.LazyFunction(models.generate_ulid)
     reference = factory.SubFactory(ReferenceFactory)
 
     @factory.post_generation
@@ -45,18 +66,17 @@ class BaseActivityStreamsObjectFactory(factory.django.DjangoModelFactory):
 
 class CollectionFactory(BaseActivityStreamsObjectFactory):
     name = factory.Sequence(lambda n: f"Collection {n:03d}")
-    reference = factory.SubFactory(ReferenceFactory)
 
     class Meta:
-        model = models.Collection
+        model = models.CollectionContext
 
 
 class ActorFactory(BaseActivityStreamsObjectFactory):
     type = models.Actor.Types.PERSON
-    reference = factory.SubFactory(ReferenceFactory)
-    inbox = factory.SubFactory(CollectionFactory)
-    followers = factory.SubFactory(CollectionFactory)
-    following = factory.SubFactory(CollectionFactory)
+    inbox = factory.SubFactory(ReferenceFactory)
+    outbox = factory.SubFactory(ReferenceFactory)
+    followers = factory.SubFactory(ReferenceFactory)
+    following = factory.SubFactory(ReferenceFactory)
 
     class Meta:
         model = models.Actor
@@ -70,24 +90,22 @@ class AccountFactory(factory.django.DjangoModelFactory):
             lambda o: f"/users/{o.factory_parent.preferred_username}"
         ),
         reference__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
-        inbox__reference__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.factory_parent.preferred_username}/inbox"
+        inbox__path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/inbox"
         ),
-        inbox__reference__domain=factory.LazyAttribute(
-            lambda o: o.factory_parent.factory_parent.factory_parent.domain
+        inbox__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
+        outbox__path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/outbox"
         ),
-        followers__reference__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.factory_parent.preferred_username}/followers"
+        outbox__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
+        followers__path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/followers"
         ),
-        followers__reference__domain=factory.LazyAttribute(
-            lambda o: o.factory_parent.factory_parent.factory_parent.domain
+        followers__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
+        following__path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/following"
         ),
-        following__reference__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.factory_parent.preferred_username}/following"
-        ),
-        following__reference__domain=factory.LazyAttribute(
-            lambda o: o.factory_parent.factory_parent.factory_parent.domain
-        ),
+        following__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
     )
 
     username = factory.Sequence(lambda n: f"test-user-{n:03}")
@@ -98,33 +116,58 @@ class AccountFactory(factory.django.DjangoModelFactory):
 
 
 class ObjectFactory(BaseActivityStreamsObjectFactory):
-    type = fuzzy.FuzzyChoice(choices=models.Object.Types.choices)
+    type = fuzzy.FuzzyChoice(choices=models.ObjectContext.Types.choices)
 
     class Meta:
-        model = models.Object
+        model = models.ObjectContext
 
 
-class ActivityFactory(BaseActivityStreamsObjectFactory):
-    type = fuzzy.FuzzyChoice(choices=models.Activity.Types.choices)
-    reference = factory.SubFactory(ReferenceFactory)
-    actor = factory.SubFactory(ActorFactory)
+class ActivityContextFactory(BaseActivityStreamsObjectFactory):
+    type = fuzzy.FuzzyChoice(choices=models.ActivityContext.Types.choices)
+    actor = ContextModelSubFactory(ActorFactory)
 
+    class Meta:
+        model = models.ActivityContext
+
+
+class ActivityFactory(ActivityContextFactory):
     class Meta:
         model = models.Activity
 
 
 class LinkFactory(BaseActivityStreamsObjectFactory):
-    reference = None
-
     class Meta:
-        model = models.Link
+        model = models.LinkContext
 
 
 @factory.django.mute_signals(post_save)
-class MessageFactory(factory.django.DjangoModelFactory):
+class NotificationFactory(factory.django.DjangoModelFactory):
     sender = factory.SubFactory(ReferenceFactory)
-    recipient = factory.SubFactory(ReferenceFactory)
-    activity = factory.SubFactory(ReferenceFactory)
+    target = factory.SubFactory(ReferenceFactory)
+    resource = factory.SubFactory(ReferenceFactory)
 
     class Meta:
-        model = models.Message
+        model = models.Notification
+
+
+class NotificationIntegrityProofFactory(factory.django.DjangoModelFactory):
+    notification = factory.SubFactory(NotificationFactory)
+
+    class Meta:
+        model = models.NotificationIntegrityProof
+
+
+class NotificationProofVerificationFactory(factory.django.DjangoModelFactory):
+    notification = factory.LazyAttribute(lambda o: o.proof.notification)
+    proof = factory.SubFactory(NotificationIntegrityProofFactory)
+
+    class Meta:
+        model = models.NotificationProofVerification
+
+
+class NotificationProcessResultFactory(factory.django.DjangoModelFactory):
+    notification = factory.SubFactory(NotificationFactory)
+    result = models.NotificationProcessResult.Types.OK
+
+    class Meta:
+        model = models.NotificationProcessResult

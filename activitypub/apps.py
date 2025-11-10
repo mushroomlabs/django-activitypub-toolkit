@@ -15,6 +15,8 @@ class ActivityPubConfig(AppConfig):
         from . import handlers  # noqa
         from . import signals  # noqa
         from .schemas import builtin_document_loader, secure_rdflib
+        from .frames import _register_frames
 
         secure_rdflib()
         jsonld.set_document_loader(builtin_document_loader)
+        _register_frames()

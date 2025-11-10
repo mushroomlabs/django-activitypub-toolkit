@@ -1,62 +1,31 @@
-# Getting Started with Django ActivityPub Toolkit
+---
+title: Getting Started
+---
 
-Welcome to Django ActivityPub Toolkit! This tutorial will guide you
-through setting up your first ActivityPub server using our framework.
-By the end of this tutorial, you'll have a working microblogging server
-that can:
+This tutorial builds a federated journal application where users write entries about their daily activities and share them across the Fediverse. You will learn how Django ActivityPub Toolkit enables applications to operate on the social graph rather than replicating it.
 
-- Create and manage user accounts
-- Compose and publish blog posts
-- Handle basic ActivityPub activities (Create, Follow, Like)
-- Interact with other ActivityPub servers
+By the end of this tutorial, you will have a working application that federates journal entries using ActivityStreams vocabulary, demonstrates reference-first architecture, and integrates with existing ActivityPub servers.
 
 ## Prerequisites
 
-Before we begin, make sure you have:
+You need Python 3.9 or higher, basic Django knowledge, and familiarity with virtual environments. Understanding HTTP and JSON helps but is not required. No prior ActivityPub or Linked Data experience is necessary—the tutorial explains concepts as they appear.
 
-- Python 3.8 or higher installed
-- pip (Python package manager)
-- A basic understanding of Django (our framework is built on top of Django)
-- A text editor or IDE of your choice
+## Project Setup
 
-## Setting Up Your Development Environment
-
-Let's start by creating a new virtual environment and installing the required packages:
+Create a new Django project for the journal application:
 
 ```bash
-# Create a new virtual environment
+mkdir fedjournal
+cd fedjournal
 python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Activate the virtual environment
-# On Linux/macOS:
-source venv/bin/activate
-# On Windows:
-.\venv\Scripts\activate
-
-# Install Django ActivityPub Toolkit
-pip install django-activitypub-toolkit
+pip install django django-activitypub-toolkit
+django-admin startproject config .
+python manage.py startapp journal
 ```
 
-## Creating Your Microblogging Server
-
-In this section, we'll create a simple microblogging server called
-"adapt" (A Django ActivityPub Toolkit). We'll use Django's admin
-interface to compose and manage blog posts.
-
-### 1. Create the Django Project and App
-
-```bash
-# Create a new Django project
-django-admin startproject adapt
-cd adapt
-
-# Create a new app for our blog functionality
-python manage.py startapp blog
-```
-
-### 2. Configure Your Project
-
-Update `adapt/settings.py` to include our apps and configure ActivityPub:
+Add the toolkit and your app to `INSTALLED_APPS` in `config/settings.py`:
 
 ```python
 INSTALLED_APPS = [
@@ -66,171 +35,474 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'activitypub',  # Add ActivityPub Toolkit
-    'blog',  # Add our blog app
+    'activitypub',
+    'journal',
 ]
+```
 
-# ActivityPub settings
-ACTIVITYPUB = {
-    'DOMAIN': 'localhost:8000',  # Change this in production
+Configure the toolkit's basic settings:
+
+```python
+FEDERATION = {
+    'DEFAULT_URL': 'http://localhost:8000',
+    'SOFTWARE_NAME': 'FedJournal',
+    'SOFTWARE_VERSION': '0.1.0',
+    'ACTOR_VIEW': 'journal:actor',
+    'OBJECT_VIEW': 'journal:entry-detail',
 }
-
-# Add to your existing settings
-STATIC_URL = '/static/'
-MEDIA_URL = '/media/'
 ```
 
-### 3. Create the Blog Models
+Run initial migrations:
 
-Create `blog/models.py` to define our account model:
+```bash
+python manage.py migrate
+```
+
+## Understanding the Architecture
+
+A journal application stores entries users write. Each entry has content, a timestamp, and optionally metadata like duration or tags. Users own their entries and can share them with followers.
+
+The toolkit's architecture separates application concerns from federation concerns. Your application model handles business logic—user relationships, entry categorization, privacy settings. ActivityPub context models handle federation—the content that appears in the Fediverse, publication timestamps, addressing.
+
+The `Reference` connects these layers. Both your application model and the context models link to the same reference. The reference has a URI that identifies this resource globally across the Fediverse.
+
+## Creating the Application Model
+
+Create your application model in `journal/models.py`:
 
 ```python
-from django.contrib.auth.models import User
 from django.db import models
-from activitypub.models import Account
+from django.contrib.auth.models import User
+from activitypub.models import Reference
 
-class UserAccount(models.Model):
-    """A model that associates a Django User with an ActivityPub Account."""
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    account = models.OneToOneField(Account, on_delete=models.CASCADE)
-
+class JournalEntry(models.Model):
+    class EntryType(models.TextChoices):
+        PERSONAL = 'personal', 'Personal'
+        WORK = 'work', 'Work'
+        EXERCISE = 'exercise', 'Exercise'
+        LEARNING = 'learning', 'Learning'
+        CREATIVE = 'creative', 'Creative'
+    
+    reference = models.OneToOneField(
+        Reference,
+        on_delete=models.CASCADE,
+        related_name='journal_entry'
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    entry_type = models.CharField(
+        max_length=20,
+        choices=EntryType.choices,
+        default=EntryType.PERSONAL
+    )
+    
+    class Meta:
+        ordering = ['-id']
+        verbose_name_plural = 'journal entries'
+    
     def __str__(self):
-        return f"{self.user.username}'s ActivityPub account"
+        return f"{self.user.username}'s {self.entry_type} entry"
+    
+    @property
+    def as2(self):
+        """Access the ActivityStreams context for this entry."""
+        from activitypub.models import ObjectContext
+        return self.reference.get_by_context(ObjectContext)
 ```
 
-### 4. Set Up URL Routing
+The `reference` field links to the toolkit's `Reference` model. This reference serves as the anchor connecting your application data to the federated social graph. The `entry_type` field is application-specific—it categorizes entries for your business logic but doesn't federate. Federated data like content and publication time live in the ActivityStreams context, accessed through `entry.as2`.
 
-Create `adapt/urls.py` to handle all our routes:
+## Setting Up the Domain
+
+The domain represents your server instance in the federation. Create a management command in `journal/management/commands/setup_domain.py`:
 
 ```python
-from activitypub.views import (
-    ActivityPubObjectDetailView,
-    ActorDetailView,
-    HostMeta,
-    Webfinger,
-)
-from django.conf import settings
-from django.conf.urls.static import static
+from django.core.management.base import BaseCommand
+from activitypub.models import Domain
+
+class Command(BaseCommand):
+    help = 'Set up the local domain'
+    
+    def handle(self, *args, **options):
+        domain, created = Domain.objects.get_or_create(
+            domain='localhost:8000',
+            defaults={'local': True}
+        )
+        if created:
+            self.stdout.write(self.style.SUCCESS(f'Created domain: {domain}'))
+        else:
+            self.stdout.write(self.style.WARNING(f'Domain already exists: {domain}'))
+```
+
+Run this command:
+
+```bash
+python manage.py setup_domain
+```
+
+## Creating Journal Entries
+
+When a user writes a journal entry, create both the application record and the ActivityPub context. Add a helper method to your model:
+
+```python
+from django.utils import timezone
+from datetime import timedelta
+from activitypub.models import Reference, ObjectContext, Domain
+
+class JournalEntry(models.Model):
+    # ... existing fields ...
+    
+    @classmethod
+    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL, 
+                     title=None, duration=None):
+        """Create a journal entry with its ActivityPub representation."""
+        # Generate a reference for this entry
+        domain = Domain.get_default()
+        reference = ObjectContext.generate_reference(domain)
+        
+        # Create the ActivityPub context
+        obj_context = ObjectContext.make(
+            reference=reference,
+            type=ObjectContext.Types.NOTE,
+            content=content,
+            name=title,
+            published=timezone.now(),
+            duration=duration,
+        )
+        
+        # Create the application entry
+        entry = cls.objects.create(
+            reference=reference,
+            user=user,
+            entry_type=entry_type,
+        )
+        
+        return entry
+```
+
+This pattern demonstrates the reference-first architecture. Generate a reference with a URI. Create the ActivityPub context with federated fields like `content`, `published`, and `duration`. Create your application model linking to the same reference. Both models now share the reference as their connection point.
+
+The context model fields map to ActivityStreams vocabulary. `content` holds the journal text. `published` marks when it was written. `duration` records how long an activity took, useful for exercise or work sessions. `name` provides an optional title.
+
+## Admin Interface
+
+Set up Django admin to test entry creation. Create `journal/admin.py`:
+
+```python
 from django.contrib import admin
-from django.urls import path
+from django.utils import timezone
+from datetime import timedelta
+from journal.models import JournalEntry
 
-from blog.views import NodeInfoView
-
-urlpatterns = [
-    path(".well-known/nodeinfo", NodeInfoView.as_view(), name="nodeinfo"),
-    path(".well-known/webfinger", Webfinger.as_view(), name="webfinger"),
-    path(".well-known/host-meta", HostMeta.as_view(), name="host-meta"),
-    path("nodeinfo/2.0", NodeInfo2.as_view(), name="nodeinfo20"),
-    path("nodeinfo/2.0.json", NodeInfo2.as_view(), name="nodeinfo20-json"),
-    path("@<str:subject_name>", ActorDetailView.as_view(), name="actor-detail-by-subject-name"),
-    path("admin/", admin.site.urls),
-]
-
-if settings.DEBUG:
-    urlpatterns.extend(static(settings.STATIC_URL, document_root=settings.STATIC_ROOT))
-    urlpatterns.extend(static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT))
-
-urlpatterns.append(
-    path("<path:resource>", ActivityPubObjectDetailView.as_view(), name="activitypub-resource")
-)
+@admin.register(JournalEntry)
+class JournalEntryAdmin(admin.ModelAdmin):
+    list_display = ('user', 'entry_type', 'get_published', 'get_title')
+    list_filter = ('entry_type', 'user')
+    readonly_fields = ('reference', 'get_content', 'get_published', 'get_duration')
+    fields = ('user', 'entry_type', 'reference', 'get_content', 
+              'get_published', 'get_duration')
+    
+    def get_published(self, obj):
+        return obj.as2.published if obj.as2 else None
+    get_published.short_description = 'Published'
+    
+    def get_title(self, obj):
+        return obj.as2.name if obj.as2 else '(untitled)'
+    get_title.short_description = 'Title'
+    
+    def get_content(self, obj):
+        return obj.as2.content if obj.as2 else None
+    get_content.short_description = 'Content'
+    
+    def get_duration(self, obj):
+        return obj.as2.duration if obj.as2 else None
+    get_duration.short_description = 'Duration'
+    
+    def has_add_permission(self, request):
+        # Disable add through admin - entries should be created through the form
+        return False
 ```
 
-### 5. Create the NodeInfo View
+This admin configuration shows how application models and context models work together. The journal entry model stores the reference and application-specific fields. The context model accessed through `entry.as2` provides the federated content. Admin methods retrieve data from the context to display it.
 
-Create `blog/views.py` to handle server information:
+Create a simple form for adding entries. Add to `journal/admin.py`:
 
 ```python
-from django.urls import reverse
-from activitypub.views.activitystreams import ActorDetailView
-from activitypub.views.discovery import NodeInfo2
-from blog.models import UserAccount
+from django import forms
 
-class NodeInfoView(NodeInfo2):
-    def get_usage(self):
-        return {"users": {"total": UserAccount.objects.count()}}
+class JournalEntryForm(forms.Form):
+    user = forms.ModelChoiceField(
+        queryset=User.objects.all(),
+        required=True
+    )
+    entry_type = forms.ChoiceField(
+        choices=JournalEntry.EntryType.choices,
+        required=True
+    )
+    title = forms.CharField(max_length=200, required=False)
+    content = forms.CharField(widget=forms.Textarea, required=True)
+    duration_minutes = forms.IntegerField(required=False, min_value=0)
 
-__all__ = ("NodeInfoView",)
+@admin.register(JournalEntry)
+class JournalEntryAdmin(admin.ModelAdmin):
+    # ... existing configuration ...
+    
+    def changelist_view(self, request, extra_context=None):
+        if request.method == 'POST':
+            form = JournalEntryForm(request.POST)
+            if form.is_valid():
+                duration = None
+                if form.cleaned_data['duration_minutes']:
+                    duration = timedelta(minutes=form.cleaned_data['duration_minutes'])
+                
+                JournalEntry.create_entry(
+                    user=form.cleaned_data['user'],
+                    content=form.cleaned_data['content'],
+                    entry_type=form.cleaned_data['entry_type'],
+                    title=form.cleaned_data['title'] or None,
+                    duration=duration,
+                )
+                self.message_user(request, 'Journal entry created successfully')
+        
+        extra_context = extra_context or {}
+        extra_context['entry_form'] = JournalEntryForm()
+        return super().changelist_view(request, extra_context)
 ```
 
-### 6. Register Models in Admin
+Create a template for the admin form at `journal/templates/admin/journal/journalentry/change_list.html`:
 
-Create `blog/admin.py` to make our models manageable in the admin interface:
+```django
+{% raw %}
+{% extends "admin/change_list.html" %}
 
-```python
-from django.contrib import admin
-from blog.models import UserAccount
+{% block content_title %}
+<h1>Journal Entries</h1>
+<div style="background: #f8f8f8; padding: 20px; margin: 20px 0; border-radius: 5px;">
+    <h2>Create New Entry</h2>
+    <form method="post">
+        {% csrf_token %}
+        {{ entry_form.as_p }}
+        <button type="submit">Create Entry</button>
+    </form>
+</div>
+{% endblock %}
 
-@admin.register(UserAccount)
-class UserAccountAdmin(admin.ModelAdmin):
-    list_display = ('user', 'account')
-    search_fields = ('user__username',)
+{% block result_list %}
+    {{ block.super }}
+{% endblock %}
+{% endraw %}
 ```
 
-### 7. Run Migrations
+Run migrations and create a superuser:
 
 ```bash
 python manage.py makemigrations
 python manage.py migrate
+python manage.py createsuperuser
 ```
 
-## Testing Your Microblogging Server
+## Serving ActivityPub Resources
 
-Let's verify that your server is working:
+Your application needs views that serve journal entries as JSON-LD when requested by ActivityPub clients. Create `journal/views.py`:
 
-1. Start the development server:
+```python
+from django.shortcuts import get_object_or_404
+from activitypub.views import LinkedDataModelView
+from activitypub.frames import LinkedDataFrame
+from journal.models import JournalEntry
+
+class EntryDetailView(LinkedDataModelView):
+    """Serve individual journal entries as ActivityPub objects."""
+    
+    def get_object(self):
+        # Extract entry ID from URL
+        entry_id = self.kwargs.get('pk')
+        entry = get_object_or_404(JournalEntry, pk=entry_id)
+        return entry.reference
+    
+    def get_frame_class(self):
+        # Use default framing
+        return LinkedDataFrame
+```
+
+The view retrieves the journal entry from your application model, then returns its reference. The toolkit's `LinkedDataModelView` handles serialization. It walks through all context models attached to the reference and merges them into JSON-LD. For journal entries, this includes the `ObjectContext` with content, publication time, and duration.
+
+Configure URLs in `journal/urls.py`:
+
+```python
+from django.urls import path
+from journal.views import EntryDetailView
+
+app_name = 'journal'
+
+urlpatterns = [
+    path('entries/<int:pk>', EntryDetailView.as_view(), name='entry-detail'),
+]
+```
+
+Include journal URLs in `config/urls.py`:
+
+```python
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('', include('journal.urls')),
+]
+```
+
+## Testing Federation
+
+Start the development server and create a journal entry through the admin interface:
+
 ```bash
 python manage.py runserver
 ```
 
-2. Create a superuser:
+Visit `http://localhost:8000/admin/`, log in, and create a journal entry using the form. Note the entry's ID from the list view.
+
+Test the ActivityPub endpoint:
+
 ```bash
-python manage.py createsuperuser
+curl -H "Accept: application/activity+json" http://localhost:8000/entries/1
 ```
 
-3. Visit http://localhost:8000/admin and log in with your superuser credentials.
+You should receive JSON-LD representing your journal entry:
 
-4. Create a new user account:
-   - Go to the admin interface
-   - Create a new Django User
-   - Create a new UserAccount and associate it with the User
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "http://localhost:8000/entries/1",
+  "type": "Note",
+  "content": "Went for a 5km run this morning. Weather was perfect.",
+  "name": "Morning Run",
+  "published": "2025-01-15T08:00:00Z",
+  "duration": "PT45M"
+}
+```
 
-5. Create a blog post:
-   - In the admin interface, go to ActivityPub Objects
-   - Click "Add Object"
-   - Set the type to "Note"
-   - Fill in the content
-   - Set the attributedTo field to your user's account
-   - Save the object
+This response demonstrates how your application data transforms into ActivityPub format. The `content` comes from the context model. The `type` indicates this is a Note. The `published` timestamp and `duration` are ISO 8601 formatted. The `name` provides the optional title.
 
-## Understanding What We've Built
+## Understanding the Data Flow
 
-Let's break down what we've created:
+The separation between application models and context models enables flexible federation. Your `JournalEntry` model stores application-specific data like `entry_type`. The `ObjectContext` stores vocabulary-specific data like `content` and `published`. Both point to the same `Reference`.
 
-1. **Project Structure**:
-   - `adapt/`: The main Django project
-   - `blog/`: Our application for user account management
-   - Models for user accounts
-   - Views for server information and ActivityPub endpoints
+Check this relationship in the Django shell:
 
-2. **ActivityPub Integration**:
-   - We use ActivityPub's built-in `Object` model for all content
-   - User accounts are linked to ActivityPub accounts
-   - All objects are automatically available as ActivityPub resources
-   - The server supports standard ActivityPub endpoints
+```python
+python manage.py shell
 
-3. **Linked Data Principles**:
-   - Our framework follows Linked Data principles
-   - A single view handles all ActivityPub requests
-   - URLs are determined by the object's properties
-   - All objects are automatically serialized to ActivityPub format
+from journal.models import JournalEntry
+from activitypub.models import ObjectContext
 
-## Further Learning
+entry = JournalEntry.objects.first()
+print(f"Entry reference: {entry.reference.uri}")
+print(f"Entry type (app-specific): {entry.entry_type}")
 
-- Check out the [How-to Guides](../howtos/index.md) for specific tasks
-- Read the [Reference](../references/index.md) for detailed API documentation
-- Explore the [Topics](../topics/index.md) section for in-depth explanations of ActivityPub concepts
+obj_context = entry.as2
+print(f"Context reference: {obj_context.reference.uri}")
+print(f"Same reference: {entry.reference == obj_context.reference}")
+print(f"Content (federated): {obj_context.content}")
+print(f"Published (federated): {obj_context.published}")
+print(f"Duration (federated): {obj_context.duration}")
+```
 
-Remember, this is just the beginning! ActivityPub is a powerful
-protocol, and our framework makes it easy to build sophisticated
-social applications. As you continue learning, you'll discover more
-features and capabilities that you can add to your server.
+Both models point to the same reference. The reference has a URI that identifies this resource globally. Any ActivityPub server can fetch this URI and receive the journal entry data. Your application model handles business logic. The context model handles federation. The reference connects them.
+
+## Querying Federated Data
+
+Because context models are Django models, you can query them using the ORM. Find all entries published in the last week:
+
+```python
+from datetime import timedelta
+from django.utils import timezone
+from activitypub.models import ObjectContext
+
+week_ago = timezone.now() - timedelta(days=7)
+recent_contexts = ObjectContext.objects.filter(
+    published__gte=week_ago,
+    reference__journal_entry__isnull=False
+)
+
+for ctx in recent_contexts:
+    entry = ctx.reference.journal_entry
+    print(f"{entry.user.username}: {ctx.content[:50]}")
+```
+
+Find entries with duration over 30 minutes:
+
+```python
+from datetime import timedelta
+
+long_entries = ObjectContext.objects.filter(
+    duration__gt=timedelta(minutes=30),
+    reference__journal_entry__isnull=False
+)
+```
+
+This demonstrates why the toolkit uses context models instead of storing data in JSON blobs. You can filter, sort, and join using SQL. The data lives in relational tables optimized for queries. Federation and database efficiency work together rather than conflicting.
+
+## Working with Remote Data
+
+The reference architecture enables working with entries from other servers. When your application encounters a reference to a remote journal entry, resolve it to fetch the data.
+
+Create a command to fetch and display a remote entry in `journal/management/commands/fetch_entry.py`:
+
+```python
+from django.core.management.base import BaseCommand
+from activitypub.models import Reference, ObjectContext
+
+class Command(BaseCommand):
+    help = 'Fetch and display a remote journal entry'
+    
+    def add_arguments(self, parser):
+        parser.add_argument('uri', type=str, help='URI of the entry to fetch')
+    
+    def handle(self, *args, **options):
+        uri = options['uri']
+        
+        # Create or get reference
+        reference = Reference.make(uri)
+        
+        # Resolve if not already cached
+        if not reference.is_resolved:
+            self.stdout.write(f"Fetching {uri}...")
+            reference.resolve()
+        else:
+            self.stdout.write(f"Using cached data for {uri}")
+        
+        # Access the ActivityStreams context
+        obj = reference.get_by_context(ObjectContext)
+        if obj:
+            self.stdout.write(self.style.SUCCESS(f"Type: {obj.type}"))
+            self.stdout.write(self.style.SUCCESS(f"Content: {obj.content}"))
+            self.stdout.write(self.style.SUCCESS(f"Published: {obj.published}"))
+            if obj.duration:
+                self.stdout.write(self.style.SUCCESS(f"Duration: {obj.duration}"))
+        else:
+            self.stdout.write(self.style.ERROR("Could not parse as ActivityStreams object"))
+```
+
+This command demonstrates pull-based federation. You have a URI. You create a reference for it. You resolve the reference, which fetches the remote JSON-LD document and populates context models. Then you access the data through the context.
+
+The resolved data lives in your database. Subsequent access queries the context model directly without network requests. Rate limiting prevents excessive refetching. The pattern works identically for local and remote resources—your code doesn't change based on where data originates.
+
+## Next Steps
+
+You have built a federated journal application. The application demonstrates several key concepts:
+
+The reference serves as the primary abstraction. Your application models link to references, not directly to ActivityPub contexts. This separation enables working with both local and remote resources uniformly.
+
+Context models handle vocabulary-specific data. `ObjectContext` stores ActivityStreams properties. Your application model stores business logic fields. The reference connects them.
+
+Federation happens at the HTTP layer. The view serves your entries as JSON-LD. Remote servers fetch these URLs. Your application fetches remote URLs. The toolkit handles the transformation between Django models and Linked Data.
+
+Federated data lives in relational tables. You query using Django's ORM. Filters, joins, and aggregations work normally. The context model pattern provides both federation and database efficiency.
+
+To extend this application, consider:
+
+Adding user profiles with actor contexts so users can follow each other. Creating collections for user timelines showing their entries. Implementing inbox handling to receive responses from remote users. Building a web interface to browse entries and interact with the federation. Adding custom context models for specialized vocabularies like exercise tracking or mood logging.
+
+The tutorial focused on the data layer and federation mechanics. A complete application needs authentication, authorization, and user interface. But the foundation—references linking application models to federated contexts—remains the same regardless of those additional layers.
+
+You have learned the reference-first approach, how to create federated resources, and how to work with both local and remote data. These patterns apply whether building a journal, a photo gallery, a forum, or any other application that participates in the Fediverse.
