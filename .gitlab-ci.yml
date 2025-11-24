@@ -11,12 +11,12 @@ stages:
 build_site:
   image: python:3.12
   before_script:
-    - pip install poetry
-    - poetry install --only docs
+    - pip install uv
+    - uv sync --extra docs
 
   stage: build_docs
   script:
-    - poetry run mkdocs build
+    - uv run mkdocs build
   artifacts:
     paths:
       - site
@@ -49,9 +49,9 @@ test:
 
   script:
     - export
-    - pip install poetry
-    - poetry install
-    - poetry run activitypub/tests/runtests.py
+    - pip install uv
+    - uv sync --extra dev
+    - uv run pytest
 
   rules:
     - changes:
@@ -65,12 +65,13 @@ publish_python_package:
 
   script:
     - apt-get update && apt-get install -y jq
-    - pip install poetry id
+    - pip install uv
+    - uv build
+    - pip install id
     - oidc_token=$(python -m id PYPI)
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
     - api_token=$(jq --raw-output '.token' <<< "${resp}")
-    - poetry config pypi-token.pypi ${api_token}
-    - poetry publish --build
+    - uv publish --token ${api_token}
 
   id_tokens:
     PYPI_ID_TOKEN:
