@@ -1,5 +1,11 @@
 variables:
   PYTEST_ADDOPTS: "--disable-socket"
+  UV_VERSION: "0.9.11"
+  PYTHON_VERSION: "3.13"
+  BASE_LAYER: bookworm-slim
+  # GitLab CI creates a separate mountpoint for the build directory,
+  # so we need to copy instead of using hard links.
+  UV_LINK_MODE: copy
 
 stages:
   - build_docs
@@ -51,10 +57,9 @@ pages:
 
 test:
   stage: test
-  image: python:3.12
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
 
   script:
-    - pip install uv
     - uv sync --extra dev
     - uv run pytest
 
@@ -65,15 +70,14 @@ test:
         - uv.lock
 
 publish_python_package:
-  image: python:3.12
   stage: build
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
 
   script:
     - apt-get update && apt-get install -y jq
-    - pip install uv
-    - uv build
     - pip install id
     - oidc_token=$(python -m id PYPI)
+    - uv build
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
     - api_token=$(jq --raw-output '.token' <<< "${resp}")
     - uv publish --token ${api_token}
