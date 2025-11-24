@@ -8,54 +8,55 @@ variables:
   UV_LINK_MODE: copy
 
 stages:
-  - build_docs
-  - publish_docs
   - test
-  - build
-  - release
+  - docs
+  - publish
 
 build_site:
-  image: python:3.13
-  before_script:
-    - pip install uv
-    - uv sync --extra docs
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  stage: docs
 
-  stage: build_docs
   script:
+    - uv sync --extra docs
     - uv run mkdocs build
+
   artifacts:
     paths:
       - site
-  rules:
-    - when: manual
-      allow_failure: false
 
+  rules:
     - if: '$CI_COMMIT_REF_NAME == "master"'
       changes:
         - docs/**/*
         - mkdocs.yml
 
+    - when: manual
+      allow_failure: false
+
+
 pages:
-  stage: publish_docs
-  image: python:3.13
+  stage: docs
+  image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
+  needs:
+    - build_site
   script:
     - mv site public
   artifacts:
     paths:
       - public
-  needs:
-    - build_site
   rules:
-    - when: manual
-      allow_failure: false
-
     - if: '$CI_COMMIT_REF_NAME == "master"'
       changes:
         - docs/**/*
         - mkdocs.yml
+      when: on_success
+
+    - when: manual
+      allow_failure: false
+
   allow_failure: true
 
-test:
+run_tests:
   stage: test
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
 
@@ -64,13 +65,15 @@ test:
     - uv run pytest
 
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - changes:
         - activitypub/*
         - pyproject.toml
         - uv.lock
+    - when: never
 
 publish_python_package:
-  stage: build
+  stage: publish
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
 
   script:
@@ -86,4 +89,7 @@ publish_python_package:
     PYPI_ID_TOKEN:
       aud: pypi
 
-  when: manual
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: on_success
+    - when: manual
