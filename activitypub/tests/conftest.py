@@ -31,6 +31,8 @@ def pytest_configure(config):
 
     current_app.config_from_object("django.conf:settings", namespace="CELERY")
     current_app.conf.update(
+        broker_url="memory://",
+        broker_use_ssl=False,
         task_always_eager=True,
         task_eager_propagates=True,
     )
