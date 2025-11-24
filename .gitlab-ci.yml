@@ -9,7 +9,7 @@ stages:
   - release
 
 build_site:
-  image: python:3.12
+  image: python:3.13
   before_script:
     - pip install uv
     - uv sync --extra docs
@@ -21,6 +21,9 @@ build_site:
     paths:
       - site
   rules:
+    - when: manual
+      allow_failure: false
+
     - if: '$CI_COMMIT_REF_NAME == "master"'
       changes:
         - docs/**/*
@@ -28,7 +31,7 @@ build_site:
 
 pages:
   stage: publish_docs
-  image: python:3.12
+  image: python:3.13
   script:
     - mv site public
   artifacts:
@@ -37,6 +40,9 @@ pages:
   needs:
     - build_site
   rules:
+    - when: manual
+      allow_failure: false
+
     - if: '$CI_COMMIT_REF_NAME == "master"'
       changes:
         - docs/**/*
@@ -48,7 +54,6 @@ test:
   image: python:3.12
 
   script:
-    - export
     - pip install uv
     - uv sync --extra dev
     - uv run pytest
@@ -57,7 +62,7 @@ test:
     - changes:
         - activitypub/*
         - pyproject.toml
-        - poetry.lock
+        - uv.lock
 
 publish_python_package:
   image: python:3.12
