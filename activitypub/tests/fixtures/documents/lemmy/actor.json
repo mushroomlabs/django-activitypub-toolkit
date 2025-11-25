@@ -1,0 +1,25 @@
+{
+  "@context": [
+    "https://join-lemmy.org/context.json",
+    "https://www.w3.org/ns/activitystreams"
+  ],
+  "type": "Person",
+  "id": "https://lemmy.example.com/u/alice",
+  "preferredUsername": "alice",
+  "inbox": "https://lemmy.example.com/u/alice/inbox",
+  "outbox": "https://lemmy.example.com/u/alice/outbox",
+  "publicKey": {
+    "id": "https://lemmy.example.com/u/alice#main-key",
+    "owner": "https://lemmy.example.com/u/alice",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nINVALID KEY\n-----END PUBLIC KEY-----\n"
+  },
+  "icon": {
+    "type": "Image",
+    "url": "https://lemmy.example.com/pictrs/image/alice-profile-picture.png"
+  },
+  "matrixUserId": "@alice:example.com",
+  "endpoints": {
+    "sharedInbox": "https://lemmy.example.com/inbox"
+  },
+  "published": "2025-11-23T13:37:30.123456Z"
+}
