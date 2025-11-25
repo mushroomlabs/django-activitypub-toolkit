@@ -1,274 +1,339 @@
 # Handle Incoming Activities
 
-This guide shows you how to process activities received from other Fediverse servers.
+This guide shows you how to process activities received from other Fediverse servers using custom handlers.
 
 ## Understanding Activity Delivery
 
-When users on other servers interact with your content, their servers send activities to your inboxes. These activities describe actions like likes, follows, replies, and shares.
+When users on other servers interact with your content, their servers send activities to your inboxes. The toolkit automatically handles the complete delivery pipeline:
 
-The toolkit automatically:
-1. Receives HTTP POST requests to inbox endpoints
+1. Receives HTTP POST requests to inbox endpoints (via the catch-all `ActivityPubObjectDetailView`)
 2. Verifies HTTP signatures for authentication
 3. Parses JSON-LD activity documents
 4. Stores activities in context models
-5. Triggers processing signals
+5. Processes standard ActivityPub flows (Follow, Like, Announce, etc.)
+6. Triggers processing signals
 
-Your application implements handlers to respond to these activities.
+**For standard ActivityPub activities, the toolkit handles everything automatically.** You only need custom handlers for application-specific logic beyond the standard protocol behavior.
 
-## Set Up Inbox Endpoints
+## When to Write Custom Handlers
 
-Create inbox views for your actors:
+You only need custom handlers when:
 
-```python
-from activitypub.views import ActivityPubObjectDetailView
+- **Sending user notifications** - Email or push notifications when someone follows or mentions a user
+- **Moderation workflows** - Alert moderators when Flag activities arrive
+- **Application-specific state** - Update non-ActivityPub models in your application
+- **Custom validation** - Implement business rules beyond standard ActivityPub semantics
+- **Integration hooks** - Trigger external services or webhooks
 
-class UserInboxView(ActivityPubObjectDetailView):
-    """Handle inbox delivery for a user."""
+If you just need to track likes, follows, and shares, **you don't need custom handlers**. The toolkit maintains collections automatically.
 
-    def get_object(self):
-        username = self.kwargs['username']
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor.inbox
-```
+## Automatic Processing
 
-Add URL routing:
+The toolkit automatically handles these standard activities:
 
-```python
-urlpatterns = [
-    path('users/<str:username>/inbox', UserInboxView.as_view(), name='user-inbox'),
-]
-```
+- **Follow** - Creates `FollowRequest` records, adds to following/followers collections when accepted
+- **Like** - Adds to the object's `likes` collection and actor's `liked` collection
+- **Announce** - Adds to the object's `shares` collection
+- **Add/Remove** - Manages collection membership
+- **Undo** - Reverses previous activities (unfollows, unlikes, etc.)
 
-## Implement Activity Handlers
+These work out of the box without any custom code.
 
-Connect to the `activity_processed` signal to handle activities:
+## Implement Custom Handlers
+
+Connect to Django signals to add application-specific logic:
 
 ```python
 from django.dispatch import receiver
-from activitypub.signals import activity_processed
-from activitypub.models import ActivityContext
+from activitypub.signals import activity_done, notification_accepted
+from activitypub.models import Activity, ActivityContext
 
-@receiver(activity_processed)
+@receiver(activity_done)
 def handle_activity(sender, activity, **kwargs):
-    """Route activities to specific handlers."""
-    activity_ctx = activity.get_by_context(ActivityContext)
-    if not activity_ctx:
-        return
-
-    activity_type = activity_ctx.type
-
-    handlers = {
-        ActivityContext.Types.FOLLOW: handle_follow,
-        ActivityContext.Types.LIKE: handle_like,
-        ActivityContext.Types.CREATE: handle_create,
-        ActivityContext.Types.ANNOUNCE: handle_announce,
-    }
-
-    handler = handlers.get(activity_type)
-    if handler:
-        handler(activity_ctx)
+    """Add custom logic after standard processing completes."""
+    
+    # activity_done fires after the toolkit has updated collections
+    # This is where you add application-specific behavior
+    
+    if activity.type == Activity.Types.LIKE:
+        handle_like_notification(activity)
+    elif activity.type == Activity.Types.FOLLOW:
+        handle_follow_notification(activity)
+    elif activity.type == Activity.Types.FLAG:
+        handle_moderation_flag(activity)
 ```
 
-## Handle Follow Activities
-
-Process follow requests:
+Register handlers in your app's `apps.py`:
 
 ```python
-def handle_follow(activity):
-    """Handle a follow request."""
-    from yourapp.models import FollowRequest
+from django.apps import AppConfig
 
-    follower_ref = activity.actor
-    followed_ref = activity.object
+class YourAppConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'yourapp'
+    
+    def ready(self):
+        import yourapp.handlers  # noqa
+```
 
-    # Check if this is a follow for our user
+## Send User Notifications
+
+Notify users when they receive interactions:
+
+```python
+from django.core.mail import send_mail
+
+def handle_like_notification(activity):
+    """Send notification when content is liked."""
+    from yourapp.models import Post
+    
     try:
-        profile = UserProfile.objects.get(actor_reference=followed_ref)
+        # Check if the liked object is one of our posts
+        post = Post.objects.get(reference=activity.object)
+        
+        # Send notification to the post's author
+        send_mail(
+            subject=f'Your post was liked',
+            message=f'{activity.actor.uri} liked your post: {post.title}',
+            from_email='noreply@example.com',
+            recipient_list=[post.author.email],
+        )
+        
+    except Post.DoesNotExist:
+        # Not one of our posts, nothing to do
+        pass
+
+def handle_follow_notification(activity):
+    """Notify user when someone follows them."""
+    from yourapp.models import UserProfile
+    
+    try:
+        # Check if the followed actor is one of our users
+        profile = UserProfile.objects.get(actor_reference=activity.object)
+        
+        send_mail(
+            subject='New follower',
+            message=f'{activity.actor.uri} is now following you',
+            from_email='noreply@example.com',
+            recipient_list=[profile.user.email],
+        )
+        
     except UserProfile.DoesNotExist:
-        return  # Not following our user
-
-    # Create follow request
-    FollowRequest.objects.get_or_create(
-        profile=profile,
-        follower_reference=follower_ref,
-        defaults={'activity_reference': activity.reference}
-    )
-
-    # Optionally auto-accept or notify user
-    # send_notification(profile.user, f"{follower_ref.uri} wants to follow you")
+        pass
 ```
 
-## Handle Like Activities
+## Handle Moderation Flags
 
-Process likes on your content:
+Process Flag activities for content moderation:
 
 ```python
-def handle_like(activity):
-    """Handle a like on our content."""
-    from yourapp.models import Like, Post
+import logging
 
-    liked_ref = activity.object
+logger = logging.getLogger(__name__)
 
-    # Find the post that was liked
+def handle_moderation_flag(activity):
+    """Alert moderators when content is flagged."""
+    from yourapp.models import Post
+    from django.core.mail import send_mail
+    
     try:
-        post = Post.objects.get(reference=liked_ref)
+        # Get the flagged object
+        flagged_ref = activity.object
+        post = Post.objects.get(reference=flagged_ref)
+        
+        # Get the flagger
+        flagger_uri = activity.actor.uri
+        
+        # Send email to moderators
+        send_mail(
+            subject=f'Content flagged: {post.title}',
+            message=f'User {flagger_uri} flagged post {post.id}\n\n{activity.content}',
+            from_email='noreply@example.com',
+            recipient_list=['moderators@example.com'],
+        )
+        
+        logger.info(f"Sent moderation alert for post {post.id}")
+        
     except Post.DoesNotExist:
-        return  # Not our content
-
-    # Record the like
-    Like.objects.get_or_create(
-        post=post,
-        actor_reference=activity.actor,
-        defaults={'activity_reference': activity.reference}
-    )
-
-    # Update like count or send notification
-    # notify_post_author(post, f"Your post was liked by {activity.actor.uri}")
+        logger.warning(f"Flag activity for unknown object {flagged_ref.uri}")
 ```
 
-## Handle Create Activities
+## Update Application Models
 
-Process new content, especially replies:
-
-```python
-def handle_create(activity):
-    """Handle creation of new content."""
-    obj_ref = activity.object
-    if not obj_ref:
-        return
-
-    # Resolve the object to get its data
-    if not obj_ref.is_resolved:
-        obj_ref.resolve()
-
-    obj_ctx = obj_ref.get_by_context(ObjectContext)
-    if not obj_ctx:
-        return
-
-    # Check if it's a reply to our content
-    if obj_ctx.in_reply_to:
-        handle_reply(obj_ctx, activity)
-```
-
-## Handle Reply Activities
-
-Process replies to your content:
+Sync ActivityPub events with your application's models:
 
 ```python
-def handle_reply(obj_ctx, activity):
-    """Handle a reply to our content."""
-    from yourapp.models import Reply, Post
-
-    # Find the original post
+def handle_like_notification(activity):
+    """Update application state when content is liked."""
+    from yourapp.models import Post, Like
+    
     try:
-        original_post = Post.objects.get(reference=obj_ctx.in_reply_to)
+        post = Post.objects.get(reference=activity.object)
+        
+        # Create application-specific Like record
+        Like.objects.get_or_create(
+            post=post,
+            actor_uri=activity.actor.uri,
+            defaults={
+                'activity_reference': activity.reference,
+                'created_at': activity.published,
+            }
+        )
+        
+        # Update denormalized like count
+        post.like_count = Like.objects.filter(post=post).count()
+        post.save()
+        
     except Post.DoesNotExist:
-        return
-
-    # Create reply record
-    Reply.objects.get_or_create(
-        post=original_post,
-        reply_reference=obj_ctx.reference,
-        defaults={
-            'content': obj_ctx.content,
-            'author_reference': activity.actor,
-            'published': obj_ctx.published,
-        }
-    )
+        pass
 ```
 
-## Handle Announce Activities
+## Custom Authorization
 
-Process shares/boosts of your content:
+Enforce application-specific policies before standard processing:
 
 ```python
-def handle_announce(activity):
-    """Handle sharing/boosting of our content."""
-    from yourapp.models import Share, Post
+from activitypub.signals import notification_accepted
 
-    shared_ref = activity.object
+@receiver(notification_accepted)
+def enforce_interaction_policy(sender, notification, **kwargs):
+    """Enforce custom policies before standard processing."""
+    from yourapp.models import BlockedUser
+    from activitypub.models import ActivityContext
+    
+    activity_ref = notification.resource
+    activity = activity_ref.get_by_context(ActivityContext)
+    
+    # Check if the actor is blocked
+    if activity.actor and BlockedUser.objects.filter(actor_uri=activity.actor.uri).exists():
+        logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
+        
+        # Prevent further processing
+        from activitypub.exceptions import DropMessage
+        raise DropMessage("Actor is blocked")
+```
 
+The `notification_accepted` signal fires before standard activity processing, allowing you to reject activities early.
+
+## Auto-Accept Follow Requests
+
+Automatically accept follow requests instead of requiring manual approval:
+
+```python
+from activitypub.models import FollowRequest
+
+@receiver(activity_done)
+def auto_accept_follows(sender, activity, **kwargs):
+    """Automatically accept follow requests."""
+    
+    if activity.type != Activity.Types.FOLLOW:
+        return
+    
     try:
-        post = Post.objects.get(reference=shared_ref)
-    except Post.DoesNotExist:
-        return
-
-    Share.objects.get_or_create(
-        post=post,
-        actor_reference=activity.actor,
-        defaults={'activity_reference': activity.reference}
-    )
+        request = FollowRequest.objects.get(activity=activity)
+        if request.status == FollowRequest.STATUS.pending:
+            request.accept()
+    except FollowRequest.DoesNotExist:
+        pass
 ```
 
-## Accept Follow Requests
+The `FollowRequest.accept()` method handles adding the follower to the followers collection and sending the Accept activity.
 
-Create a method to accept follows:
+## Track Activity Statistics
+
+Maintain statistics about federated interactions:
 
 ```python
-class FollowRequest(models.Model):
-    # ... fields ...
+from yourapp.models import ActivityStats
 
-    def accept(self):
-        """Accept this follow request."""
-        if self.accepted:
-            return
-
-        # Add follower to followers collection
-        actor = self.profile.actor
-        followers = actor.followers.get_by_context(CollectionContext)
-        if followers:
-            followers.append(self.follower_reference)
-
-        # Send Accept activity
-        accept_activity = create_accept_activity(self)
-
-        self.accepted = True
-        self.save()
-
-        return accept_activity
+@receiver(activity_done)
+def update_activity_stats(sender, activity, **kwargs):
+    """Track activity statistics."""
+    
+    stats, created = ActivityStats.objects.get_or_create(
+        date=timezone.now().date()
+    )
+    
+    if activity.type == Activity.Types.LIKE:
+        stats.likes_received += 1
+    elif activity.type == Activity.Types.FOLLOW:
+        stats.follows_received += 1
+    elif activity.type == Activity.Types.ANNOUNCE:
+        stats.shares_received += 1
+    
+    stats.save()
 ```
 
 ## Error Handling
 
-Handle processing errors gracefully:
+Handle processing errors gracefully without blocking other activities:
 
 ```python
-@receiver(activity_processed)
-def handle_activity(sender, activity, **kwargs):
+@receiver(activity_done)
+def safe_handler(sender, activity, **kwargs):
+    """Handle activities with proper error handling."""
+    
     try:
-        # ... processing logic ...
+        # Your handler logic here
+        process_activity(activity)
     except Exception as e:
-        logger.error(f"Error processing activity {activity.uri}: {e}")
-        # Don't re-raise - prevents blocking other activities
+        logger.error(
+            f"Error processing activity {activity.reference.uri}: {e}",
+            exc_info=True
+        )
+        # Don't re-raise - let other handlers continue
 ```
 
-## Testing Inbox Delivery
+## Testing Custom Handlers
 
-Test with curl:
+Test your handlers by simulating incoming activities:
 
-```bash
-curl -X POST http://localhost:8000/users/username/inbox \
-  -H "Content-Type: application/activity+json" \
-  -d '{
-    "@context": "https://www.w3.org/ns/activitystreams",
-    "id": "https://example.com/activities/1",
-    "type": "Like",
-    "actor": "https://example.com/users/alice",
-    "object": "http://localhost:8000/posts/123"
-  }'
+```python
+from django.test import TestCase
+from activitypub.models import ActivityContext, Reference, Domain
+
+class ActivityHandlerTest(TestCase):
+    def test_like_notification(self):
+        """Test that like activities trigger notifications."""
+        
+        # Create test activity
+        domain = Domain.get_default()
+        activity_ref = ActivityContext.generate_reference(domain)
+        
+        activity = ActivityContext.make(
+            reference=activity_ref,
+            type=ActivityContext.Types.LIKE,
+            actor=Reference.make('https://example.com/users/alice'),
+            object=self.post.reference,
+        )
+        
+        # Trigger signal
+        from activitypub.signals import activity_done
+        activity_done.send(sender=ActivityContext, activity=activity)
+        
+        # Assert notification was sent
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('liked', mail.outbox[0].subject)
 ```
 
-## Security Considerations
+## What You DON'T Need to Do
 
-- Always verify activity signatures before processing
-- Validate that activities reference your content
-- Implement rate limiting for inbox endpoints
-- Handle malformed or malicious activities gracefully
+The toolkit handles these automatically - **you don't need custom handlers for**:
+
+- Adding likes to the `likes` collection
+- Adding shares to the `shares` collection
+- Adding followers to the `followers` collection
+- Creating `FollowRequest` records
+- Processing Undo activities (unfollows, unlikes)
+- Managing collection membership (Add/Remove activities)
+- Adding activities to inbox collections
+
+These all work out of the box through the toolkit's built-in handlers.
 
 ## Next Steps
 
-With incoming activities handled, you can:
+With custom activity handlers implemented, you can:
 
 - [Send activities](send_activities.md) to publish your content
 - [Block spam](block_spam.md) from malicious servers
-- Set up [WebFinger discovery](register_account.md#integration-with-webfinger) for user lookup
+- Set up [WebFinger discovery](register_account.md) for user lookup
