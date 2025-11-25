@@ -2,587 +2,555 @@
 title: Publishing to the Fediverse
 ---
 
-This tutorial teaches you how to publish content from your application to the Fediverse. You will learn to create activities, manage collections, implement addressing for delivery, and handle outgoing federation.
+This tutorial teaches you how to publish content from your application to the Fediverse by creating activities and delivering them to follower inboxes. You will learn to create objects and activities, address them properly, and use the notification system to deliver activities to remote servers.
 
-By the end of this tutorial, you will understand how to make your journal entries visible to followers, send notifications to remote servers, and participate fully in federated conversations.
+By the end of this tutorial, you will understand the complete publishing workflow: creating content objects, wrapping them in activities, and delivering those activities to all followers' inboxes using HTTP-signed requests.
 
-## Understanding Outbound Federation
+## Understanding Publishing
 
-Publishing to the Fediverse involves creating activities that describe actions, adding them to collections that remote servers can fetch, and optionally delivering them directly to recipient inboxes. This tutorial covers both pull-based publishing (via collections) and push-based delivery (via inbox POSTs).
+Publishing to the Fediverse means creating ActivityPub activities and delivering them to remote inboxes. When a user creates a journal entry, you generate a Create activity and send it to everyone who follows that user. When they update content, you send an Update activity. When they delete something, you send a Delete activity.
 
-Your application creates content—journal entries, comments, media—and wraps it in ActivityPub activities. A Create activity announces new content. An Update activity announces changes. Activities get added to the author's outbox, making them discoverable to followers.
+The publishing workflow has three main steps:
 
-## Creating Activities
+1. **Create the content object** - An ObjectContext representing the actual content (a Note, Article, Image, etc.)
+2. **Create the activity** - An ActivityContext that wraps the object and describes what happened (Create, Update, Delete, etc.)
+3. **Deliver to followers** - Iterate through follower inboxes and create Notification records that trigger HTTP delivery
 
-Activities describe actions. When a user publishes a journal entry, create a Create activity that wraps the entry object. Start by updating the journal entry creation to generate activities.
+The toolkit handles the HTTP delivery automatically. You create the activities and notifications, and the `send_notification` task handles signing requests and POSTing to remote servers.
 
-Update `journal/models.py`:
+## Prerequisites
+
+This tutorial assumes you have completed the previous tutorial on handling incoming activities. You should have actors with inboxes and outboxes already set up, and the catch-all URL pattern configured.
+
+## Creating Content Objects
+
+Start by creating an ObjectContext that represents your content. For a journal application, this might be a Note or Article. The object includes the content itself, attribution, and timestamps.
+
+Update your journal entry creation to include ActivityPub objects. In `journal/models.py`:
 
 ```python
-from activitypub.models import ActivityContext, ObjectContext, Reference, Domain
+from django.db import models
+from django.contrib.auth.models import User
 from django.utils import timezone
+from activitypub.models import (
+    ObjectContext,
+    ActivityContext,
+    CollectionContext,
+    Reference,
+    Domain,
+)
 
 class JournalEntry(models.Model):
-    # ... existing fields ...
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    reference = models.OneToOneField(
+        Reference,
+        on_delete=models.CASCADE,
+        related_name='journal_entry'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
     
     @classmethod
-    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
-                     title=None, duration=None):
-        """Create a journal entry with its ActivityPub representation and activity."""
+    def create_entry(cls, user, content, title=None):
+        """Create a journal entry with its ActivityPub representation."""
         
-        # Generate references
         domain = Domain.get_default()
-        entry_ref = ObjectContext.generate_reference(domain)
-        activity_ref = ActivityContext.generate_reference(domain)
         
-        # Get user's actor
+        # Create the object reference
+        entry_ref = ObjectContext.generate_reference(domain)
+        
+        # Get the user's actor
         actor_ref = user.profile.actor_reference
         
-        # Create the entry object context
-        obj_context = ObjectContext.make(
+        # Create the object context
+        obj = ObjectContext.make(
             reference=entry_ref,
             type=ObjectContext.Types.NOTE,
             content=content,
             name=title,
             published=timezone.now(),
-            duration=duration,
             attributed_to=actor_ref,
         )
         
-        # Create the application entry
+        # Create the application model
         entry = cls.objects.create(
-            reference=entry_ref,
             user=user,
-            entry_type=entry_type,
+            reference=entry_ref,
         )
-        
-        # Create the Create activity
-        activity = ActivityContext.make(
-            reference=activity_ref,
-            type=ActivityContext.Types.CREATE,
-            actor=actor_ref,
-            object=entry_ref,
-            published=timezone.now(),
-        )
-        
-        # Add to actor's outbox
-        actor_ctx = actor_ref.get_by_context(ActorContext)
-        if actor_ctx and actor_ctx.outbox:
-            outbox = actor_ctx.outbox.get_by_context(CollectionContext)
-            if outbox:
-                outbox.append(activity_ref)
         
         return entry
 ```
 
-This creates three objects: the journal entry (Note), the application model, and the Create activity. The activity goes into the actor's outbox collection, making it available to anyone who fetches that collection.
+The `ObjectContext.make()` method creates the object and automatically generates collections for replies, likes, and shares through Django signals. You do not need to create these collections manually.
 
-## Managing Collections
-
-Collections are ordered lists of items. Actors have outboxes (activities they've performed), inboxes (activities received), and potentially followers and following collections. Collections support pagination for efficient traversal.
-
-The `CollectionContext` provides methods for manipulating collections:
-
-```python
-from activitypub.models import CollectionContext
-
-# Get an actor's outbox
-actor = user.profile.actor
-outbox = actor.outbox.get_by_context(CollectionContext)
-
-# Add an item
-outbox.append(activity_reference)
-
-# Check if collection contains an item
-if outbox.contains(activity_reference):
-    print("Activity already in outbox")
-
-# Remove an item
-outbox.remove(activity_reference)
-
-# Get items
-items = outbox.items.all()  # QuerySet of References
-```
-
-Collections automatically maintain ordering. Ordered collections (like outboxes) sort items by creation time in reverse chronological order. Unordered collections maintain insertion order.
-
-## Followers and Following
-
-To enable federation, actors need followers and following collections. Update the `UserProfile` creation to include these:
-
-```python
-class UserProfile(models.Model):
-    # ... existing fields ...
-    
-    @classmethod
-    def create_for_user(cls, user):
-        """Create an actor with all required collections."""
-        domain = Domain.get_default()
-        actor_ref = ActorContext.generate_reference(domain)
-        
-        # Create actor context
-        actor = ActorContext.make(
-            reference=actor_ref,
-            type=ActorContext.Types.PERSON,
-            preferred_username=user.username,
-            name=user.get_full_name() or user.username,
-        )
-        
-        # Create inbox
-        inbox_ref = CollectionContext.generate_reference(domain)
-        inbox = CollectionContext.make(
-            reference=inbox_ref,
-            type=CollectionContext.Types.ORDERED_COLLECTION,
-        )
-        actor.inbox = inbox_ref
-        actor.save()
-        
-        # Create outbox
-        outbox_ref = CollectionContext.generate_reference(domain)
-        outbox = CollectionContext.make(
-            reference=outbox_ref,
-            type=CollectionContext.Types.ORDERED_COLLECTION,
-        )
-        actor.outbox = outbox_ref
-        actor.save()
-        
-        # Create followers collection
-        followers_ref = CollectionContext.generate_reference(domain)
-        followers = CollectionContext.make(
-            reference=followers_ref,
-            type=CollectionContext.Types.COLLECTION,
-        )
-        actor.followers = followers_ref
-        actor.save()
-        
-        # Create following collection
-        following_ref = CollectionContext.generate_reference(domain)
-        following = CollectionContext.make(
-            reference=following_ref,
-            type=CollectionContext.Types.COLLECTION,
-        )
-        actor.following = following_ref
-        actor.save()
-        
-        # Create profile
-        profile = cls.objects.create(
-            user=user,
-            actor_reference=actor_ref
-        )
-        
-        return profile
-```
-
-Run migrations to update existing profiles:
+Run migrations to add the reference field:
 
 ```bash
 python manage.py makemigrations
 python manage.py migrate
 ```
 
-Create a command to add missing collections to existing profiles:
+## Creating Activities
+
+Activities describe what happened to objects. A Create activity announces new content. An Update activity announces changes. A Delete activity announces removal.
+
+Extend the entry creation to include a Create activity:
 
 ```python
-# journal/management/commands/add_collections.py
-from django.core.management.base import BaseCommand
-from journal.models import UserProfile
-from activitypub.models import ActorContext, CollectionContext, Domain
-
-class Command(BaseCommand):
-    help = 'Add missing collections to user profiles'
+@classmethod
+def create_entry(cls, user, content, title=None):
+    """Create a journal entry with its ActivityPub representation and activity."""
     
-    def handle(self, *args, **options):
-        domain = Domain.get_default()
-        
-        for profile in UserProfile.objects.all():
-            actor = profile.actor
-            updated = False
-            
-            if not actor.followers:
-                followers_ref = CollectionContext.generate_reference(domain)
-                CollectionContext.make(
-                    reference=followers_ref,
-                    type=CollectionContext.Types.COLLECTION,
-                )
-                actor.followers = followers_ref
-                updated = True
-            
-            if not actor.following:
-                following_ref = CollectionContext.generate_reference(domain)
-                CollectionContext.make(
-                    reference=following_ref,
-                    type=CollectionContext.Types.COLLECTION,
-                )
-                actor.following = following_ref
-                updated = True
-            
-            if updated:
-                actor.save()
-                self.stdout.write(
-                    self.style.SUCCESS(f'Updated collections for {profile.user.username}')
-                )
+    domain = Domain.get_default()
+    
+    # Create the object reference
+    entry_ref = ObjectContext.generate_reference(domain)
+    
+    # Get the user's actor
+    actor_ref = user.profile.actor_reference
+    
+    # Create the object context
+    obj = ObjectContext.make(
+        reference=entry_ref,
+        type=ObjectContext.Types.NOTE,
+        content=content,
+        name=title,
+        published=timezone.now(),
+        attributed_to=actor_ref,
+    )
+    
+    # Create the application model
+    entry = cls.objects.create(
+        user=user,
+        reference=entry_ref,
+    )
+    
+    # Create the Create activity
+    activity_ref = ActivityContext.generate_reference(domain)
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.CREATE,
+        actor=actor_ref,
+        object=entry_ref,
+        published=timezone.now(),
+    )
+    
+    return entry, activity
 ```
 
-## Accepting Follow Requests
+The activity has three critical fields:
 
-When a remote user sends a Follow activity, it creates a `FollowRequest` (from the previous tutorial). Accepting the follow adds the follower to your followers collection and sends an Accept activity.
+- `actor` - Who performed the action (the user's actor reference)
+- `object` - What was acted upon (the entry reference)
+- `type` - What kind of action occurred (CREATE)
 
-Create a method to accept follows in `journal/models.py`:
+## Adding to Outbox
+
+Activities should be added to the actor's outbox collection. This makes them discoverable through the outbox endpoint and provides a record of what the actor has published.
 
 ```python
-class FollowRequest(models.Model):
-    # ... existing fields ...
+@classmethod
+def create_entry(cls, user, content, title=None):
+    """Create a journal entry with activity and add to outbox."""
     
-    def accept(self):
-        """Accept this follow request."""
-        if self.accepted:
-            return  # Already accepted
-        
-        # Add follower to the followers collection
-        actor = self.profile.actor
-        followers = actor.followers.get_by_context(CollectionContext)
-        if followers:
-            followers.append(self.follower_reference)
-        
-        # Create Accept activity
-        domain = Domain.get_default()
-        accept_ref = ActivityContext.generate_reference(domain)
-        
-        accept_activity = ActivityContext.make(
-            reference=accept_ref,
-            type=ActivityContext.Types.ACCEPT,
-            actor=self.profile.actor_reference,
-            object=self.activity_reference,
-            published=timezone.now(),
-        )
-        
-        # Add to outbox
+    domain = Domain.get_default()
+    entry_ref = ObjectContext.generate_reference(domain)
+    actor_ref = user.profile.actor_reference
+    
+    # Create object
+    obj = ObjectContext.make(
+        reference=entry_ref,
+        type=ObjectContext.Types.NOTE,
+        content=content,
+        name=title,
+        published=timezone.now(),
+        attributed_to=actor_ref,
+    )
+    
+    # Create entry
+    entry = cls.objects.create(
+        user=user,
+        reference=entry_ref,
+    )
+    
+    # Create activity
+    activity_ref = ActivityContext.generate_reference(domain)
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.CREATE,
+        actor=actor_ref,
+        object=entry_ref,
+        published=timezone.now(),
+    )
+    
+    # Add to outbox
+    from activitypub.models import ActorContext
+    actor = actor_ref.get_by_context(ActorContext)
+    if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
-            outbox.append(accept_ref)
-        
-        # Mark as accepted
-        self.accepted = True
-        self.save()
-        
-        # TODO: Deliver Accept activity to follower's inbox
-        
-        return accept_activity
+            outbox.append(activity_ref)
+    
+    return entry, activity
 ```
 
-Create an admin action to accept follow requests:
-
-```python
-# journal/admin.py
-from django.contrib import admin
-from journal.models import FollowRequest
-
-@admin.register(FollowRequest)
-class FollowRequestAdmin(admin.ModelAdmin):
-    list_display = ('profile', 'get_follower_uri', 'accepted', 'created_at')
-    list_filter = ('accepted', 'created_at')
-    actions = ['accept_requests']
-    
-    def get_follower_uri(self, obj):
-        return obj.follower_reference.uri
-    get_follower_uri.short_description = 'Follower'
-    
-    def accept_requests(self, request, queryset):
-        for follow_request in queryset.filter(accepted=False):
-            follow_request.accept()
-        self.message_user(request, f'Accepted {queryset.count()} follow requests')
-    accept_requests.short_description = 'Accept selected follow requests'
-```
+The outbox collection maintains a reverse-chronological list of activities the actor has performed. Remote servers can fetch this collection to discover the actor's history.
 
 ## Activity Addressing
 
-Activities include addressing fields that determine who should receive them. The `to` field indicates public delivery. The `cc` field indicates courtesy copies. The `bcc` field indicates private delivery that shouldn't be disclosed.
+Activities include addressing fields that determine who should receive them. The `to` field indicates primary recipients. The `cc` field indicates courtesy copy recipients. The `bcc` field indicates blind copy recipients whose addresses are not disclosed.
 
-The special URI `https://www.w3.org/ns/activitystreams#Public` represents public addressing. Activities addressed to Public appear in public timelines.
+The special URI `https://www.w3.org/ns/activitystreams#Public` represents public addressing. Activities addressed to Public appear in public timelines and are visible to anyone.
 
-Update entry creation to include addressing:
+Add addressing to your activities:
 
 ```python
 from activitypub.schemas import AS2
 
-PUBLIC = 'https://www.w3.org/ns/activitystreams#Public'
-
-class JournalEntry(models.Model):
-    # ... existing code ...
+@classmethod
+def create_entry(cls, user, content, title=None, public=True):
+    """Create a journal entry with proper addressing."""
     
-    @classmethod
-    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
-                     title=None, duration=None, public=True):
-        """Create a journal entry with proper addressing."""
-        
-        # ... existing creation code ...
-        
-        # Create the Create activity with addressing
-        activity = ActivityContext.make(
-            reference=activity_ref,
-            type=ActivityContext.Types.CREATE,
-            actor=actor_ref,
-            object=entry_ref,
-            published=timezone.now(),
-        )
-        
-        # Set addressing
-        if public:
-            # Public post: to=Public, cc=followers
-            activity.to.add(Reference.make(PUBLIC))
-            if actor_ctx.followers:
-                activity.cc.add(actor_ctx.followers)
-        else:
-            # Followers-only post: to=followers
-            if actor_ctx.followers:
-                activity.to.add(actor_ctx.followers)
-        
-        activity.save()
-        
-        # Add to outbox
-        # ... existing outbox code ...
-        
-        return entry
+    domain = Domain.get_default()
+    entry_ref = ObjectContext.generate_reference(domain)
+    actor_ref = user.profile.actor_reference
+    
+    # Create object
+    obj = ObjectContext.make(
+        reference=entry_ref,
+        type=ObjectContext.Types.NOTE,
+        content=content,
+        name=title,
+        published=timezone.now(),
+        attributed_to=actor_ref,
+    )
+    
+    # Create entry
+    entry = cls.objects.create(
+        user=user,
+        reference=entry_ref,
+    )
+    
+    # Create activity
+    activity_ref = ActivityContext.generate_reference(domain)
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.CREATE,
+        actor=actor_ref,
+        object=entry_ref,
+        published=timezone.now(),
+    )
+    
+    # Set addressing
+    from activitypub.models import ActorContext
+    actor = actor_ref.get_by_context(ActorContext)
+    
+    if public:
+        # Public post: to=Public, cc=followers
+        activity.to.add(Reference.make(str(AS2.Public)))
+        if actor and actor.followers:
+            activity.cc.add(actor.followers)
+    else:
+        # Followers-only post: to=followers
+        if actor and actor.followers:
+            activity.to.add(actor.followers)
+    
+    activity.save()
+    
+    # Add to outbox
+    if actor and actor.outbox:
+        outbox = actor.outbox.get_by_context(CollectionContext)
+        if outbox:
+            outbox.append(activity_ref)
+    
+    return entry, activity
 ```
 
-The `to` and `cc` fields are many-to-many relationships to references. You can address activities to individual actors, collections, or the Public constant.
+The addressing fields are many-to-many relationships. You can address activities to individual actors, collections, or the Public constant. For public posts, you typically set `to=Public` and `cc=followers`. For followers-only posts, you set `to=followers`.
 
-## Serving Collections
+## Delivering to Followers
 
-Collections need to be accessible via HTTP for remote servers to fetch them. Create views that serve user outboxes and follower collections.
+The core of publishing is delivering activities to follower inboxes. The toolkit provides the `followers_inboxes` property on Actor, which returns a queryset of inbox References for all followers. For each inbox, you create a Notification that triggers HTTP delivery.
 
-Update `journal/views.py`:
+Add delivery to your entry creation:
 
 ```python
-from activitypub.views import LinkedDataModelView
-from journal.models import UserProfile
+from activitypub.models import Notification
+from activitypub.tasks import send_notification
 
-class UserOutboxView(LinkedDataModelView):
-    """Serve a user's outbox collection."""
+@classmethod
+def create_entry(cls, user, content, title=None, public=True):
+    """Create and publish a journal entry to followers."""
     
-    def get_object(self):
-        username = self.kwargs.get('username')
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor.outbox
+    domain = Domain.get_default()
+    entry_ref = ObjectContext.generate_reference(domain)
+    actor_ref = user.profile.actor_reference
     
-    # Frame selection is automatic - CollectionFrame will be used
-
-class UserFollowersView(LinkedDataModelView):
-    """Serve a user's followers collection."""
+    # Create object
+    obj = ObjectContext.make(
+        reference=entry_ref,
+        type=ObjectContext.Types.NOTE,
+        content=content,
+        name=title,
+        published=timezone.now(),
+        attributed_to=actor_ref,
+    )
     
-    def get_object(self):
-        username = self.kwargs.get('username')
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor.followers
-
-class UserFollowingView(LinkedDataModelView):
-    """Serve a user's following collection."""
+    # Create entry
+    entry = cls.objects.create(
+        user=user,
+        reference=entry_ref,
+    )
     
-    def get_object(self):
-        username = self.kwargs.get('username')
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor.following
-```
-
-Update `journal/urls.py`:
-
-```python
-from django.urls import path
-from journal.views import (
-    EntryDetailView,
-    UserInboxView,
-    UserOutboxView,
-    UserFollowersView,
-    UserFollowingView,
-)
-
-app_name = 'journal'
-
-urlpatterns = [
-    path('entries/<int:pk>', EntryDetailView.as_view(), name='entry-detail'),
-    path('users/<str:username>/inbox', UserInboxView.as_view(), name='user-inbox'),
-    path('users/<str:username>/outbox', UserOutboxView.as_view(), name='user-outbox'),
-    path('users/<str:username>/followers', UserFollowersView.as_view(), name='user-followers'),
-    path('users/<str:username>/following', UserFollowingView.as_view(), name='user-following'),
-]
-```
-
-Now remote servers can fetch user outboxes to discover activities and check follower lists to verify relationships.
-
-## Actor Views
-
-Actors need to be served as JSON-LD so remote servers can discover inbox URLs, public keys, and collection endpoints. Create an actor view:
-
-```python
-class UserActorView(LinkedDataModelView):
-    """Serve a user's actor document."""
+    # Create activity
+    activity_ref = ActivityContext.generate_reference(domain)
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.CREATE,
+        actor=actor_ref,
+        object=entry_ref,
+        published=timezone.now(),
+    )
     
-    def get_object(self):
-        username = self.kwargs.get('username')
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor_reference
-```
-
-Add to URLs:
-
-```python
-urlpatterns = [
-    # ... existing patterns ...
-    path('users/<str:username>', UserActorView.as_view(), name='user-actor'),
-]
-```
-
-Update settings to configure view names:
-
-```python
-FEDERATION = {
-    'DEFAULT_URL': 'http://localhost:8000',
-    'SOFTWARE_NAME': 'FedJournal',
-    'SOFTWARE_VERSION': '0.1.0',
-    'ACTOR_VIEW': 'journal:user-actor',
-    'OBJECT_VIEW': 'journal:entry-detail',
-    'COLLECTION_VIEW': 'journal:user-outbox',  # Generic collection view
-}
-```
-
-## WebFinger Discovery
-
-Remote servers discover actors using WebFinger. When someone searches for `user@localhost:8000`, their server queries `/.well-known/webfinger?resource=acct:user@localhost:8000`. The response provides the actor's ActivityPub URL.
-
-Create a WebFinger view:
-
-```python
-from django.http import JsonResponse
-from django.views import View
-from django.urls import reverse
-from journal.models import UserProfile
-
-class WebFingerView(View):
-    """Handle WebFinger requests for user discovery."""
+    # Set addressing
+    from activitypub.models import ActorContext, Actor
+    actor = actor_ref.get_by_context(Actor)
     
-    def get(self, request):
-        resource = request.GET.get('resource', '')
-        
-        # Parse acct: URI
-        if not resource.startswith('acct:'):
-            return JsonResponse({'error': 'Invalid resource'}, status=400)
-        
-        acct = resource[5:]  # Remove 'acct:' prefix
-        
-        try:
-            username, domain = acct.split('@')
-        except ValueError:
-            return JsonResponse({'error': 'Invalid account format'}, status=400)
-        
-        # Find user
-        try:
-            profile = UserProfile.objects.get(user__username=username)
-        except UserProfile.DoesNotExist:
-            return JsonResponse({'error': 'User not found'}, status=404)
-        
-        # Build actor URL
-        actor_url = request.build_absolute_uri(
-            reverse('journal:user-actor', kwargs={'username': username})
-        )
-        
-        # Return WebFinger response
-        return JsonResponse({
-            'subject': resource,
-            'aliases': [actor_url],
-            'links': [
-                {
-                    'rel': 'self',
-                    'type': 'application/activity+json',
-                    'href': actor_url,
-                },
-            ],
-        })
+    if public:
+        activity.to.add(Reference.make(str(AS2.Public)))
+        if actor and actor.followers:
+            activity.cc.add(actor.followers)
+    else:
+        if actor and actor.followers:
+            activity.to.add(actor.followers)
+    
+    activity.save()
+    
+    # Add to outbox
+    if actor and actor.outbox:
+        outbox = actor.outbox.get_by_context(CollectionContext)
+        if outbox:
+            outbox.append(activity_ref)
+    
+    # Deliver to followers
+    if actor:
+        for inbox_ref in actor.followers_inboxes:
+            notification = Notification.objects.create(
+                resource=activity_ref,
+                sender=actor_ref,
+                target=inbox_ref,
+            )
+            send_notification.delay(notification_id=str(notification.id))
+    
+    return entry, activity
 ```
 
-Add to root URLs in `config/urls.py`:
+The `followers_inboxes` property returns inbox References for all followers. It prefers shared inboxes when available, reducing the number of HTTP requests needed. For each inbox, you create a Notification with:
 
-```python
-from django.urls import path, include
-from journal.views import WebFingerView
+- `resource` - The activity reference being delivered
+- `sender` - The actor reference sending the activity
+- `target` - The inbox reference receiving the activity
 
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('.well-known/webfinger', WebFingerView.as_view(), name='webfinger'),
-    path('', include('journal.urls')),
-]
-```
+The `send_notification` task handles the actual HTTP delivery. It serializes the activity to JSON-LD, signs the request using the sender's keypair, and POSTs to the inbox URL. The task runs asynchronously through Celery.
 
-Now remote servers can discover your users by their `username@domain` addresses.
+!!! info "Follow Request Handling"
+    Before you can deliver activities to followers, users need to follow your actors. When a remote user sends a Follow activity to your inbox, the toolkit automatically creates a `FollowRequest` record. The toolkit handles Follow acceptance automatically based on the actor's `manually_approves_followers` setting. If set to `False` (the default), Follow requests are accepted automatically. Once accepted, the follower is added to the actor's followers collection, and their inbox will receive future activities via `actor.followers_inboxes`.
 
-## Push Delivery (Optional)
+## Testing Publication
 
-The toolkit supports pull-based federation through collections. Remote servers fetch your outbox to discover new activities. For real-time delivery, you can implement push delivery by POSTing activities to follower inboxes.
-
-This requires:
-
-1. Resolving follower references to get their inbox URLs
-2. Signing HTTP requests with your actor's keypair
-3. POSTing the activity JSON to each inbox
-4. Handling delivery failures and retries
-
-The toolkit provides infrastructure for this, but implementing full push delivery is beyond this tutorial's scope. Most applications start with pull-based federation and add push delivery later for improved responsiveness.
-
-## Testing Federation
-
-Test your outbound federation by creating a journal entry and checking the outbox:
+Test the complete publishing workflow by creating an entry and verifying delivery:
 
 ```bash
 python manage.py shell
+```
 
+```python
 from django.contrib.auth.models import User
 from journal.models import JournalEntry
 
 user = User.objects.first()
-entry = JournalEntry.create_entry(
+entry, activity = JournalEntry.create_entry(
     user=user,
     content="Testing federation!",
     title="Test Entry",
     public=True
 )
 
-# Check the outbox
+print(f"Created entry: {entry.reference.uri}")
+print(f"Created activity: {activity.reference.uri}")
+
+# Check outbox
+from activitypub.models import CollectionContext
 actor = user.profile.actor
 outbox = actor.outbox.get_by_context(CollectionContext)
-items = outbox.items.all()
-for item in items:
-    print(f"Activity: {item.item.uri}")
+print(f"Outbox has {outbox.total_items} items")
+
+# Check notifications
+from activitypub.models import Notification
+notifications = Notification.objects.filter(resource=activity.reference)
+print(f"Created {notifications.count()} notifications")
 ```
 
-Fetch the outbox via HTTP:
+If the user has followers, you should see notifications created for each follower's inbox. The `send_notification` task runs asynchronously, so check the Celery logs to verify delivery:
 
 ```bash
-curl -H "Accept: application/activity+json" http://localhost:8000/users/youruser/outbox
+celery -A project worker --loglevel=info
 ```
 
-You should see a collection containing Create activities for your journal entries.
+You should see log entries showing the HTTP POST requests to follower inboxes.
 
-Test actor discovery:
+## Updating Content
 
-```bash
-curl -H "Accept: application/activity+json" http://localhost:8000/users/youruser
+When content changes, send an Update activity. Add an update method to your model:
+
+```python
+def update_content(self, content, title=None):
+    """Update the entry and send Update activity to followers."""
+    
+    from activitypub.models import ObjectContext, ActivityContext, Actor
+    from activitypub.schemas import AS2
+    
+    # Update the object
+    obj = self.reference.get_by_context(ObjectContext)
+    obj.content = content
+    if title is not None:
+        obj.name = title
+    obj.updated = timezone.now()
+    obj.save()
+    
+    # Create Update activity
+    domain = Domain.get_default()
+    activity_ref = ActivityContext.generate_reference(domain)
+    actor_ref = self.user.profile.actor_reference
+    
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.UPDATE,
+        actor=actor_ref,
+        object=self.reference,
+        published=timezone.now(),
+    )
+    
+    # Set addressing
+    actor = actor_ref.get_by_context(Actor)
+    activity.to.add(Reference.make(str(AS2.Public)))
+    if actor and actor.followers:
+        activity.cc.add(actor.followers)
+    activity.save()
+    
+    # Add to outbox
+    if actor and actor.outbox:
+        outbox = actor.outbox.get_by_context(CollectionContext)
+        if outbox:
+            outbox.append(activity_ref)
+    
+    # Deliver to followers
+    if actor:
+        for inbox_ref in actor.followers_inboxes:
+            notification = Notification.objects.create(
+                resource=activity_ref,
+                sender=actor_ref,
+                target=inbox_ref,
+            )
+            send_notification.delay(notification_id=str(notification.id))
 ```
 
-The actor document includes inbox, outbox, followers, and following URLs.
+The Update activity uses the same delivery pattern as Create. The `object` field references the updated object, and the activity is delivered to all followers.
 
-Test WebFinger:
+## Deleting Content
 
-```bash
-curl "http://localhost:8000/.well-known/webfinger?resource=acct:youruser@localhost:8000"
+When content is deleted, send a Delete activity. Add a delete method:
+
+```python
+def delete_entry(self):
+    """Delete the entry and send Delete activity to followers."""
+    
+    from activitypub.models import ObjectContext, ActivityContext, Actor
+    from activitypub.schemas import AS2
+    
+    # Create Delete activity before deleting the object
+    domain = Domain.get_default()
+    activity_ref = ActivityContext.generate_reference(domain)
+    actor_ref = self.user.profile.actor_reference
+    
+    activity = ActivityContext.make(
+        reference=activity_ref,
+        type=ActivityContext.Types.DELETE,
+        actor=actor_ref,
+        object=self.reference,
+        published=timezone.now(),
+    )
+    
+    # Set addressing
+    actor = actor_ref.get_by_context(Actor)
+    activity.to.add(Reference.make(str(AS2.Public)))
+    if actor and actor.followers:
+        activity.cc.add(actor.followers)
+    activity.save()
+    
+    # Add to outbox
+    if actor and actor.outbox:
+        outbox = actor.outbox.get_by_context(CollectionContext)
+        if outbox:
+            outbox.append(activity_ref)
+    
+    # Deliver to followers
+    if actor:
+        for inbox_ref in actor.followers_inboxes:
+            notification = Notification.objects.create(
+                resource=activity_ref,
+                sender=actor_ref,
+                target=inbox_ref,
+            )
+            send_notification.delay(notification_id=str(notification.id))
+    
+    # Delete the entry and object
+    self.reference.delete()
+    self.delete()
 ```
 
-The response provides the actor URL for ActivityPub discovery.
+The Delete activity is sent before the object is removed. Remote servers receive the activity and can remove their cached copies of the content.
+
+## Understanding HTTP Signatures
+
+The `send_notification` task signs HTTP requests using the sender's keypair. The toolkit automatically creates a keypair for each actor when the actor is created. The public key is embedded in the actor document, and the private key is stored in the `SecV1Context` model.
+
+When sending a notification, the task:
+
+1. Serializes the activity to JSON-LD
+2. Retrieves the sender's private key
+3. Creates an HTTP signature header using the private key
+4. POSTs the activity to the inbox with the signature
+
+Remote servers verify the signature using the public key from the actor document. This proves the activity came from the claimed sender and hasn't been tampered with.
+
+You do not need to implement signature generation yourself. The toolkit handles it automatically through the `send_notification` task.
+
+## Handling Delivery Failures
+
+Not all deliveries succeed. Remote servers might be offline, reject the activity, or return errors. The toolkit records delivery results in `NotificationProcessResult`.
+
+Check delivery results:
+
+```python
+from activitypub.models import Notification, NotificationProcessResult
+
+notification = Notification.objects.first()
+results = notification.results.all()
+
+for result in results:
+    print(f"Result: {result.result}")
+    if result.message:
+        print(f"Message: {result.message}")
+```
+
+Failed deliveries remain in the database with their error status. You can implement retry logic if appropriate, but most applications simply log failures and move on. Temporary failures (like network timeouts) might succeed on retry, but permanent failures (like 404 Not Found) will not.
 
 ## Summary
 
-You have implemented outbound federation for your journal application. Users create journal entries that generate Create activities. Activities go into outboxes where followers can discover them. Actors have followers and following collections that track relationships. WebFinger enables user discovery across servers.
+You have learned how to publish content to the Fediverse by creating activities and delivering them to follower inboxes. The publishing workflow involves creating ObjectContext records for content, wrapping them in ActivityContext records that describe what happened, and creating Notification records that trigger HTTP delivery to follower inboxes.
 
-Your application now fully participates in the Fediverse. It receives activities via inboxes (previous tutorial) and publishes activities via outboxes (this tutorial). Remote users can follow your users, see their journal entries, and interact with them through likes and replies.
+The toolkit handles the HTTP delivery automatically. You create the activities with proper addressing, iterate through `actor.followers_inboxes` to get inbox References, and create Notification records for each inbox. The `send_notification` task signs the requests and POSTs them to remote servers.
 
-The reference-first architecture remains central. Activities reference objects. Collections contain references to activities. Actors reference collections. Everything connects through references that work uniformly for local and remote resources.
+This architecture separates content creation from delivery mechanics. You focus on creating activities with the right structure and addressing. The toolkit handles protocol details like HTTP signatures, JSON-LD serialization, and retry logic.
 
-You have completed the tutorial series. You can now build full-featured ActivityPub applications using Django ActivityPub Toolkit, extending it with custom vocabularies, handling complex activity patterns, and integrating deeply with the federated social web.
+Your application now fully participates in the Fediverse. It receives activities through inboxes (previous tutorial) and publishes activities through outboxes (this tutorial). Users can follow your actors, receive updates when content is published, and interact with your content through likes, shares, and replies.

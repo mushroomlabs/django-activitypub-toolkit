@@ -2,30 +2,69 @@
 title: Handling Incoming Activities
 ---
 
-This tutorial teaches you how to process ActivityPub activities delivered to your server's inbox. You will learn to set up inbox endpoints, authenticate incoming requests, process notifications, and implement activity handlers that update your application state.
+This tutorial teaches you how to receive and process ActivityPub activities delivered to your server. You will learn to configure a catch-all URL pattern that handles any local object reference, understand what happens automatically when activities arrive, and implement optional custom handlers for application-specific logic.
 
-By the end of this tutorial, you will understand the complete pipeline from receiving an HTTP POST at an inbox to updating your database based on federated actions.
+By the end of this tutorial, you will understand how the toolkit's built-in machinery processes standard ActivityPub flows automatically, and when you need to add custom handlers for your application's specific needs.
 
-## Understanding Inbox Delivery
+## Understanding ActivityPub Delivery
 
-ActivityPub uses inboxes for push-based delivery. When a user on a remote server performs an action—following you, liking your post, replying to your entry—that server POSTs an activity to your inbox. The activity is a JSON-LD document describing what happened.
+ActivityPub uses push-based delivery through inboxes. When a user on a remote server performs an action—following you, liking your post, replying to your content—that server POSTs an activity to your inbox. The activity is a JSON-LD document describing what happened.
 
-Your server receives the POST request, authenticates it, stores the activity, and processes it. Processing might create database records, send notifications to users, or trigger side effects. The inbox accepts the request quickly and processes it asynchronously to avoid blocking the sender.
+The toolkit handles the complete delivery pipeline. Your server receives the POST request, authenticates it using HTTP signatures, stores the activity document, creates a notification, and processes it asynchronously. For standard ActivityPub activities like Follow, Like, and Announce, the toolkit automatically updates the appropriate collections without requiring any custom code.
 
-The toolkit provides the infrastructure for this pipeline. Your application implements handlers that define what happens when specific activity types arrive.
+## The Catch-All URL Pattern
 
-## Setting Up an Inbox View
+The toolkit provides `ActivityPubObjectDetailView`, which serves as a universal handler for any local object reference. This view handles both GET and POST requests automatically.
 
-An inbox is a collection that receives activities. Actors have personal inboxes. Servers can have shared inboxes that receive activities for multiple local actors. Start by creating an actor with an inbox for your journal application.
+For GET requests, the view returns the JSON-LD representation of the requested object. For POST requests, the view checks whether the target is an inbox or outbox, then processes the activity accordingly.
 
-Update your journal entry user model to include actor information in `journal/models.py`:
+Configure your URL patterns to use this view as a catch-all. In your project's `urls.py`:
 
 ```python
-from activitypub.models import Reference, ActorContext, CollectionContext, Domain
+from django.urls import path
+from activitypub.views import ActivityPubObjectDetailView
+
+urlpatterns = [
+    # Your other URL patterns here
+    path('<path:resource>', ActivityPubObjectDetailView.as_view(), name='activitypub-resource'),
+]
+```
+
+The view uses the request's absolute URI to look up the corresponding `Reference` object in your database. When a POST arrives at any local reference that represents an inbox or outbox, the view automatically handles it.
+
+## What Happens Automatically
+
+When an activity is POSTed to an inbox, the view performs these steps without requiring any custom code:
+
+1. **Domain blocking check** - Rejects activities from blocked domains immediately
+2. **Notification creation** - Creates a `Notification` linking the sender, target inbox, and activity
+3. **Signature capture** - If the request includes an HTTP signature, creates an `HttpSignatureProof`
+4. **Document storage** - Stores the JSON-LD document as a `LinkedDataDocument`
+5. **Asynchronous processing** - Queues the `process_incoming_notification` task
+
+The processing task then:
+
+1. **Loads the document** - Parses the JSON-LD into RDF and populates context models
+2. **Resolves the sender** - Fetches the sender's actor document if needed
+3. **Emits notification_accepted signal** - Triggers the standard activity flow processor
+4. **Adds to inbox collection** - Appends the activity to the inbox collection
+
+For standard ActivityPub activities, the toolkit's built-in handlers automatically manage collections. When a Like activity arrives for a local object, the toolkit adds it to both the object's `likes` collection and the actor's `liked` collection. When an Announce activity arrives, it goes into the object's `shares` collection. Follow activities create `FollowRequest` records that are automatically accepted if the target actor doesn't require manual approval.
+
+You do not need to write handlers for these standard flows. The machinery is already in place.
+
+## Setting Up Actors and Inboxes
+
+Before you can receive activities, you need actors with inboxes. Create a model that links your application's users to ActivityPub actors.
+
+In your application's `models.py`:
+
+```python
+from django.db import models
 from django.contrib.auth.models import User
+from activitypub.models import Reference, ActorContext, CollectionContext, Domain
 
 class UserProfile(models.Model):
-    """Links Django users to ActivityPub actors."""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     actor_reference = models.OneToOneField(
         Reference,
@@ -35,11 +74,9 @@ class UserProfile(models.Model):
     
     @classmethod
     def create_for_user(cls, user):
-        """Create an actor and profile for a Django user."""
         domain = Domain.get_default()
         actor_ref = ActorContext.generate_reference(domain)
         
-        # Create actor context
         actor = ActorContext.make(
             reference=actor_ref,
             type=ActorContext.Types.PERSON,
@@ -47,7 +84,6 @@ class UserProfile(models.Model):
             name=user.get_full_name() or user.username,
         )
         
-        # Create inbox collection
         inbox_ref = CollectionContext.generate_reference(domain)
         inbox = CollectionContext.make(
             reference=inbox_ref,
@@ -56,7 +92,6 @@ class UserProfile(models.Model):
         actor.inbox = inbox_ref
         actor.save()
         
-        # Create outbox collection
         outbox_ref = CollectionContext.generate_reference(domain)
         outbox = CollectionContext.make(
             reference=outbox_ref,
@@ -65,7 +100,6 @@ class UserProfile(models.Model):
         actor.outbox = outbox_ref
         actor.save()
         
-        # Create profile
         profile = cls.objects.create(
             user=user,
             actor_reference=actor_ref
@@ -75,553 +109,317 @@ class UserProfile(models.Model):
     
     @property
     def actor(self):
-        """Access the actor context."""
         return self.actor_reference.get_by_context(ActorContext)
 ```
 
-Create profiles for existing users with a management command in `journal/management/commands/create_profiles.py`:
-
-```python
-from django.core.management.base import BaseCommand
-from django.contrib.auth.models import User
-from journal.models import UserProfile
-
-class Command(BaseCommand):
-    help = 'Create actor profiles for users without them'
-    
-    def handle(self, *args, **options):
-        users_without_profiles = User.objects.filter(profile__isnull=True)
-        
-        for user in users_without_profiles:
-            profile = UserProfile.create_for_user(user)
-            self.stdout.write(
-                self.style.SUCCESS(f'Created profile for {user.username}')
-            )
-```
-
-Run migrations and create profiles:
+Run migrations to create the model:
 
 ```bash
 python manage.py makemigrations
 python manage.py migrate
-python manage.py create_profiles
 ```
 
-## Inbox View Implementation
-
-The toolkit provides `ActivityPubObjectDetailView` which handles both GET and POST requests. GET serves the resource as JSON-LD. POST to an inbox creates a notification for processing.
-
-Create an inbox view in `journal/views.py`:
+Create profiles for your users with a management command or in your user registration flow:
 
 ```python
-from activitypub.views import ActivityPubObjectDetailView
-from activitypub.models import Reference
-from django.shortcuts import get_object_or_404
-from journal.models import UserProfile
+from django.contrib.auth.models import User
+from myapp.models import UserProfile
 
-class UserInboxView(ActivityPubObjectDetailView):
-    """Handle inbox delivery for a specific user."""
-    
-    def get_object(self):
-        username = self.kwargs.get('username')
-        profile = get_object_or_404(UserProfile, user__username=username)
-        return profile.actor.inbox
+for user in User.objects.filter(profile__isnull=True):
+    UserProfile.create_for_user(user)
 ```
 
-Update `journal/urls.py`:
+The catch-all URL pattern now handles GET requests to any actor, inbox, or outbox URI automatically. POST requests to inbox URIs trigger the automatic processing pipeline.
+
+## Testing Inbox Delivery
+
+Test that your inbox receives and processes activities. Create a test script that simulates a remote server POSTing a Like activity:
 
 ```python
-from django.urls import path
-from journal.views import EntryDetailView, UserInboxView
+from django.test import Client
+from myapp.models import UserProfile
+import json
 
-app_name = 'journal'
+profile = UserProfile.objects.first()
+actor = profile.actor
 
-urlpatterns = [
-    path('entries/<int:pk>', EntryDetailView.as_view(), name='entry-detail'),
-    path('users/<str:username>/inbox', UserInboxView.as_view(), name='user-inbox'),
-]
+activity = {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://remote.example/activities/test-like-001",
+    "type": "Like",
+    "actor": "https://remote.example/users/alice",
+    "object": "http://localhost:8000/objects/some-local-object",
+    "published": "2025-11-25T12:00:00Z"
+}
+
+client = Client()
+response = client.post(
+    actor.inbox.uri,
+    data=json.dumps(activity),
+    content_type='application/activity+json'
+)
+
+print(f"Response: {response.status_code}")
 ```
 
-The view retrieves the user's actor, then returns their inbox reference. When a POST arrives, `ActivityPubObjectDetailView` handles it automatically: extracting the activity document, creating a notification, storing the document, and queuing it for processing.
+A 202 Accepted response indicates the activity was queued for processing. Check that the activity was added to the inbox collection:
 
-## The Notification Model
+```python
+from activitypub.models import CollectionContext
 
-When an activity arrives at an inbox, the toolkit creates a `Notification` instance. This model links:
+inbox = actor.inbox.get_by_context(CollectionContext)
+print(f"Inbox has {inbox.total_items} items")
+```
 
-- `sender` - Reference to the actor who sent the activity
-- `target` - Reference to the inbox that received it
-- `resource` - Reference to the activity itself
+For a Like activity targeting a local object, the toolkit automatically adds the activity to the object's `likes` collection and the actor's `liked` collection. For a Follow activity, it creates a `FollowRequest` record. For an Announce activity, it adds the activity to the object's `shares` collection.
 
-The notification also tracks authentication state through related `NotificationIntegrityProof` and `NotificationProofVerification` records. An HTTP signature proof is created if the request included a signature header.
+## When to Write Custom Handlers
 
-Processing happens asynchronously through the `process_incoming_notification` task. This task authenticates the notification and triggers activity processing.
+The toolkit handles standard ActivityPub flows automatically. You only need custom handlers when your application requires logic beyond the standard protocol behavior.
 
-## Activity Processing Pipeline
+Common reasons to write custom handlers:
 
-Activity processing follows these steps:
+- **User notifications** - Send an email or push notification when someone follows or mentions a user
+- **Moderation workflows** - Alert moderators when a Flag activity arrives
+- **Application-specific state** - Update non-ActivityPub models in your application
+- **Custom validation** - Implement business rules beyond standard ActivityPub semantics
+- **Integration hooks** - Trigger external services or webhooks
 
-1. **Authentication** - Verify the HTTP signature using the sender's public key
-2. **Document Loading** - Parse the JSON-LD into an RDF graph and populate context models
-3. **Signal Emission** - Fire signals that application handlers can connect to
-4. **State Updates** - Handlers update application models based on the activity
+If your application simply needs to track likes, follows, and shares, you do not need custom handlers. The collections are already maintained automatically.
 
-The toolkit handles steps 1-3. Your application implements step 4 through signal handlers.
+## Implementing Custom Handlers
 
-## Implementing Activity Handlers
+Custom handlers connect to Django signals. The toolkit emits signals at key points in the processing pipeline.
 
-Activity handlers connect to Django signals that fire when specific activity types are processed. The toolkit provides signals for common activities.
+The `notification_accepted` signal fires after a notification has been authenticated and loaded. The `activity_done` signal fires after the standard activity flows have completed. Connect to these signals to add your application-specific logic.
 
-Create a handlers module in `journal/handlers.py`:
+Create a handlers module in your application:
 
 ```python
 import logging
 from django.dispatch import receiver
-from activitypub.signals import activity_processed
-from activitypub.models import ActivityContext, ObjectContext, ActorContext
+from activitypub.signals import activity_done
+from activitypub.models import ActivityContext
 
 logger = logging.getLogger(__name__)
 
-@receiver(activity_processed)
-def handle_activity(sender, activity, **kwargs):
-    """Route activities to specific handlers based on type."""
-    activity_ctx = activity.get_by_context(ActivityContext)
-    if not activity_ctx:
-        logger.warning(f"Could not get ActivityContext for {activity.uri}")
-        return
+@receiver(activity_done)
+def notify_user_of_interaction(sender, activity, **kwargs):
+    """Send notification to user when they receive an interaction."""
     
-    activity_type = activity_ctx.type
-    
-    handlers = {
-        ActivityContext.Types.CREATE: handle_create,
-        ActivityContext.Types.LIKE: handle_like,
-        ActivityContext.Types.ANNOUNCE: handle_announce,
-        ActivityContext.Types.FOLLOW: handle_follow,
-    }
-    
-    handler = handlers.get(activity_type)
-    if handler:
-        handler(activity_ctx)
-    else:
-        logger.info(f"No handler for activity type {activity_type}")
+    if activity.type == ActivityContext.Types.LIKE:
+        handle_like_notification(activity)
+    elif activity.type == ActivityContext.Types.FOLLOW:
+        handle_follow_notification(activity)
 
-def handle_create(activity):
-    """Handle Create activities - someone created content."""
-    logger.info(f"Processing Create activity {activity.reference.uri}")
+def handle_like_notification(activity):
+    """Notify a user that their content was liked."""
+    from myapp.models import JournalEntry
     
-    # Get the object that was created
-    obj_ref = activity.object
-    if not obj_ref:
-        logger.warning("Create activity has no object")
-        return
-    
-    # Resolve the object if it's remote
-    if not obj_ref.is_resolved:
-        obj_ref.resolve()
-    
-    obj_ctx = obj_ref.get_by_context(ObjectContext)
-    if not obj_ctx:
-        logger.warning(f"Could not get ObjectContext for {obj_ref.uri}")
-        return
-    
-    # Check if this is a reply to one of our entries
-    if obj_ctx.in_reply_to:
-        handle_reply(obj_ctx)
-
-def handle_reply(obj):
-    """Handle a reply to one of our journal entries."""
-    from journal.models import JournalEntry, Reply
-    
-    # Check if the reply is to a local entry
     try:
-        entry = JournalEntry.objects.get(reference=obj.in_reply_to)
+        # Check if the liked object is one of our entries
+        entry = JournalEntry.objects.get(reference=activity.object)
+        
+        # Send notification to the entry's author
+        logger.info(f"Sending like notification to {entry.user.email}")
+        # Your notification logic here - email, push notification, etc.
+        
     except JournalEntry.DoesNotExist:
-        logger.info(f"Reply to unknown entry {obj.in_reply_to.uri}")
-        return
-    
-    # Create a reply record
-    Reply.objects.get_or_create(
-        entry=entry,
-        reply_reference=obj.reference,
-        defaults={
-            'content': obj.content,
-            'author_reference': obj.attributed_to,
-            'published': obj.published,
-        }
-    )
-    
-    logger.info(f"Recorded reply from {obj.attributed_to.uri} to entry {entry.id}")
+        # Not one of our entries, nothing to do
+        pass
 
-def handle_like(activity):
-    """Handle Like activities - someone liked content."""
-    logger.info(f"Processing Like activity {activity.reference.uri}")
-    
-    from journal.models import JournalEntry, Like
-    
-    # Get what was liked
-    obj_ref = activity.object
-    if not obj_ref:
-        return
-    
-    # Check if it's one of our entries
-    try:
-        entry = JournalEntry.objects.get(reference=obj_ref)
-    except JournalEntry.DoesNotExist:
-        logger.info(f"Like for unknown entry {obj_ref.uri}")
-        return
-    
-    # Record the like
-    Like.objects.get_or_create(
-        entry=entry,
-        actor_reference=activity.actor,
-        defaults={
-            'activity_reference': activity.reference,
-        }
-    )
-    
-    logger.info(f"Recorded like from {activity.actor.uri} for entry {entry.id}")
-
-def handle_announce(activity):
-    """Handle Announce activities - someone shared/boosted content."""
-    logger.info(f"Processing Announce activity {activity.reference.uri}")
-    
-    from journal.models import JournalEntry, Announce
-    
-    obj_ref = activity.object
-    if not obj_ref:
-        return
+def handle_follow_notification(activity):
+    """Notify a user that someone followed them."""
+    from myapp.models import UserProfile
     
     try:
-        entry = JournalEntry.objects.get(reference=obj_ref)
-    except JournalEntry.DoesNotExist:
-        logger.info(f"Announce for unknown entry {obj_ref.uri}")
-        return
-    
-    Announce.objects.get_or_create(
-        entry=entry,
-        actor_reference=activity.actor,
-        defaults={
-            'activity_reference': activity.reference,
-            'published': activity.published,
-        }
-    )
-    
-    logger.info(f"Recorded announce from {activity.actor.uri} for entry {entry.id}")
-
-def handle_follow(activity):
-    """Handle Follow activities - someone wants to follow a local user."""
-    logger.info(f"Processing Follow activity {activity.reference.uri}")
-    
-    from journal.models import UserProfile, FollowRequest
-    
-    # Get who is being followed
-    followed_ref = activity.object
-    if not followed_ref:
-        return
-    
-    try:
-        profile = UserProfile.objects.get(actor_reference=followed_ref)
+        # Check if the followed actor is one of our users
+        profile = UserProfile.objects.get(actor_reference=activity.object)
+        
+        logger.info(f"Sending follow notification to {profile.user.email}")
+        # Your notification logic here
+        
     except UserProfile.DoesNotExist:
-        logger.info(f"Follow for unknown actor {followed_ref.uri}")
-        return
-    
-    # Create a follow request
-    FollowRequest.objects.get_or_create(
-        profile=profile,
-        follower_reference=activity.actor,
-        defaults={
-            'activity_reference': activity.reference,
-        }
-    )
-    
-    logger.info(f"Recorded follow request from {activity.actor.uri} to {profile.user.username}")
+        pass
 ```
 
-Create the application models these handlers reference in `journal/models.py`:
-
-```python
-class Reply(models.Model):
-    """A reply to a journal entry from a remote user."""
-    entry = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name='replies')
-    reply_reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
-    author_reference = models.ForeignKey(
-        Reference,
-        on_delete=models.CASCADE,
-        related_name='replies_authored'
-    )
-    content = models.TextField()
-    published = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        ordering = ['published']
-        unique_together = ['entry', 'reply_reference']
-
-class Like(models.Model):
-    """A like on a journal entry."""
-    entry = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name='likes')
-    actor_reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
-    activity_reference = models.ForeignKey(
-        Reference,
-        on_delete=models.CASCADE,
-        related_name='+'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ['entry', 'actor_reference']
-
-class Announce(models.Model):
-    """A share/boost of a journal entry."""
-    entry = models.ForeignKey(JournalEntry, on_delete=models.CASCADE, related_name='announces')
-    actor_reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
-    activity_reference = models.ForeignKey(
-        Reference,
-        on_delete=models.CASCADE,
-        related_name='+'
-    )
-    published = models.DateTimeField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ['entry', 'actor_reference']
-
-class FollowRequest(models.Model):
-    """A request to follow a local user."""
-    profile = models.ForeignKey(UserProfile, on_delete=models.CASCADE, related_name='follow_requests')
-    follower_reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
-    activity_reference = models.ForeignKey(
-        Reference,
-        on_delete=models.CASCADE,
-        related_name='+'
-    )
-    accepted = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ['profile', 'follower_reference']
-```
-
-Register the handlers in your app's `apps.py`:
+Register your handlers in your app's `apps.py`:
 
 ```python
 from django.apps import AppConfig
 
-class JournalConfig(AppConfig):
+class MyAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'journal'
+    name = 'myapp'
     
     def ready(self):
-        import journal.handlers  # noqa
+        import myapp.handlers  # noqa
 ```
 
-Run migrations:
+This handler runs after the toolkit has already updated the collections. Your code adds application-specific behavior on top of the standard protocol handling.
 
-```bash
-python manage.py makemigrations
-python manage.py migrate
-```
+## Custom Handler for Moderation
 
-## Testing Inbox Delivery
-
-Test inbox delivery by simulating a remote server POSTing an activity. Create a test script or management command:
+Another common use case is handling Flag activities for content moderation. The toolkit doesn't have built-in moderation workflows, so you implement your own:
 
 ```python
-# journal/management/commands/test_inbox.py
-from django.core.management.base import BaseCommand
-from django.test import Client
-from journal.models import UserProfile
-import json
-
-class Command(BaseCommand):
-    help = 'Test inbox delivery'
+@receiver(activity_done)
+def handle_moderation_flags(sender, activity, **kwargs):
+    """Alert moderators when content is flagged."""
     
-    def add_arguments(self, parser):
-        parser.add_argument('username', type=str)
+    if activity.type != ActivityContext.Types.FLAG:
+        return
     
-    def handle(self, *args, **options):
-        username = options['username']
-        profile = UserProfile.objects.get(user__username=username)
+    from django.core.mail import send_mail
+    from myapp.models import JournalEntry
+    
+    try:
+        # Get the flagged object
+        flagged_ref = activity.object
+        entry = JournalEntry.objects.get(reference=flagged_ref)
         
-        # Simulate a Like activity
-        activity = {
-            "@context": "https://www.w3.org/ns/activitystreams",
-            "id": "https://remote.example/activities/test-like-001",
-            "type": "Like",
-            "actor": "https://remote.example/users/alice",
-            "object": f"http://localhost:8000/entries/1",
-            "published": "2025-01-15T12:00:00Z"
-        }
+        # Get the flagger
+        flagger_uri = activity.actor.uri
         
-        client = Client()
-        response = client.post(
-            f'/users/{username}/inbox',
-            data=json.dumps(activity),
-            content_type='application/activity+json'
+        # Send email to moderators
+        send_mail(
+            subject=f'Content flagged: {entry.title}',
+            message=f'User {flagger_uri} flagged entry {entry.id}',
+            from_email='noreply@example.com',
+            recipient_list=['moderators@example.com'],
         )
         
-        self.stdout.write(f"Response: {response.status_code}")
-        if response.status_code == 202:
-            self.stdout.write(self.style.SUCCESS('Activity accepted'))
-        else:
-            self.stdout.write(self.style.ERROR(f'Error: {response.content}'))
-```
-
-Run the test:
-
-```bash
-python manage.py test_inbox your_username
-```
-
-Check that a `Like` record was created:
-
-```python
-python manage.py shell
-
-from journal.models import Like
-likes = Like.objects.all()
-for like in likes:
-    print(f"{like.actor_reference.uri} liked entry {like.entry.id}")
+        logger.info(f"Sent moderation alert for entry {entry.id}")
+        
+    except JournalEntry.DoesNotExist:
+        logger.warning(f"Flag activity for unknown object {flagged_ref.uri}")
 ```
 
 ## Authentication and Authorization
 
-Production inboxes must authenticate incoming requests. The toolkit handles HTTP signature verification automatically. When a POST arrives with a signature header, the view creates an `HttpSignatureProof` and attaches it to the notification.
+The toolkit handles HTTP signature verification automatically. When a POST arrives with a signature header, the view creates an `HttpSignatureProof` attached to the notification. The processing task verifies the signature using the sender's public key fetched from their actor document.
 
-The `process_incoming_notification` task calls `notification.authenticate()`, which:
+Only authenticated notifications proceed to activity processing. The domain blocking check happens before authentication, rejecting activities from blocked domains immediately.
 
-1. Resolves the sender's actor to fetch their public key
-2. Extracts the public key from the `SecV1Context`
-3. Verifies the signature using the key
-4. Creates a `NotificationProofVerification` if successful
-
-Only authenticated notifications proceed to activity processing. Implement additional authorization in your handlers:
+Implement additional authorization in your handlers if needed. For example, you might want to enforce custom policies on which users can interact with your content:
 
 ```python
-def handle_create(activity):
-    """Handle Create activities with authorization checks."""
+@receiver(notification_accepted)
+def enforce_interaction_policy(sender, notification, **kwargs):
+    """Enforce custom policies before standard processing."""
+    
+    from myapp.models import BlockedUser
+    from activitypub.models import ActivityContext
+    
+    activity_ref = notification.resource
+    activity = activity_ref.get_by_context(ActivityContext)
     
     # Check if the actor is blocked
-    actor_ref = activity.actor
-    if actor_ref.domain and actor_ref.domain.blocked:
-        logger.warning(f"Rejecting activity from blocked domain {actor_ref.domain}")
-        return
-    
-    # Check if this is a reply
-    obj_ref = activity.object
-    if not obj_ref:
-        return
-    
-    if not obj_ref.is_resolved:
-        obj_ref.resolve()
-    
-    obj_ctx = obj_ref.get_by_context(ObjectContext)
-    if obj_ctx and obj_ctx.in_reply_to:
-        # Verify the reply is to a public entry
-        try:
-            entry = JournalEntry.objects.get(reference=obj_ctx.in_reply_to)
-            # Add authorization logic here
-            # e.g., check if replies are allowed, if actor is blocked, etc.
-            handle_reply(obj_ctx)
-        except JournalEntry.DoesNotExist:
-            pass
-```
-
-## Handling Failures
-
-Not all activities process successfully. The sender might reference nonexistent objects. Signatures might fail verification. Your application might reject activities based on policy.
-
-The notification model tracks processing state. Handlers should handle errors gracefully:
-
-```python
-def handle_like(activity):
-    """Handle Like activities with error handling."""
-    from journal.models import JournalEntry, Like
-    
-    try:
-        obj_ref = activity.object
-        if not obj_ref:
-            logger.warning(f"Like activity {activity.reference.uri} has no object")
-            return
-        
-        entry = JournalEntry.objects.get(reference=obj_ref)
-        
-        Like.objects.get_or_create(
-            entry=entry,
-            actor_reference=activity.actor,
-            defaults={'activity_reference': activity.reference}
+    if activity.actor and BlockedUser.objects.filter(actor_reference=activity.actor).exists():
+        logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
+        # Mark notification as rejected
+        from activitypub.models import NotificationProcessResult
+        NotificationProcessResult.objects.create(
+            notification=notification,
+            type=NotificationProcessResult.Types.FORBIDDEN,
+            message="Actor is blocked"
         )
-        
-        logger.info(f"Processed like from {activity.actor.uri}")
-        
-    except JournalEntry.DoesNotExist:
-        logger.info(f"Like for nonexistent entry {obj_ref.uri}")
-    except Exception as e:
-        logger.error(f"Error processing like: {e}", exc_info=True)
+        # Prevent further processing
+        raise Exception("Actor is blocked")
 ```
 
-Failed activities remain in the database as notifications. You can inspect them, retry processing, or implement cleanup logic.
+This handler runs before the standard activity flows, allowing you to reject activities from blocked users before they are added to any collections.
 
 ## Displaying Federated Interactions
 
-Show replies, likes, and announces in your application. Update the journal entry detail view to include this data.
+The toolkit maintains collections automatically, so displaying interactions is straightforward. Query the collections to show likes, shares, and replies. When a Create activity arrives with an object that has `in_reply_to` set, the toolkit automatically adds it to the parent object's `replies` collection through the signal handler in `activitypub/handlers.py`. You simply query the collection to display the replies.
 
-Create a template `journal/templates/journal/entry_detail.html`:
+```python
+from django.views.generic import DetailView
+from myapp.models import JournalEntry
+from activitypub.models import CollectionContext, ObjectContext
+
+class EntryDetailView(DetailView):
+    model = JournalEntry
+    template_name = 'myapp/entry_detail.html'
+    context_object_name = 'entry'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        entry = self.object
+        
+        # Get the ActivityPub object context
+        obj = entry.reference.get_by_context(ObjectContext)
+        
+        # Get likes
+        if obj.likes:
+            likes_collection = obj.likes.get_by_context(CollectionContext)
+            context['likes_count'] = likes_collection.total_items
+        
+        # Get shares
+        if obj.shares:
+            shares_collection = obj.shares.get_by_context(CollectionContext)
+            context['shares_count'] = shares_collection.total_items
+        
+        # Get replies - automatically populated by the toolkit
+        if obj.replies:
+            replies_collection = obj.replies.get_by_context(CollectionContext)
+            context['replies_count'] = replies_collection.total_items
+            # You can also iterate through the replies
+            context['replies'] = [
+                item.get_by_context(ObjectContext) 
+                for item in replies_collection.items.all()
+            ]
+        
+        return context
+```
+
+In your template:
 
 ```django
 {% raw %}
 <div class="entry">
-    <h2>{{ entry.as2.name }}</h2>
-    <div class="content">{{ entry.as2.content }}</div>
-    <div class="meta">
-        Posted by {{ entry.user.username }} at {{ entry.as2.published }}
-    </div>
+    <h2>{{ entry.title }}</h2>
+    <div class="content">{{ entry.content }}</div>
     
     <div class="interactions">
-        <h3>Likes ({{ entry.likes.count }})</h3>
-        <ul>
-        {% for like in entry.likes.all %}
-            <li>{{ like.actor_reference.uri }}</li>
-        {% endfor %}
-        </ul>
-        
-        <h3>Shares ({{ entry.announces.count }})</h3>
-        <ul>
-        {% for announce in entry.announces.all %}
-            <li>{{ announce.actor_reference.uri }} at {{ announce.published }}</li>
-        {% endfor %}
-        </ul>
-        
-        <h3>Replies ({{ entry.replies.count }})</h3>
-        {% for reply in entry.replies.all %}
-        <div class="reply">
-            <div class="reply-author">{{ reply.author_reference.uri }}</div>
-            <div class="reply-content">{{ reply.content }}</div>
-            <div class="reply-time">{{ reply.published }}</div>
-        </div>
-        {% endfor %}
+        <span>{{ likes_count }} likes</span>
+        <span>{{ shares_count }} shares</span>
+        <span>{{ replies_count }} replies</span>
     </div>
 </div>
 {% endraw %}
 ```
 
-Create a view:
+## Error Handling
+
+Not all activities process successfully. Remote servers might send malformed documents, reference nonexistent objects, or fail signature verification. The toolkit handles these errors gracefully.
+
+Failed signature verification prevents the notification from being accepted, so the activity never reaches your handlers. Malformed JSON-LD creates a notification result with type `BAD_REQUEST`. Activities from blocked domains are rejected with `FORBIDDEN`.
+
+Your custom handlers should handle errors gracefully:
 
 ```python
-from django.views.generic import DetailView
-from journal.models import JournalEntry
-
-class EntryDetailHTMLView(DetailView):
-    model = JournalEntry
-    template_name = 'journal/entry_detail.html'
-    context_object_name = 'entry'
+@receiver(activity_done)
+def safe_notification_handler(sender, activity, **kwargs):
+    """Handle activities with proper error handling."""
+    
+    try:
+        # Your handler logic here
+        pass
+    except Exception as e:
+        logger.error(f"Error processing activity {activity.reference.uri}: {e}", exc_info=True)
+        # Don't raise - let other handlers continue
 ```
 
-Now your application displays interactions from across the Fediverse.
+Failed notifications remain in the database with their error status recorded in `NotificationProcessResult`. You can inspect them for debugging or implement retry logic if appropriate.
 
 ## Summary
 
-You have implemented a complete inbox processing pipeline. Activities arrive via HTTP POST to inbox endpoints. The toolkit creates notifications, authenticates them, and parses the JSON-LD into context models. Your handlers connect to signals and update application state based on activity type.
+You have learned how the toolkit handles incoming ActivityPub activities automatically. The `ActivityPubObjectDetailView` serves as a catch-all handler for any local object reference. When activities arrive at inboxes, the toolkit creates notifications, verifies signatures, and processes standard ActivityPub flows without requiring custom code.
 
-This architecture separates protocol concerns from application logic. The toolkit handles ActivityPub mechanics. Your handlers implement business logic specific to your journal application. The same pattern applies to any ActivityPub application.
+Standard activities like Follow, Like, and Announce update collections automatically. You only write custom handlers when your application needs logic beyond the standard protocol behavior—sending user notifications, implementing moderation workflows, or integrating with application-specific models.
 
-The next tutorial covers the outbound side: creating activities, managing collections, and delivering to remote inboxes.
+This architecture separates protocol mechanics from application logic. The toolkit handles ActivityPub semantics. Your handlers implement business logic specific to your application.
+
+The next tutorial covers the outbound side: creating activities, publishing content to the Fediverse, and managing outbox delivery.
