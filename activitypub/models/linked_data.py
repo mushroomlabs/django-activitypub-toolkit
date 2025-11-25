@@ -294,7 +294,6 @@ class AbstractContextModel(models.Model):
     NAMESPACE = None
     CONTEXT = None
     CONTEXT_URL = None
-    EXTRA_CONTEXT = {}
     LINKED_DATA_FIELDS = {}
 
     reference = models.OneToOneField(

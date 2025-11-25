@@ -63,6 +63,17 @@ class CoreTestCase(BaseTestCase):
         self.assertEqual(actor.published.year, 2013)
         self.assertEqual(actor.name, "julian")
 
+    @httpretty.activate
+    @use_nodeinfo("https://lemmy.example.com", "nodeinfo/lemmy.json")
+    @with_document_file("lemmy/actor.json")
+    def test_can_load_lemmy_actor(self, document):
+        actor = document.reference.get_by_context(ActorContext)
+        self.assertEqual(actor.uri, "https://lemmy.example.com/u/alice")
+        self.assertIsNotNone(actor.published)
+        self.assertIsNone(actor.name)
+        self.assertEqual(actor.published.year, 2025)
+        self.assertEqual(actor.preferred_username, "alice")
+
 
 class ReferenceTestCase(BaseTestCase):
     @httpretty.activate

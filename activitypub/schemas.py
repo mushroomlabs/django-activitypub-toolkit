@@ -17,6 +17,7 @@ SECv1 = Namespace("https://w3id.org/security/v1#")
 W3ID = Namespace("https://w3id.org/identity/v1#")
 SCHEMA = Namespace("https://schema.org/")
 MASTODON = Namespace("http://joinmastodon.org/ns#")
+LEMMY = Namespace("https://join-lemmy.org/ns#")
 PURL = Namespace("https://purl.org/wytchspace/ns/ap/1.0#")
 PURL_RELATIONSHIP = Namespace("http://purl.org/vocab/relationship#")
 
@@ -1413,6 +1414,36 @@ SCHEMA_DEFINITIONS = {
             ]
         },
     },
+    "join-lemmy.org/context.json": {
+        "contentType": "application/ld+json",
+        "documentUrl": "https://join-lemmy.org/context.json",
+        "contextUrl": None,
+        "document": {
+            "@context": [
+                "https://w3id.org/security/v1",
+                {
+                    "as": "https://www.w3.org/ns/activitystreams#",
+                    "lemmy": "https://join-lemmy.org/ns#",
+                    "litepub": "http://litepub.social/ns#",
+                    "pt": "https://joinpeertube.org/ns#",
+                    "sc": "http://schema.org/",
+                    "ChatMessage": "litepub:ChatMessage",
+                    "commentsEnabled": "pt:commentsEnabled",
+                    "sensitive": "as:sensitive",
+                    "matrixUserId": "lemmy:matrixUserId",
+                    "postingRestrictedToMods": "lemmy:postingRestrictedToMods",
+                    "removeData": "lemmy:removeData",
+                    "stickied": "lemmy:stickied",
+                    "moderators": {"@type": "@id", "@id": "lemmy:moderators"},
+                    "expires": "as:endTime",
+                    "distinguished": "lemmy:distinguished",
+                    "language": "sc:inLanguage",
+                    "identifier": "sc:identifier",
+                    "Hashtag": "as:Hashtag",
+                },
+            ]
+        },
+    },
     "joinmastodon.org/ns": {
         "contentType": "application/ld+json",
         "documentUrl": "http://joinmastodon.org/ns",
@@ -1517,6 +1548,7 @@ class LocalDocumentHandler(HTTPHandler, HTTPSHandler):
         "w3id.org/security/data-integrity/v1",
         "w3id.org/security/multikey/v1",
         "joinmastodon.org/ns",
+        "join-lemmy.org/context.json",
         "funkwhale.audio/ns",
         "schema.org",
         "purl.org/wytchspace/ns/ap/1.0",
@@ -1579,4 +1611,15 @@ def secure_rdflib():
     install_opener(opener)
 
 
-__all__ = ["AS2", "LDP", "SEC", "SECv1", "W3ID", "SCHEMA", "MASTODON", "AS_EXTENSIONS", "RDF"]
+__all__ = [
+    "AS2",
+    "LDP",
+    "SEC",
+    "SECv1",
+    "W3ID",
+    "SCHEMA",
+    "LEMMY",
+    "MASTODON",
+    "AS_EXTENSIONS",
+    "RDF",
+]

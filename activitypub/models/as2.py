@@ -165,19 +165,6 @@ class LinkContext(AbstractContextModel):
 class BaseAs2ObjectContext(AbstractAs2ObjectContext):
     LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {"type": RDF.type}
 
-    # Extra context definitions for AS2 extensions not in the standard context
-    EXTRA_CONTEXT = {
-        "manuallyApprovesFollowers": {
-            "@id": "as:manuallyApprovesFollowers",
-            "@type": "xsd:boolean",
-        },
-        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-        "Hashtag": "as:Hashtag",
-        "Emoji": "as:Emoji",
-        "movedTo": {"@id": "as:movedTo", "@type": "@id"},
-        "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
-    }
-
     objects = InheritanceManager()
 
     @classmethod
@@ -192,6 +179,18 @@ class BaseAs2ObjectContext(AbstractAs2ObjectContext):
 
 
 class ObjectContext(BaseAs2ObjectContext):
+    LINKED_DATA_FIELDS = BaseAs2ObjectContext.LINKED_DATA_FIELDS | {
+        "sensitive": AS2.sensitive,
+        "source": AS2.source,
+    }
+
+    # Extra context definitions for AS2 extensions not in the standard context
+    EXTRA_CONTEXT = {
+        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+        "Hashtag": "as:Hashtag",
+        "Emoji": "as:Emoji",
+    }
+
     class Types(models.TextChoices):
         ARTICLE = str(AS2.Article)
         AUDIO = str(AS2.Audio)
@@ -210,6 +209,8 @@ class ObjectContext(BaseAs2ObjectContext):
         EMOJI = str(AS2.Emoji)
 
     type = models.CharField(max_length=128, choices=Types.choices)
+    sensitive = models.BooleanField(default=False)
+    source = ReferenceField()
 
     @classmethod
     def generate_reference(cls, domain):
@@ -259,6 +260,17 @@ class ActorContext(BaseAs2ObjectContext):
         "preferred_username": AS2.preferredUsername,
         "manually_approves_followers": AS2.manuallyApprovesFollowers,
         "endpoints": AS2.endpoints,
+        "moved_to": AS2.movedTo,
+        "also_known_as": AS2.alsoKnownAs,
+    }
+
+    EXTRA_CONTEXT = {
+        "manuallyApprovesFollowers": {
+            "@id": "as:manuallyApprovesFollowers",
+            "@type": "xsd:boolean",
+        },
+        "movedTo": {"@id": "as:movedTo", "@type": "@id"},
+        "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
     }
 
     class Types(models.TextChoices):
@@ -271,7 +283,8 @@ class ActorContext(BaseAs2ObjectContext):
     type = models.CharField(max_length=64, choices=Types.choices)
     preferred_username = models.CharField(max_length=100, null=True, blank=True)
     manually_approves_followers = models.BooleanField(default=False)
-
+    moved_to = ReferenceField()
+    also_known_as = ReferenceField()
     endpoints = models.ForeignKey(
         Reference, related_name="actor_endpoints", null=True, blank=True, on_delete=models.SET_NULL
     )
