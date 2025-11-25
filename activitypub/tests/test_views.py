@@ -468,9 +468,6 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
                         "@id": "as:manuallyApprovesFollowers",
                         "@type": "xsd:boolean",
                     },
-                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-                    "Hashtag": "as:Hashtag",
-                    "Emoji": "as:Emoji",
                     "movedTo": {"@id": "as:movedTo", "@type": "@id"},
                     "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
                 },
@@ -545,20 +542,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
     def test_can_serialize_create_activity(self):
         """Test that a Create activity is serialized correctly"""
         expected = {
-            "@context": [
-                "https://www.w3.org/ns/activitystreams",
-                {
-                    "manuallyApprovesFollowers": {
-                        "@id": "as:manuallyApprovesFollowers",
-                        "@type": "xsd:boolean",
-                    },
-                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-                    "Hashtag": "as:Hashtag",
-                    "Emoji": "as:Emoji",
-                    "movedTo": {"@id": "as:movedTo", "@type": "@id"},
-                    "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
-                },
-            ],
+            "@context": "https://www.w3.org/ns/activitystreams",
             "id": "http://testserver/activities/create-789",
             "type": "Create",
             "actor": "http://testserver/users/alice",
