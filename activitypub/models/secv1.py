@@ -12,7 +12,7 @@ from requests_http_message_signatures import HTTPSignatureHeaderAuth
 from ..schemas import SECv1
 from ..settings import app_settings
 from .base import SignatureAlgorithms, generate_ulid
-from .linked_data import AbstractContextModel, Reference, ReferenceField
+from .linked_data import AbstractContextModel, Domain, Reference, ReferenceField
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +87,18 @@ class SecV1Context(AbstractContextModel):
             return False
 
     @classmethod
-    def generate_keypair(cls, owner: Reference, force=False):
-        if owner.reference is None:
-            raise ValueError("Can not generate keypairs for unnamed resources")
+    def generate_reference(cls, domain: Domain):
+        ulid = str(generate_ulid())
+        if app_settings.Instance.keypair_view_name:
+            uri = domain.reverse_view(app_settings.Instance.keypair_view_name, pk=ulid)
+        else:
+            uri = f"{domain.url}/keys/{ulid}"
 
-        if owner.reference.is_remote:
+        return Reference.make(uri)
+
+    @classmethod
+    def generate_keypair(cls, owner_reference: Reference, force=False):
+        if owner_reference.is_remote:
             raise ValueError("Can only generate keypairs for local resources")
 
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -109,22 +116,15 @@ class SecV1Context(AbstractContextModel):
             .decode("ascii")
         )
 
-        ulid = str(generate_ulid())
-        if app_settings.Instance.keypair_view_name:
-            uri = owner.reference.domain.reverse_view(
-                app_settings.Instance.keypair_view_name, pk=ulid
-            )
-        else:
-            uri = f"{owner.reference.uri}#key-{ulid}"
-        ld_model = Reference.make(uri)
+        key_reference = cls.generate_reference(owner_reference.domain)
 
-        keypair = cls.objects.create(
-            reference=ld_model,
+        keypair = cls.make(
+            reference=key_reference,
             private_key_pem=private_pem,
             public_key_pem=public_pem,
             signature_algorithm=SignatureAlgorithms.RS256,
         )
-        keypair.owner.add(owner)
+        keypair.owner.add(owner_reference)
         return keypair
 
     @classmethod
