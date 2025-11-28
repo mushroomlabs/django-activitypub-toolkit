@@ -6,6 +6,10 @@ class UnprocessableJsonLd(Exception):
     pass
 
 
+class InvalidDomainError(Exception):
+    pass
+
+
 class DocumentResolutionError(Exception):
     pass
 

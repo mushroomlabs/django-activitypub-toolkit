@@ -607,7 +607,9 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertTrue("items" in data or "first" in data)
 
     def test_can_serialize_question_object(self):
-        """Test that a Question object is serialized with oneOf choices and embedded replies collection"""
+        """
+        Test that a Question object is serialized with oneOf choices and embedded replies collection
+        """
         account = AccountFactory(username="alice", domain=self.domain)
         actor = account.actor
 
@@ -780,7 +782,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         # Add several reply items
         for i in range(10):
             reply_ref = models.Reference.make(f"http://testserver/notes/reply-{i}")
-            reply_note = models.ObjectContext.objects.create(
+            models.ObjectContext.objects.create(
                 reference=reply_ref,
                 type=models.ObjectContext.Types.NOTE,
                 content=f"Reply {i}",

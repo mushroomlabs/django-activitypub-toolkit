@@ -1,5 +1,6 @@
 import factory
 from django.db.models.signals import post_save
+from django.utils import timezone
 from factory import fuzzy
 
 from . import models
@@ -37,6 +38,11 @@ class ReferenceFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = models.Reference
         exclude = ("path",)
+
+    class Params:
+        resolved = factory.Trait(
+            status=models.Reference.STATUS.resolved, resolved_at=timezone.now()
+        )
 
 
 class LinkedDataDocumentFactory(factory.django.DjangoModelFactory):

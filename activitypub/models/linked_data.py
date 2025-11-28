@@ -15,7 +15,7 @@ from model_utils.managers import InheritanceManager
 from model_utils.models import StatusModel, TimeStampedModel
 from pyld import jsonld
 
-from ..exceptions import DocumentResolutionError
+from ..exceptions import DocumentResolutionError, InvalidDomainError
 from ..settings import app_settings
 from .base import generate_ulid
 
@@ -96,7 +96,7 @@ class Domain(TimeStampedModel):
         parsed = urlparse(uri)
 
         if not parsed.hostname:
-            raise ValueError(f"{uri} does not have a FQDN")
+            raise InvalidDomainError(f"{uri} does not have a FQDN")
 
         domain, _ = cls.objects.get_or_create(
             scheme=parsed.scheme, name=parsed.hostname, port=parsed.port, defaults=kw
