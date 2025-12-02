@@ -76,8 +76,8 @@ class Domain(TimeStampedModel):
 
     @property
     def netloc(self):
-        default_http = self.port == 80 and self.scheme.self.SchemeTypes.HTTP
-        default_https = self.port == 443 and self.scheme.self.SchemeTypes.HTTPS
+        default_http = self.port == 80 and self.scheme == self.SchemeTypes.HTTP
+        default_https = self.port == 443 and self.scheme == self.SchemeTypes.HTTPS
 
         if self.port is None or default_http or default_https:
             return self.name
@@ -247,7 +247,7 @@ class LinkedDataDocument(models.Model):
             ]
 
             for reference in references:
-                for context_model in app_settings.AUTOLOADED_CONTEXT_MODELS:
+                for context_model in app_settings.CONTEXT_MODELS:
                     context_model.load_from_graph(g=g, reference=reference)
 
         except (KeyError, AssertionError):
@@ -291,9 +291,7 @@ class AbstractContextModel(models.Model):
     etc.) and links to a Reference instance via OneToOneField.
     """
 
-    NAMESPACE = None
     CONTEXT = None
-    CONTEXT_URL = None
     LINKED_DATA_FIELDS = {}
 
     reference = models.OneToOneField(
@@ -369,16 +367,6 @@ class AbstractContextModel(models.Model):
             getattr(obj, field_name).set(refs)
 
         return obj
-
-    @classmethod
-    def get_context(cls):
-        if cls.CONTEXT_URL is not None:
-            return cls.CONTEXT_URL
-        if cls.NAMESPACE is not None:
-            return str(cls.NAMESPACE).removesuffix("#")
-        if cls.CONTEXT is not None:
-            return cls.CONTEXT
-        return None
 
     @classmethod
     def make(cls, reference: Reference, **defaults):

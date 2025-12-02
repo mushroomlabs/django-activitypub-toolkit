@@ -32,9 +32,8 @@ nav:
   - Reference:
       - references/index.md
       - Models: references/models.md
-      - Message Processors: references/message_processors.md
+      - Document Processors: references/document_processors.md
       - Serializers: references/serializers.md
-      - Frames: references/frames.md
       - Settings: references/settings.md
 
   - HOWTOs:

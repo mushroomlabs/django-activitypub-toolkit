@@ -16,6 +16,4 @@ This section provides technical reference documentation for Django ActivityPub T
 
 **[Serializers](serializers.md)** - JSON-LD serialization and deserialization utilities.
 
-**[Frames](frames.md)** - JSON-LD framing classes for controlling data structure and embedding.
-
 **[Settings](settings.md)** - Configuration options and customization settings.

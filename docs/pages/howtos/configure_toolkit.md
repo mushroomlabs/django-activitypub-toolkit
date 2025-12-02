@@ -45,10 +45,7 @@ Specify which context models to load automatically:
 ```python
 FEDERATION = {
     # ... other settings ...
-    'AUTOLOADED_CONTEXT_MODELS': [
-        'activitypub.models.ObjectContext',
-        'activitypub.models.ActorContext',
-        'activitypub.models.ActivityContext',
+    'EXTRA_CONTEXT_MODELS': [
         'myapp.models.CustomContext',  # Your custom models
     ],
 }
@@ -106,9 +103,9 @@ Add middleware for incoming and outgoing activities:
 ```python
 FEDERATION = {
     # ... other settings ...
-    'MESSAGE_PROCESSORS': [
-        'activitypub.message_processors.ActorDeletionMessageProcessor',
-        'activitypub.message_processors.CompactJsonLdMessageProcessor',
+    'DOCUMENT_PROCESSORS': [
+        'activitypub.processors.ActorDeletionDocumentProcessor',
+        'activitypub.processors.CompactJsonLdDocumentProcessor',
         'myapp.processors.SpamFilterProcessor',
     ],
 }

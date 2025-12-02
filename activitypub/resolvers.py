@@ -2,7 +2,15 @@ import requests
 
 from activitypub.exceptions import DocumentResolutionError
 from activitypub.models import ActivityPubServer, Domain
-from activitypub.schemas import AS2
+from activitypub.settings import app_settings
+
+
+def is_context_or_namespace_url(uri):
+    context_urls = {c.url for c in app_settings.PRESET_CONTEXTS}
+    known_namespaces = {
+        str(c.namespace) for c in app_settings.PRESET_CONTEXTS if c.namespace is not None
+    }
+    return uri in context_urls or any([uri.startswith(nm) for nm in known_namespaces])
 
 
 class BaseDocumentResolver:
@@ -13,14 +21,9 @@ class BaseDocumentResolver:
         raise NotImplementedError
 
 
-class ConstantDocumentResolver(BaseDocumentResolver):
-    KNOWN_URIS = {
-        str(AS2.Public),
-        str(AS2["Public/Inbox"]),
-    }
-
+class ContextUriResolver(BaseDocumentResolver):
     def can_resolve(self, uri):
-        return uri in self.KNOWN_URIS
+        return is_context_or_namespace_url(uri)
 
     def resolve(self, uri):
         return None
@@ -28,6 +31,9 @@ class ConstantDocumentResolver(BaseDocumentResolver):
 
 class HttpDocumentResolver(BaseDocumentResolver):
     def can_resolve(self, uri):
+        if is_context_or_namespace_url(uri):
+            return False
+
         return uri.startswith("http://") or uri.startswith("https://")
 
     def resolve(self, uri):

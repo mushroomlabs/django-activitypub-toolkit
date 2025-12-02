@@ -2,14 +2,14 @@ import logging
 
 import rdflib
 
+from .contexts import AS2, RDF
 from .exceptions import DropMessage
 from .models import Actor, LinkedDataDocument
-from .schemas import AS2, RDF
 
 logger = logging.getLogger(__name__)
 
 
-class MessageProcessor:
+class DocumentProcessor:
     def process_outgoing(self, document):
         pass
 
@@ -17,7 +17,7 @@ class MessageProcessor:
         pass
 
 
-class ActorDeletionMessageProcessor(MessageProcessor):
+class ActorDeletionDocumentProcessor(DocumentProcessor):
     def process_incoming(self, document: dict | None):
         """
         Mastodon is constantly sending DELETE messages for all
@@ -52,7 +52,7 @@ class ActorDeletionMessageProcessor(MessageProcessor):
             pass
 
 
-class CompactJsonLdMessageProcessor(MessageProcessor):
+class CompactJsonLdDocumentProcessor(DocumentProcessor):
     def process_outgoing(self, document: dict | None):
         """
         Many Fediverse servers do not properly treat ActivityPub data as JSON-LD

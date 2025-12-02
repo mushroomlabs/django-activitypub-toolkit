@@ -4,8 +4,8 @@ import requests
 from celery import shared_task
 from django.db import transaction
 
+from .contexts import AS2
 from .exceptions import DropMessage, UnprocessableJsonLd
-from .frames import FrameRegistry
 from .models import (
     Activity,
     CollectionContext,
@@ -15,8 +15,7 @@ from .models import (
     Reference,
 )
 from .models.ap import ActivityPubServer, Actor
-from .models.secv1 import SecV1Context
-from .schemas import AS2
+from .models.sec import SecV1Context
 from .serializers import LinkedDataSerializer
 from .settings import app_settings
 from .signals import notification_accepted
@@ -47,7 +46,7 @@ def process_incoming_notification(notification_id):
         notification = Notification.objects.get(id=notification_id)
         document = LinkedDataDocument.objects.get(reference=notification.resource)
 
-        for processor in app_settings.MESSAGE_PROCESSORS:
+        for processor in app_settings.DOCUMENT_PROCESSORS:
             processor.process_incoming(document.data)
 
         # Load context models from the document
@@ -82,19 +81,28 @@ def send_notification(notification_id):
 
         viewer = inbox_owner and inbox_owner.reference or Reference.make(str(AS2.Public))
 
+        # Serialize to expanded JSON-LD (main subject, not embedded)
         serializer = LinkedDataSerializer(
-            instance=notification.resource, context={"viewer": viewer}
+            instance=notification.resource,
+            embedded=False,
+            context={"viewer": viewer}
         )
-        document = FrameRegistry.auto_frame(serializer).to_framed_document()
+        expanded_document = serializer.data
 
-        for adapter in app_settings.MESSAGE_PROCESSORS:
-            adapter.process_outgoing(document)
+        # Compact the document
+        from pyld import jsonld
+        context = serializer.get_compact_context(notification.resource)
+        compacted_document = jsonld.compact(expanded_document, context)
+
+        # Apply document processors
+        for adapter in app_settings.DOCUMENT_PROCESSORS:
+            adapter.process_outgoing(compacted_document)
 
         logger.info(f"Sending message to {notification.recipient.uri}")
         headers = {"Content-Type": "application/activity+json"}
         response = requests.post(
             notification.target.uri,
-            json=notification.document,
+            json=compacted_document,
             headers=headers,
             auth=signing_key.signed_request_auth,
         )

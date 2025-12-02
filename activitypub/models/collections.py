@@ -5,7 +5,7 @@ from django.db import models, transaction
 from django.db.models import Max, Q
 from model_utils.managers import InheritanceManager
 
-from ..schemas import AS2, RDF
+from ..contexts import AS2, RDF
 from ..settings import app_settings
 from .as2 import AbstractAs2ObjectContext
 from .base import generate_ulid

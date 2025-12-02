@@ -3,13 +3,18 @@ import logging
 import rdflib
 from django.db import models
 from model_utils.managers import InheritanceManager
+from rdflib import RDF, Namespace
 
-from ..schemas import AS2, LDP, PURL_RELATIONSHIP, RDF
+from ..contexts import AS2_CONTEXT
 from ..settings import app_settings
 from .base import _file_location, generate_ulid
 from .linked_data import AbstractContextModel, Reference, ReferenceField
 
 logger = logging.getLogger(__name__)
+
+AS2 = AS2_CONTEXT.namespace
+LDP = Namespace("http://www.w3.org/ns/ldp#")
+PURL_RELATIONSHIP = Namespace("http://purl.org/vocab/relationship#")
 
 
 class AbstractAs2ObjectContext(AbstractContextModel):
@@ -18,8 +23,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     Stores AS2-specific fields like name, type, published, actor, etc.
     """
 
-    NAMESPACE = str(AS2)
-    CONTEXT_URL = "https://www.w3.org/ns/activitystreams"
+    CONTEXT = AS2_CONTEXT
     LINKED_DATA_FIELDS = {
         "published": AS2.published,
         "updated": AS2.updated,
@@ -118,8 +122,6 @@ class AbstractAs2ObjectContext(AbstractContextModel):
 
 
 class LinkContext(AbstractContextModel):
-    NAMESPACE = str(AS2)
-
     LINKED_DATA_FIELDS = {
         "type": RDF.type,
         "name": AS2.name,

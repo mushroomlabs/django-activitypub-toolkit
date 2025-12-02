@@ -142,7 +142,6 @@ from django.db import models
 LEMMY = Namespace('https://join-lemmy.org/ns#')
 
 class LemmyContext(AbstractContextModel):
-    NAMESPACE = str(LEMMY)
     LINKED_DATA_FIELDS = {
         'stickied': LEMMY.stickied,
         'locked': LEMMY.locked,
@@ -159,14 +158,11 @@ class LemmyContext(AbstractContextModel):
         return stickied_val is not None or locked_val is not None
 ```
 
-Register custom contexts in settings to have them automatically process incoming documents:
+Register custom context models in settings to have them automatically process incoming documents:
 
 ```python
 FEDERATION = {
-    'AUTOLOADED_CONTEXT_MODELS': [
-        'activitypub.models.ObjectContext',
-        'activitypub.models.ActorContext',
-        'activitypub.models.ActivityContext',
+    'EXTRA_CONTEXT_MODELS': [
         'myapp.models.LemmyContext',
     ],
 }

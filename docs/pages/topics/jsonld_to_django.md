@@ -174,114 +174,126 @@ method determines whether the content field appears in the output.
 This allows fine-grained control over what data gets exposed to
 different viewers without changing the underlying context models.
 
-## Framing for Structure
+## Field-Based Serialization
 
-Expanded JSON-LD is precise but verbose. Applications typically serve
-compacted JSON-LD where keys use short names and the `@context`
-provides namespace mappings. Before compaction, framing provides
-control over document structure.
+The toolkit uses a field-based approach to control how resources are
+serialized depending on their context. Instead of frame rules, serializer
+field definitions determine whether related objects are embedded,
+referenced, or omitted entirely.
 
-The toolkit's framing system solves a fundamental challenge: the same
-resource needs different representations depending on context. An
-actor embedded in an activity should show minimal information. The
-same actor, when requested directly, should include full details with
-collection references. A collection should embed its first page when
-requested directly but only show a reference when embedded elsewhere.
+### Core Concepts
 
-Consider a note with a replies collection. When you fetch the note
-directly:
+The `LinkedDataSerializer` uses an `embedded` parameter to select
+different serializer variants:
 
-```json
-{
-  "@id": "https://example.com/notes/123",
-  "type": "Note",
-  "content": "Hello World",
-  "replies": "https://example.com/notes/123/replies"
-}
-```
+- `embedded=False` (default): Resource is the main subject of the response
+- `embedded=True`: Resource is referenced from another document
 
-The replies collection appears as a simple reference. But when you
-fetch the collection directly, it embeds its first page:
+When `embedded=True`, the serializer checks the `EMBEDDED_CONTEXT_SERIALIZERS`
+setting to use simplified serializers that omit verbose fields.
 
-```json
-{
-  "@id": "https://example.com/notes/123/replies",
-  "type": "OrderedCollection",
-  "totalItems": 42,
-  "first": {
-    "@id": "https://example.com/notes/123/replies?page=1",
-    "type": "OrderedCollectionPage",
-    "items": ["https://example.com/notes/456", ...]
-  }
-}
-```
+### Field Types
 
-This context-aware framing happens automatically. The toolkit selects
-the appropriate frame based on which context model has data for the
-reference. Frames define rules that apply differently based on whether
-the resource is the main subject or embedded within another resource.
+The toolkit provides three main field types for controlling serialization:
 
-The `LinkedDataFrame` class provides the core framing logic:
+- **`OmittedField()`** - Completely excludes the field from output
+- **`ReferenceField()`** - Shows only `{"@id": "uri"}` 
+- **`EmbeddedReferenceField()`** - Recursively embeds the full object with depth limits
+
+### Basic Field Definitions
+
+Override `LINKED_DATA_FIELDS` introspection by defining fields in your serializer:
 
 ```python
-from activitypub.frames import LinkedDataFrame, FramingRule
-from activitypub.schemas import AS2
+from activitypub.serializers import ContextModelSerializer
+from activitypub.serializers.fields import ReferenceField, OmittedField
 
-class ObjectFrame(LinkedDataFrame):
-    context_model_class = ObjectContext  # Ties frame to model
-    priority = 0  # Used when multiple frames could apply
+class ObjectContextSerializer(ContextModelSerializer):
+    class Meta:
+        model = ObjectContext
 
-    rules = {
-        str(AS2.replies): [
-            # Show collection reference when note is main subject
-            FramingRule(
-                str(AS2.replies),
-                action=FramingRule.REFERENCE,
-                when=lambda ctx: ctx.is_main_subject
-            ),
-            # Omit collection when note is embedded elsewhere
-            FramingRule(
-                str(AS2.replies),
-                action=FramingRule.OMIT,
-                when=lambda ctx: ctx.is_embedded
-            ),
-        ],
+    # Show replies as a reference (not embedded)
+    replies = ReferenceField()
+```
+
+### Embedded Serializer Variants
+
+Create simplified serializers for embedded contexts:
+
+```python
+class EmbeddedActorContextSerializer(ContextModelSerializer):
+    class Meta:
+        model = ActorContext
+
+    # Omit collection endpoints when embedded
+    inbox = OmittedField()
+    outbox = OmittedField()
+    followers = OmittedField()
+    following = OmittedField()
+    liked = OmittedField()
+```
+
+### Configuration
+
+Configure embedded serializers in Django settings:
+
+```python
+FEDERATION = {
+    'EMBEDDED_CONTEXT_SERIALIZERS': {
+        'activitypub.models.ActorContext': 'myapp.serializers.EmbeddedActorSerializer',
+        'activitypub.models.CollectionContext': 'activitypub.serializers.EmbeddedCollectionContextSerializer',
     }
+}
 ```
 
-Frames register with the `FrameRegistry`, which automatically selects
-the right frame when serializing. Views and tasks use automatic frame
-selection:
+### Usage in Views and Tasks
+
+The `LinkedDataSerializer` automatically selects the appropriate variant:
 
 ```python
-from activitypub.frames import FrameRegistry
 from activitypub.serializers import LinkedDataSerializer
 
-# Automatic frame selection based on context model
-serializer = LinkedDataSerializer(instance=reference, context={'viewer': viewer})
-frame = FrameRegistry.auto_frame(serializer)
-document = frame.to_framed_document()
+# Main subject - uses default serializer
+serializer = LinkedDataSerializer(
+    instance=reference,
+    context={'viewer': viewer},
+    embedded=False
+)
+
+# Embedded object - uses embedded variant if configured
+embedded_serializer = LinkedDataSerializer(
+    instance=reference,
+    context={'viewer': viewer},
+    embedded=True
+)
 ```
 
-Frames support three actions for each predicate:
+### Embedding with Depth Control
 
-- **OMIT** - Exclude the predicate entirely
-- **REFERENCE** - Include as `{"@id": "..."}` only
-- **EMBED** - Fully serialize the referenced object
+Use `EmbeddedReferenceField` to recursively embed objects while preventing
+infinite recursion:
 
-Rules can include conditions that check the framing context. The
-context tracks whether the resource is the main subject (depth 0),
-embedded (depth > 0), and the current nesting level. This allows
-sophisticated behavior like "embed up to depth 2, then show only
-references."
+```python
+from activitypub.serializers.fields import EmbeddedReferenceField
 
-The toolkit includes frames for common ActivityPub patterns:
-`ActorFrame` for actors, `CollectionFrame` for collections,
-`QuestionFrame` for polls with embedded choices, and `ActivityFrame`
-for activities. Custom frames extend these base classes and register
-with the system.
+class QuestionContextSerializer(ContextModelSerializer):
+    # Embed choice options fully
+    one_of = EmbeddedReferenceField(max_depth=2)
+    any_of = EmbeddedReferenceField(max_depth=2)
+```
 
-After framing shapes the document structure, compaction makes it
+At maximum depth, `EmbeddedReferenceField` automatically falls back to
+`ReferenceField` behavior.
+
+### Built-in Embedded Serializers
+
+The toolkit includes embedded serializers for common ActivityPub patterns:
+
+- `EmbeddedActorContextSerializer` - Omits inbox, outbox, followers, following, liked
+- `EmbeddedCollectionContextSerializer` - Omits items, orderedItems, first
+- `QuestionContextSerializer` - Embeds choice options (oneOf/anyOf)
+
+After serialization produces expanded JSON-LD, compaction makes it
 readable. The serializer builds a `@context` array from the relevant
 context models. `ObjectContext` contributes the ActivityStreams
 context. `SecV1Context` contributes the security context. Compaction
@@ -326,8 +338,8 @@ register it in settings.
 
 ```python
 FEDERATION = {
-    'CUSTOM_SERIALIZERS': {
-        ObjectContext: 'myapp.serializers.CustomObjectSerializer',
+    'CUSTOM_CONTEXT_SERIALIZERS': {
+        'activitypub.models.ObjectContext': 'myapp.serializers.CustomObjectSerializer',
     }
 }
 ```
@@ -371,6 +383,13 @@ Serialization performance matters less because it typically happens
 for single resources rather than bulk operations. Serving an actor
 profile or a post serializes one reference with its contexts. The
 overhead is acceptable for request-response cycles.
+
+The field-based serialization system adds minimal overhead. Field
+definitions are evaluated once during serializer instantiation. The
+`embedded` parameter selection happens at serialization time but
+doesn't significantly impact performance. Depth limiting in
+`EmbeddedReferenceField` prevents exponential serialization costs for
+deeply nested structures.
 
 ## When Things Go Wrong
 
@@ -425,6 +444,12 @@ the design. It defines the contract between your Django models and the
 RDF graph. As long as you maintain that mapping correctly,
 serialization and parsing remain inverse operations.
 
+The field-based serialization system preserves this guarantee. Field
+definitions in serializers override the automatic introspection but
+don't change the underlying `LINKED_DATA_FIELDS` mappings. The same
+data that gets extracted during parsing gets serialized back out,
+subject to access control and embedding rules.
+
 ## Designing Your Context Models
 
 When building applications on the toolkit, you might create custom
@@ -449,6 +474,25 @@ your custom properties. Design for composition, not replacement. Your
 context model adds information; it doesn't replace the standard
 contexts.
 
+## Designing Your Serializers
+
+When creating custom serializers, consider both main subject and
+embedded variants. Define field behaviors that make sense for each
+context:
+
+- Main subject serializers can embed related objects or show full collections
+- Embedded serializers should omit verbose fields to keep responses compact
+
+Use the field types appropriately:
+
+- `ReferenceField()` for relationships that should always be references
+- `EmbeddedReferenceField()` for relationships that benefit from embedding
+- `OmittedField()` for fields that don't make sense in certain contexts
+
+Consider access control methods (`show_<field_name>()`) for sensitive data.
+These methods receive the context model instance and viewer reference,
+allowing fine-grained control over what data gets exposed.
+
 ## Integration Points
 
 Your application models integrate at the serialization and
@@ -460,6 +504,11 @@ When serving resources, your application models provide the data that
 gets written to context models, which then get serialized to JSON-LD.
 You're responsible for keeping your application models synchronized
 with the relevant context models.
+
+The field-based serialization system gives you precise control over
+how your data appears to different viewers and in different contexts.
+Use embedded serializers to optimize for bandwidth and user experience
+while maintaining the round-trip guarantee for data integrity.
 
 This bidirectional flow—JSON-LD to context models to application
 models, and back again—is where your business logic lives. The toolkit

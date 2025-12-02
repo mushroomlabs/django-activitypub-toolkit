@@ -5,7 +5,7 @@ import uuid
 from django.db import models
 
 from .linked_data import NotificationIntegrityProof, NotificationProofVerification
-from .secv1 import Reference, SecV1Context
+from .sec import Reference, SecV1Context
 
 logger = logging.getLogger(__name__)
 

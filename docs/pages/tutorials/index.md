@@ -12,8 +12,8 @@ complete working applications from scratch.
 Start here if you are new to the toolkit. This tutorial builds a
 federated journal application where users write entries and share them
 across the Fediverse. You will learn the reference-first architecture,
-how context models work, and the fundamentals of ActivityPub
-federation.
+how Context definitions and namespaces work, how context models
+implement vocabularies, and the fundamentals of ActivityPub federation.
 
 Best for: Developers building their first ActivityPub application or
 wanting to understand the toolkit's design principles.

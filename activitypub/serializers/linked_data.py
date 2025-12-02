@@ -23,12 +23,58 @@ class ContextModelSerializer(serializers.Serializer):
         """
         Convert context model instance to expanded JSON-LD.
 
+        Supports explicit field overrides - fields defined in the serializer
+        class will be used instead of automatic introspection for those fields.
+
         Returns dict with full predicate URIs as keys.
         """
         viewer = self.context.get("viewer")
         data = {}
 
+        # First, process explicit fields defined in the serializer
+        # These override the automatic introspection
+        for field_name, field in self.fields.items():
+            # Skip if field not in LINKED_DATA_FIELDS (shouldn't happen, but be safe)
+            if field_name not in self.context_model_class.LINKED_DATA_FIELDS:
+                continue
+
+            # Check access control
+            if not self._can_view_field(instance, field_name, viewer):
+                continue
+
+            try:
+                # Get the attribute using DRF's field logic
+                attribute = field.get_attribute(instance)
+
+                # Skip if None or empty sentinel
+                if attribute is None or attribute is serializers.empty:
+                    continue
+
+                # Serialize using the field's to_representation
+                value = field.to_representation(attribute)
+
+                # Skip if field returns None (e.g., OmittedField)
+                if value is None:
+                    continue
+
+                # Special handling for type field
+                if field_name == "type":
+                    data["@type"] = value
+                    continue
+
+                # Map to predicate URI
+                predicate = self.context_model_class.LINKED_DATA_FIELDS[field_name]
+                data[str(predicate)] = value
+            except Exception:
+                # If field processing fails, skip it
+                continue
+
+        # Then, introspect LINKED_DATA_FIELDS for fields not explicitly defined
         for field_name, predicate in self.context_model_class.LINKED_DATA_FIELDS.items():
+            # Skip if this field is explicitly defined (already processed above)
+            if field_name in self.fields:
+                continue
+
             if not self._can_view_field(instance, field_name, viewer):
                 continue
 
@@ -128,11 +174,26 @@ class LinkedDataSerializer(serializers.BaseSerializer):
     """
     Serializer for linked data models. Given a reference, find all
     the associated context models that have data and produces the merged JSON-LD.
+
+    Supports embedded mode for simplified representation when referenced
+    from other documents.
     """
+
+    def __init__(self, instance, embedded=False, **kwargs):
+        """
+        Initialize the serializer.
+
+        Args:
+            instance: Reference object to serialize
+            embedded: If True, uses simplified embedded serializers
+            **kwargs: Additional arguments passed to parent
+        """
+        self.is_embedded = embedded
+        super().__init__(instance, **kwargs)
 
     def get_context_models(self):
         # TODO: improve this so that it we get this from the context models which has data
-        return app_settings.AUTOLOADED_CONTEXT_MODELS
+        return app_settings.CONTEXT_MODELS
 
     def get_compact_context(self, instance):
         """
@@ -154,9 +215,9 @@ class LinkedDataSerializer(serializers.BaseSerializer):
                 continue
 
             # Get context URL
-            ctx = context_model_class.get_context()
+            ctx = context_model_class.CONTEXT
             if ctx is not None:
-                contexts.add(ctx)
+                contexts.add(ctx.url)
 
             # Merge extra context if present
             if hasattr(context_model_class, "EXTRA_CONTEXT"):
@@ -186,21 +247,44 @@ class LinkedDataSerializer(serializers.BaseSerializer):
 
         return compact_context
 
+    def _get_serializer_for_context(self, context_model_class):
+        """
+        Get appropriate serializer class for a context model.
+
+        When embedded=True, checks EMBEDDED_CONTEXT_SERIALIZERS first,
+        then falls back to CUSTOM_CONTEXT_SERIALIZERS, then default.
+
+        Args:
+            context_model_class: The context model class to serialize
+
+        Returns:
+            Serializer class to use
+        """
+        # If embedded, check for embedded-specific serializer first
+        if self.is_embedded:
+            embedded_serializers = app_settings.EMBEDDED_CONTEXT_SERIALIZERS
+            if context_model_class in embedded_serializers:
+                return embedded_serializers[context_model_class]
+
+        # Fall back to custom serializers
+        custom_serializers = app_settings.CUSTOM_CONTEXT_SERIALIZERS
+        if context_model_class in custom_serializers:
+            return custom_serializers[context_model_class]
+
+        # Default
+        return ContextModelSerializer
+
     def to_representation(self, instance):
         # Get expanded JSON-LD data
         data = {"@id": instance.uri}
-        custom_serializers = app_settings.CUSTOM_SERIALIZERS
 
         for context_model_class in self.get_context_models():
             context_obj = instance.get_by_context(context_model_class)
             if not context_obj:
                 continue
 
-            # Get serializer - use custom if registered, otherwise default
-            if context_model_class in custom_serializers:
-                serializer_class = custom_serializers[context_model_class]
-            else:
-                serializer_class = ContextModelSerializer
+            # Get appropriate serializer class
+            serializer_class = self._get_serializer_for_context(context_model_class)
 
             serializer = serializer_class(context_obj, context=self.context)
             context_data = serializer.data

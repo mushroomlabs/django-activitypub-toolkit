@@ -66,6 +66,92 @@ The toolkit's architecture separates application concerns from federation concer
 
 The `Reference` connects these layers. Both your application model and the context models link to the same reference. The reference has a URI that identifies this resource globally across the Fediverse.
 
+## Understanding Contexts and Namespaces
+
+Before creating your application model, you need to understand how the toolkit defines JSON-LD contexts and vocabularies. The `Context` dataclass from `activitypub.contexts` defines how different ActivityPub vocabularies are structured and used.
+
+### The Context Dataclass
+
+A `Context` instance defines a JSON-LD context document and its associated namespace:
+
+```python
+from activitypub.contexts import Context
+from rdflib import Namespace
+
+# Example: ActivityStreams 2.0 context
+AS2 = Namespace("https://www.w3.org/ns/activitystreams#")
+AS2_CONTEXT = Context(
+    url="https://www.w3.org/ns/activitystreams",
+    namespace=AS2,
+    document={
+        "@context": {
+            "@vocab": "_:",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "as": "https://www.w3.org/ns/activitystreams#",
+            # ... vocabulary definitions
+        }
+    }
+)
+```
+
+Each `Context` has four fields:
+- `url`: The URL where the context document can be fetched
+- `document`: The JSON-LD context document as a Python dict
+- `namespace`: An RDF namespace for creating URIs (optional)
+- `content_type`: HTTP content type, defaults to "application/ld+json"
+
+### Namespaces and Vocabularies
+
+The toolkit defines several standard namespaces for common ActivityPub vocabularies:
+
+```python
+from activitypub.contexts import AS2, SEC, MASTODON, LEMMY
+
+# ActivityStreams 2.0 namespace
+note_uri = AS2.Note  # https://www.w3.org/ns/activitystreams#Note
+
+# Security namespace  
+public_key_uri = SEC.publicKey  # https://w3id.org/security#publicKey
+
+# Platform-specific namespaces
+featured_uri = MASTODON.featured  # http://joinmastodon.org/ns#featured
+```
+
+These namespaces enable type-safe URI construction and are used throughout the toolkit for mapping between RDF predicates and Django model fields.
+
+### Context Configuration
+
+Contexts are configured in your Django settings under the `FEDERATION` key. The toolkit automatically loads standard contexts, but you can add custom ones:
+
+```python
+FEDERATION = {
+    'DEFAULT_URL': 'http://localhost:8000',
+    'SOFTWARE_NAME': 'FedJournal',
+    'SOFTWARE_VERSION': '0.1.0',
+    'ACTOR_VIEW': 'journal:actor',
+    'OBJECT_VIEW': 'journal:entry-detail',
+    # Custom contexts are added here if needed
+}
+```
+
+The `PRESET_CONTEXTS` property provides access to all configured contexts for serialization and processing.
+
+### How Contexts Enable Federation
+
+When your application serves JSON-LD documents, the toolkit includes appropriate `@context` declarations. This tells other servers how to interpret your data:
+
+```json
+{
+  "@context": "https://www.w3.org/ns/activitystreams",
+  "id": "http://localhost:8000/entries/1",
+  "type": "Note",
+  "content": "My journal entry",
+  "published": "2025-01-15T10:00:00Z"
+}
+```
+
+The context document defines terms like `Note`, `content`, and `published`, mapping them to full URIs. This enables semantic interoperability across different ActivityPub implementations.
+
 ## Creating the Application Model
 
 Create your application model in `journal/models.py`:
@@ -150,16 +236,16 @@ from activitypub.models import Reference, ObjectContext, Domain
 
 class JournalEntry(models.Model):
     # ... existing fields ...
-    
+
     @classmethod
-    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL, 
+    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
                      title=None, duration=None):
         """Create a journal entry with its ActivityPub representation."""
         # Generate a reference for this entry
         domain = Domain.get_default()
         reference = ObjectContext.generate_reference(domain)
-        
-        # Create the ActivityPub context
+
+        # Create the ActivityPub context using AS2 vocabulary
         obj_context = ObjectContext.make(
             reference=reference,
             type=ObjectContext.Types.NOTE,
@@ -168,20 +254,26 @@ class JournalEntry(models.Model):
             published=timezone.now(),
             duration=duration,
         )
-        
+
         # Create the application entry
         entry = cls.objects.create(
             reference=reference,
             user=user,
             entry_type=entry_type,
         )
-        
+
         return entry
 ```
 
 This pattern demonstrates the reference-first architecture. Generate a reference with a URI. Create the ActivityPub context with federated fields like `content`, `published`, and `duration`. Create your application model linking to the same reference. Both models now share the reference as their connection point.
 
-The context model fields map to ActivityStreams vocabulary. `content` holds the journal text. `published` marks when it was written. `duration` records how long an activity took, useful for exercise or work sessions. `name` provides an optional title.
+The context model fields map to ActivityStreams vocabulary defined in the `AS2_CONTEXT`. The `AS2` namespace provides the vocabulary terms:
+- `content` maps to `as:content` in the JSON-LD output
+- `published` maps to `as:published`
+- `duration` maps to `as:duration`
+- `name` maps to `as:name`
+
+These mappings are defined in the `AS2_CONTEXT.document` and enable your data to be understood by other ActivityPub servers.
 
 ## Admin Interface
 
@@ -307,7 +399,6 @@ Your application needs views that serve journal entries as JSON-LD when requeste
 ```python
 from django.shortcuts import get_object_or_404
 from activitypub.views import LinkedDataModelView
-from activitypub.frames import LinkedDataFrame
 from journal.models import JournalEntry
 
 class EntryDetailView(LinkedDataModelView):
@@ -318,13 +409,9 @@ class EntryDetailView(LinkedDataModelView):
         entry_id = self.kwargs.get('pk')
         entry = get_object_or_404(JournalEntry, pk=entry_id)
         return entry.reference
-    
-    def get_frame_class(self):
-        # Use default framing
-        return LinkedDataFrame
 ```
 
-The view retrieves the journal entry from your application model, then returns its reference. The toolkit's `LinkedDataModelView` handles serialization. It walks through all context models attached to the reference and merges them into JSON-LD. For journal entries, this includes the `ObjectContext` with content, publication time, and duration.
+The view retrieves the journal entry from your application model, then returns its reference. The toolkit's `LinkedDataModelView` handles serialization automatically. It walks through all context models attached to the reference and merges them into JSON-LD. For journal entries, this includes the `ObjectContext` with content, publication time, and duration.
 
 Configure URLs in `journal/urls.py`:
 

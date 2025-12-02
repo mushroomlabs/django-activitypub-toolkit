@@ -9,12 +9,14 @@ from django.db import models
 from model_utils.managers import QueryManager
 from requests_http_message_signatures import HTTPSignatureHeaderAuth
 
-from ..schemas import SECv1
+from ..contexts import SEC_V1_CONTEXT
 from ..settings import app_settings
 from .base import SignatureAlgorithms, generate_ulid
 from .linked_data import AbstractContextModel, Domain, Reference, ReferenceField
 
 logger = logging.getLogger(__name__)
+
+SECv1 = SEC_V1_CONTEXT.namespace
 
 
 class SecV1Context(AbstractContextModel):
@@ -23,8 +25,7 @@ class SecV1Context(AbstractContextModel):
     Stores security-specific fields like owner, publicKeyPem, signature, etc.
     """
 
-    NAMESPACE = str(SECv1)
-    CONTEXT_URL = "https://w3id.org/security/v1"
+    CONTEXT = SEC_V1_CONTEXT
     LINKED_DATA_FIELDS = {
         "owner": SECv1.owner,
         "public_key_pem": SECv1.publicKeyPem,

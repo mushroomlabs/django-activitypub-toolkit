@@ -5,6 +5,7 @@ from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.response import Response
 
+from ..contexts import AS2
 from ..decorators import calculate_digest, collect_signature
 from ..models import (
     ActivityContext,
@@ -15,7 +16,6 @@ from ..models import (
     Notification,
     Reference,
 )
-from ..schemas import AS2
 from ..tasks import process_incoming_notification
 from .linked_data import LinkedDataModelView
 

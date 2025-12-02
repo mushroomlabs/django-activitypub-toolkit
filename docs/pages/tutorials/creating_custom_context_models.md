@@ -6,42 +6,147 @@ This tutorial teaches you how to extend Django ActivityPub Toolkit with custom c
 
 By the end of this tutorial, you will understand how to map RDF predicates to Django fields, implement context detection logic, and integrate custom contexts into the toolkit's processing pipeline.
 
+## Understanding Context Definitions
+
+Before implementing context models, you need to understand how the toolkit defines JSON-LD contexts and vocabularies. The `Context` dataclass from `activitypub.contexts` defines the structure and semantics of different ActivityPub vocabularies.
+
+### The Context Dataclass
+
+A `Context` instance defines a JSON-LD context document and its associated namespace:
+
+```python
+from activitypub.contexts import Context
+from rdflib import Namespace
+
+# Define a custom vocabulary namespace
+MY_VOCAB = Namespace("https://myapp.example/ns/vocab#")
+
+# Create a context definition
+MY_CONTEXT = Context(
+    url="https://myapp.example/contexts/vocab.jsonld",
+    namespace=MY_VOCAB,
+    document={
+        "@context": {
+            "myvocab": "https://myapp.example/ns/vocab#",
+            "customProperty": {
+                "@id": "myvocab:customProperty",
+                "@type": "http://www.w3.org/2001/XMLSchema#string"
+            },
+            "rating": {
+                "@id": "myvocab:rating",
+                "@type": "http://www.w3.org/2001/XMLSchema#integer"
+            }
+        }
+    }
+)
+```
+
+Each `Context` has four fields:
+- `url`: The URL where the context document can be fetched
+- `document`: The JSON-LD context document as a Python dict
+- `namespace`: An RDF namespace for creating URIs (optional)
+- `content_type`: HTTP content type, defaults to "application/ld+json"
+
+### Namespaces and Vocabulary Terms
+
+Namespaces provide type-safe access to vocabulary terms:
+
+```python
+from activitypub.contexts import AS2, SEC, MASTODON
+
+# Standard ActivityStreams terms
+note_type = AS2.Note        # https://www.w3.org/ns/activitystreams#Note
+content_pred = AS2.content  # https://www.w3.org/ns/activitystreams#content
+
+# Security vocabulary terms
+public_key = SEC.publicKey  # https://w3id.org/security#publicKey
+
+# Platform-specific terms
+featured = MASTODON.featured  # http://joinmastodon.org/ns#featured
+```
+
+### Context Registration
+
+Contexts are registered in Django settings under the `FEDERATION` configuration. The toolkit loads standard contexts automatically, but you can add custom ones:
+
+```python
+FEDERATION = {
+    # ... other settings ...
+    'EXTRA_CONTEXTS': {
+        'myapp.contexts.MY_CONTEXT',
+    },
+}
+```
+
+Once registered, contexts are available through the `PRESET_CONTEXTS` setting and used during JSON-LD serialization.
+
+### How Contexts Enable Vocabulary Extensions
+
+Contexts define how your custom vocabulary terms map to JSON-LD. When your application serializes data, the context document tells other servers how to interpret your custom properties:
+
+```json
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://myapp.example/contexts/vocab.jsonld"
+  ],
+  "id": "http://myapp.example/objects/123",
+  "type": "Note",
+  "content": "A note with custom properties",
+  "myvocab:customProperty": "custom value",
+  "myvocab:rating": 5
+}
+```
+
+The context document defines the semantics of `myvocab:customProperty` and `myvocab:rating`, enabling other ActivityPub implementations to understand your extended vocabulary.
+
 ## Understanding Context Models
 
-Context models translate between RDF graphs and Django's relational model. Each context model represents a specific vocabulary or namespace. The toolkit includes context models for ActivityStreams 2.0 (AS2) and Security Vocabulary v1 (SECv1). Your applications can add context models for any vocabulary.
+Context models implement the storage and processing layer for Context definitions. They translate between RDF graphs and Django's relational model. Each context model represents a specific vocabulary and provides Django fields for storing vocabulary data.
 
 A context model extends `AbstractContextModel` and defines:
 
-- `NAMESPACE` - The RDF namespace URI
+- `CONTEXT` - Reference to the Context definition (optional, for documentation)
 - `LINKED_DATA_FIELDS` - Mapping from Django field names to RDF predicates
 - `should_handle_reference()` - Logic to detect when this context applies
 - Django fields for storing vocabulary data
 
-Multiple context models can attach to the same reference. An actor might have `ActorContext` for AS2 properties and `SecV1Context` for cryptographic keys. Your custom context adds additional vocabulary without interfering with existing contexts.
+Multiple context models can attach to the same reference. An actor might have `ActorContext` for AS2 properties and `SecV1Context` for cryptographic keys. Your custom context model adds additional vocabulary without interfering with existing contexts.
 
 ## Scenario: Adding Mastodon Extensions
 
 Mastodon extends ActivityPub with several custom properties. The `featured` property links to a collection of pinned posts. The `sensitive` flag marks content requiring warnings. These extensions use Mastodon's vocabulary namespace.
 
-Create a context model for Mastodon extensions in a new file `journal/mastodon_context.py`:
+First, examine the existing Mastodon context definition in the toolkit:
+
+```python
+from activitypub.contexts import MASTODON_CONTEXT, MASTODON
+
+# The context defines Mastodon's vocabulary
+print(MASTODON_CONTEXT.url)  # http://joinmastodon.org/ns
+print(MASTODON_CONTEXT.namespace)  # Namespace('http://joinmastodon.org/ns#')
+
+# Access vocabulary terms
+featured_pred = MASTODON.featured  # http://joinmastodon.org/ns#featured
+sensitive_pred = MASTODON.sensitive  # http://joinmastodon.org/ns#sensitive
+```
+
+The `MASTODON_CONTEXT` is already included in the toolkit's preset contexts, so you don't need to register it. Now create a context model that implements storage for Mastodon properties in `journal/mastodon_context.py`:
 
 ```python
 from django.db import models
-import rdflib
-from activitypub.models import AbstractContextModel, ReferenceField
-
-# Define Mastodon's namespace
-MASTODON = rdflib.Namespace('http://joinmastodon.org/ns#')
+from activitypub.models import AbstractContextModel
+from activitypub.contexts import MASTODON, MASTODON_CONTEXT
 
 class MastodonContext(AbstractContextModel):
     """Context model for Mastodon-specific extensions."""
-    
-    NAMESPACE = str(MASTODON)
+
+    CONTEXT = MASTODON_CONTEXT
     LINKED_DATA_FIELDS = {
         'featured': MASTODON.featured,
         'sensitive': MASTODON.sensitive,
     }
-    
+
     # Featured collection - posts the actor has pinned
     featured = models.ForeignKey(
         'activitypub.Reference',
@@ -50,21 +155,20 @@ class MastodonContext(AbstractContextModel):
         blank=True,
         related_name='mastodon_featured_by'
     )
-    
+
     # Content warning flag
     sensitive = models.BooleanField(default=False)
-    
+
     @classmethod
     def should_handle_reference(cls, g, reference):
         """Check if this reference has Mastodon properties."""
-        subject_uri = rdflib.URIRef(reference.uri)
-        
-        # Check for any Mastodon predicate
-        featured_val = g.value(subject=subject_uri, predicate=MASTODON.featured)
-        sensitive_val = g.value(subject=subject_uri, predicate=MASTODON.sensitive)
-        
+        subject_uri = g.value(subject=rdflib.URIRef(reference.uri),
+                             predicate=MASTODON.featured)
+        sensitive_val = g.value(subject=rdflib.URIRef(reference.uri),
+                               predicate=MASTODON.sensitive)
+
         return featured_val is not None or sensitive_val is not None
-    
+
     class Meta:
         verbose_name = 'Mastodon Context'
         verbose_name_plural = 'Mastodon Contexts'
@@ -76,7 +180,7 @@ The `should_handle_reference()` method determines whether this context applies t
 
 ## Registering the Context Model
 
-Add your custom context to the autoloaded models list in `config/settings.py`:
+Add your custom context model to the extra context models list in `config/settings.py`:
 
 ```python
 FEDERATION = {
@@ -85,16 +189,7 @@ FEDERATION = {
     'SOFTWARE_VERSION': '0.1.0',
     'ACTOR_VIEW': 'journal:actor',
     'OBJECT_VIEW': 'journal:entry-detail',
-    'AUTOLOADED_CONTEXT_MODELS': [
-        'activitypub.models.LinkContext',
-        'activitypub.models.ObjectContext',
-        'activitypub.models.ActorContext',
-        'activitypub.models.ActivityContext',
-        'activitypub.models.EndpointContext',
-        'activitypub.models.QuestionContext',
-        'activitypub.models.CollectionContext',
-        'activitypub.models.CollectionPageContext',
-        'activitypub.models.SecV1Context',
+    'EXTRA_CONTEXT_MODELS': [
         'journal.mastodon_context.MastodonContext',
     ],
 }
@@ -187,34 +282,71 @@ sensitive_entries = JournalEntry.objects.filter(
 
 Beyond handling existing vocabularies, you can create entirely new vocabularies for your domain. Suppose you want to extend journal entries with mood tracking.
 
-Define a custom vocabulary namespace and context model in `journal/mood_context.py`:
+First, define your custom Context in `journal/contexts.py`:
+
+```python
+from activitypub.contexts import Context
+from rdflib import Namespace
+
+# Define your custom namespace
+MOOD = Namespace('https://fedjournal.example/ns/mood#')
+
+# Create the context definition
+MOOD_CONTEXT = Context(
+    url='https://fedjournal.example/contexts/mood.jsonld',
+    namespace=MOOD,
+    document={
+        "@context": {
+            "mood": "https://fedjournal.example/ns/mood#",
+            "level": {
+                "@id": "mood:level",
+                "@type": "http://www.w3.org/2001/XMLSchema#integer"
+            },
+            "type": {
+                "@id": "mood:type",
+                "@type": "@id"
+            },
+            "notes": "mood:notes"
+        }
+    }
+)
+```
+
+Register your custom context in settings:
+
+```python
+FEDERATION = {
+    # ... other settings ...
+    'EXTRA_CONTEXTS': {
+        'journal.contexts.MOOD_CONTEXT',
+    },
+}
+```
+
+Now create the context model that implements storage for mood properties in `journal/mood_context.py`:
 
 ```python
 from django.db import models
-import rdflib
 from activitypub.models import AbstractContextModel
-
-# Define your custom namespace
-MOOD = rdflib.Namespace('https://fedjournal.example/ns/mood#')
+from journal.contexts import MOOD, MOOD_CONTEXT
 
 class MoodContext(AbstractContextModel):
     """Context model for mood tracking vocabulary."""
-    
-    NAMESPACE = str(MOOD)
-    CONTEXT_URL = 'https://fedjournal.example/contexts/mood.jsonld'
+
+    CONTEXT = MOOD_CONTEXT
     LINKED_DATA_FIELDS = {
         'mood_level': MOOD.level,
         'mood_type': MOOD.type,
         'mood_notes': MOOD.notes,
     }
-    
+
     class MoodLevel(models.IntegerChoices):
         VERY_LOW = 1, 'Very Low'
         LOW = 2, 'Low'
         NEUTRAL = 3, 'Neutral'
         HIGH = 4, 'High'
         VERY_HIGH = 5, 'Very High'
-    
+
     class MoodType(models.TextChoices):
         HAPPY = 'happy', 'Happy'
         SAD = 'sad', 'Sad'
@@ -222,7 +354,7 @@ class MoodContext(AbstractContextModel):
         CALM = 'calm', 'Calm'
         ENERGETIC = 'energetic', 'Energetic'
         TIRED = 'tired', 'Tired'
-    
+
     mood_level = models.IntegerField(
         choices=MoodLevel.choices,
         null=True,
@@ -235,18 +367,18 @@ class MoodContext(AbstractContextModel):
         blank=True
     )
     mood_notes = models.TextField(blank=True)
-    
+
     @classmethod
     def should_handle_reference(cls, g, reference):
         """Check if this reference has mood properties."""
         subject_uri = rdflib.URIRef(reference.uri)
-        
+
         # Check for any mood predicate
         level_val = g.value(subject=subject_uri, predicate=MOOD.level)
         type_val = g.value(subject=subject_uri, predicate=MOOD.type)
-        
+
         return level_val is not None or type_val is not None
-    
+
     class Meta:
         verbose_name = 'Mood Context'
         verbose_name_plural = 'Mood Contexts'
@@ -257,9 +389,7 @@ Register it in settings:
 ```python
 FEDERATION = {
     # ... other settings ...
-    'AUTOLOADED_CONTEXT_MODELS': [
-        # ... standard contexts ...
-        'journal.mastodon_context.MastodonContext',
+    'EXTRA_CONTEXT_MODELS': [
         'journal.mood_context.MoodContext',
     ],
 }
@@ -367,28 +497,9 @@ def changelist_view(self, request, extra_context=None):
 
 ## Serializing Custom Context
 
-When serving entries with custom context, the serializer automatically includes all contexts. However, you need to publish your vocabulary's JSON-LD context document so other servers can understand your terms.
+When serving entries with custom context, the serializer automatically includes all registered contexts. The toolkit includes your custom context in the `@context` array, and the context document defines how other servers should interpret your vocabulary terms.
 
-Create a context document that defines your vocabulary. This would typically be served at `CONTEXT_URL`:
-
-```json
-{
-  "@context": {
-    "mood": "https://fedjournal.example/ns/mood#",
-    "level": {
-      "@id": "mood:level",
-      "@type": "http://www.w3.org/2001/XMLSchema#integer"
-    },
-    "type": {
-      "@id": "mood:type",
-      "@type": "@id"
-    },
-    "notes": "mood:notes"
-  }
-}
-```
-
-When your entries serialize, they include this context and the mood properties become part of the JSON-LD output:
+Since you registered `MOOD_CONTEXT` in settings, it will be included when serializing objects that have mood data. The context document you defined provides the vocabulary mapping:
 
 ```json
 {
@@ -406,7 +517,7 @@ When your entries serialize, they include this context and the mood properties b
 }
 ```
 
-Other servers might not understand your mood vocabulary, but they can still process the standard AS2 properties. Servers that do implement mood tracking can extract and use that data.
+Other servers might not understand your mood vocabulary, but they can still process the standard AS2 properties. Servers that do implement mood tracking can extract and use that data. Make sure your context document is publicly accessible at the URL you specified in the Context definition.
 
 ## Querying Across Contexts
 
@@ -481,9 +592,9 @@ Now mood notes only appear in serialized output when the viewer is the author.
 
 ## Summary
 
-You have learned to create custom context models for both existing platform extensions and entirely new vocabularies. Context models map RDF predicates to Django fields, enabling relational queries over federated data.
+You have learned to create custom Context definitions and their corresponding context models for both existing platform extensions and entirely new vocabularies. Context definitions establish the vocabulary semantics, while context models provide the storage and processing implementation.
 
-The pattern applies universally: define the namespace, map predicates to fields, implement detection logic, register the context, and run migrations. Multiple contexts coexist on references, each handling its vocabulary independently.
+The pattern applies universally: define your Context with namespace and document, register it in settings, create the context model with field mappings, implement detection logic, register the model, and run migrations. Multiple contexts coexist on references, each handling its vocabulary independently.
 
 Custom contexts enable applications to extend ActivityPub without forking the protocol. Your mood tracking vocabulary might gain adoption. Other servers implementing it can federate mood data with yours. This is how the Fediverse evolves—through vocabulary extension rather than protocol modification.
 

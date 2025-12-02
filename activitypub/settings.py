@@ -31,17 +31,32 @@ class AppSettings:
         remote_object_fetching = timedelta(minutes=10)
 
     class Middleware:
-        message_processors = [
-            "activitypub.message_processors.ActorDeletionMessageProcessor",
-            "activitypub.message_processors.CompactJsonLdMessageProcessor",
+        document_processors = [
+            "activitypub.processors.ActorDeletionDocumentProcessor",
+            "activitypub.processors.CompactJsonLdDocumentProcessor",
         ]
 
     class LinkedData:
-        document_resolvers = [
-            "activitypub.resolvers.ConstantDocumentResolver",
+        default_contexts = {
+            "activitypub.contexts.AS2_CONTEXT",
+            "activitypub.contexts.SEC_V1_CONTEXT",
+            "activitypub.contexts.W3C_IDENTITY_V1_CONTEXT",
+            "activitypub.contexts.W3C_DID_V1_CONTEXT",
+            "activitypub.contexts.W3C_DATAINTEGRITY_V1_CONTEXT",
+            "activitypub.contexts.MULTIKEY_V1_CONTEXT",
+            "activitypub.contexts.MASTODON_CONTEXT",
+            "activitypub.contexts.LEMMY_CONTEXT",
+            "activitypub.contexts.FUNKWHALE_CONTEXT",
+        }
+        extra_contexts = {}
+
+        default_document_resolvers = {
+            "activitypub.resolvers.ContextUriResolver",
             "activitypub.resolvers.HttpDocumentResolver",
-        ]
-        autoloaded_context_models = [
+        }
+        extra_document_resolvers = {}
+
+        default_context_models = {
             "activitypub.models.LinkContext",
             "activitypub.models.ObjectContext",
             "activitypub.models.ActorContext",
@@ -51,30 +66,60 @@ class AppSettings:
             "activitypub.models.CollectionContext",
             "activitypub.models.CollectionPageContext",
             "activitypub.models.SecV1Context",
-        ]
-        custom_serializers = {
+        }
+        extra_context_models = {}
+        disabled_context_models = {}
+
+        custom_context_serializers = {
             "activitypub.models.CollectionContext": "activitypub.serializers.CollectionContextSerializer",  # noqa
-            "activitypub.models.CollectionPageContext": "activitypub.serializers.CollectionContextSerializer",  # noqa
+            "activitypub.models.CollectionPageContext": "activitypub.serializers.CollectionPageContextSerializer",  # noqa
+            "activitypub.models.QuestionContext": "activitypub.serializers.QuestionContextSerializer",  # noqa
+        }
+
+        embedded_context_serializers = {
+            "activitypub.models.ActorContext": "activitypub.serializers.EmbeddedActorContextSerializer",  # noqa
+            "activitypub.models.CollectionContext": "activitypub.serializers.EmbeddedCollectionContextSerializer",  # noqa
+            # Note: CollectionPageContext doesn't have an embedded variant
+            # because pages are always shown with their items
         }
 
     @property
+    def PRESET_CONTEXTS(self):
+        contexts = self.LinkedData.default_contexts.union(self.LinkedData.extra_contexts)
+        return [import_string(s) for s in contexts]
+
+    @property
     def DOCUMENT_RESOLVERS(self):
-        return [import_string(s) for s in self.LinkedData.document_resolvers]
+        resolvers = self.LinkedData.default_document_resolvers.union(
+            self.LinkedData.extra_document_resolvers
+        )
+        return [import_string(s) for s in resolvers]
 
     @property
-    def AUTOLOADED_CONTEXT_MODELS(self):
-        return [import_string(s) for s in self.LinkedData.autoloaded_context_models]
-
-    @property
-    def MESSAGE_PROCESSORS(self):
-        classes = [import_string(s) for s in self.Middleware.message_processors]
+    def DOCUMENT_PROCESSORS(self):
+        classes = [import_string(s) for s in self.Middleware.document_processors]
         return [c() for c in classes]
 
     @property
-    def CUSTOM_SERIALIZERS(self):
+    def CONTEXT_MODELS(self):
+        default = self.LinkedData.default_context_models
+        extra = self.LinkedData.extra_context_models
+        disabled = self.LinkedData.disabled_context_models
+
+        return [import_string(s) for s in default.union(extra).difference(disabled)]
+
+    @property
+    def CUSTOM_CONTEXT_SERIALIZERS(self):
         return {
             import_string(model_path): import_string(serializer_path)
-            for model_path, serializer_path in self.LinkedData.custom_serializers.items()
+            for model_path, serializer_path in self.LinkedData.custom_context_serializers.items()
+        }
+
+    @property
+    def EMBEDDED_CONTEXT_SERIALIZERS(self):
+        return {
+            import_string(model_path): import_string(serializer_path)
+            for model_path, serializer_path in self.LinkedData.embedded_context_serializers.items()
         }
 
     def __init__(self):
@@ -97,10 +142,13 @@ class AppSettings:
             "SOFTWARE_NAME": (self.NodeInfo, "software_name"),
             "SOFTWARE_VERSION": (self.NodeInfo, "software_version"),
             "RATE_LIMIT_REMOTE_FETCH": (self.RateLimit, "remote_object_fetching"),
-            "MESSAGE_PROCESSORS": (self.Middleware, "message_processors"),
-            "DOCUMENT_RESOLVERS": (self.LinkedData, "document_resolvers"),
-            "AUTOLOADED_CONTEXT_MODELS": (self.LinkedData, "autoloaded_context_models"),
-            "CUSTOM_SERIALIZERS": (self.LinkedData, "custom_serializers"),
+            "DOCUMENT_PROCESSORS": (self.Middleware, "document_processors"),
+            "EXTRA_DOCUMENT_RESOLVERS": (self.LinkedData, "extra_document_resolvers"),
+            "EXTRA_CONTEXT_MODELS": (self.LinkedData, "extra_context_models"),
+            "EXTRA_CONTEXTS": (self.LinkedData, "extra_contexts"),
+            "DISABLED_CONTEXT_MODELS": (self.LinkedData, "disabled_context_models"),
+            "CUSTOM_CONTEXT_SERIALIZERS": (self.LinkedData, "custom_context_serializers"),
+            "EMBEDDED_CONTEXT_SERIALIZERS": (self.LinkedData, "embedded_context_serializers"),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 

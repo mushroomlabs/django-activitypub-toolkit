@@ -8,7 +8,6 @@ from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from ..frames import FrameRegistry, LinkedDataFrame
 from ..models import Reference
 from ..parsers import ActivityStreamsJsonParser, JsonLdParser
 from ..renderers import ActivityJsonRenderer, JsonLdRenderer
@@ -46,34 +45,20 @@ class LinkedDataModelView(APIView):
     def get_serializer_class(self) -> type[LinkedDataSerializer] | None:
         return LinkedDataSerializer
 
-    def get_frame_class(self) -> type[LinkedDataFrame] | None:
-        """
-        Override this method if you need custom frame selection logic.
-        By default, uses automatic selection via FrameRegistry (returns None).
-        """
-        return None
-
-    def get_framed_document(self, serializer):
-        """Get framed document with automatic or custom frame selection"""
-        frame_class = self.get_frame_class()
-
-        if frame_class is None:
-            # Automatic selection via registry
-            frame = FrameRegistry.auto_frame(serializer)
-        else:
-            # Manual override (for custom views)
-            frame = frame_class(serializer=serializer)
-
-        return frame.to_framed_document()
-
     def get(self, *args, **kw):
+        """
+        Render the linked data resource as compacted JSON-LD.
+
+        Serializes to expanded JSON-LD, then compacts using @context.
+        """
+        reference = self.get_object()
         serializer = self.get_serializer()
-        document = self.get_framed_document(serializer)
 
-        if not document:
-            document = serializer.data
+        # Serialize to expanded JSON-LD (main subject, not embedded)
+        expanded_document = serializer.data
 
-        # Get context array from serializer and compact the document
-        instance = self.get_object()
-        context = serializer.get_compact_context(instance)
-        return Response(jsonld.compact(document, context))
+        # Get compact context and compact the document
+        context = serializer.get_compact_context(reference)
+        compacted_document = jsonld.compact(expanded_document, context)
+
+        return Response(compacted_document)

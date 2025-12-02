@@ -85,7 +85,7 @@ Django ActivityPub Toolkit is configured through Django settings. All configurat
 
 ## Message Processing
 
-### MESSAGE_PROCESSORS
+### DOCUMENT_PROCESSORS
 - **Type**: `list[str]`
 - **Default**: Built-in processors
 - **Description**: List of message processor classes to apply to incoming/outgoing messages.
@@ -97,10 +97,15 @@ Django ActivityPub Toolkit is configured through Django settings. All configurat
 - **Default**: Built-in resolvers
 - **Description**: List of document resolver classes for fetching remote content.
 
-### AUTOLOADED_CONTEXT_MODELS
+### EXTRA_CONTEXTS
 - **Type**: `list[str]`
-- **Default**: Standard ActivityPub models
-- **Description**: Context models automatically loaded during serialization.
+- **Default**: Empty list
+- **Description**: Additional Context definitions to include in serialization.
+
+### EXTRA_CONTEXT_MODELS
+- **Type**: `list[str]`
+- **Default**: Empty list
+- **Description**: Additional context models to load during serialization.
 
 ### CUSTOM_SERIALIZERS
 - **Type**: `dict[str, str]`
@@ -130,10 +135,18 @@ FEDERATION = {
     'RATE_LIMIT_REMOTE_FETCH': timedelta(minutes=5),
 
     # Custom processors
-    'MESSAGE_PROCESSORS': [
-        'activitypub.message_processors.ActorDeletionMessageProcessor',
-        'activitypub.message_processors.CompactJsonLdMessageProcessor',
+    'DOCUMENT_PROCESSORS': [
+        'activitypub.processors.ActorDeletionDocumentProcessor',
+        'activitypub.processors.CompactJsonLdDocumentProcessor',
         'myapp.processors.CustomProcessor',
+    ],
+
+    # Custom contexts and context models
+    'EXTRA_CONTEXTS': [
+        'myapp.contexts.MY_CUSTOM_CONTEXT',
+    ],
+    'EXTRA_CONTEXT_MODELS': [
+        'myapp.models.CustomContextModel',
     ],
 
     # Custom serializers

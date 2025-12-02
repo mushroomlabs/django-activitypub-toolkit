@@ -81,11 +81,11 @@ exclude = '''
 fix = true
 line-length = 99
 exclude = ["build", "dist", ".git", "migrations"]
-extend-select = ["I"]
 
 [tool.ruff.lint]
 ignore = ["B011", "E203", "E402", "E731"]
 select = ["E", "F", "W", "I"]
+extend-select = ["I"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["activitypub"]

@@ -2,6 +2,7 @@ import httpretty
 from django.core.exceptions import ValidationError
 
 from activitypub import factories
+from activitypub.contexts import AS2
 from activitypub.models import (
     Activity,
     ActorContext,
@@ -13,7 +14,6 @@ from activitypub.models import (
     ObjectContext,
     Reference,
 )
-from activitypub.schemas import AS2
 
 from .base import BaseTestCase, use_nodeinfo, with_document_file
 
@@ -301,7 +301,7 @@ class ActivityTestCase(BaseTestCase):
         self.assertTrue(shares_collection.contains(announce.reference))
 
     def test_undo_like_removes_from_collections(self):
-        """Test that undoing a like removes it from both actor's liked and object's likes collections"""
+        """Undoing a like removes it from both actor's liked and object's likes collections"""
         # Create a remote domain first
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
@@ -369,7 +369,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_undo_like_when_actor_has_no_liked_collection(self):
-        """Test that undoing a like works even when actor has no liked collection"""
+        """undoing a like works even when actor has no liked collection"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
         actor = factories.ActorFactory(
@@ -411,7 +411,7 @@ class ActivityTestCase(BaseTestCase):
         self.assertFalse(likes_collection.contains(like.reference))
 
     def test_undo_announce_removes_from_shares_collection(self):
-        """Test that undoing an announce removes it from the object's shares collection"""
+        """undoing an announce removes it from the object's shares collection"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
         actor = factories.ActorFactory(
@@ -461,7 +461,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_undo_announce_when_shares_is_none(self):
-        """Test that undoing an announce handles the case where object has no shares collection"""
+        """undoing an announce handles the case where object has no shares collection"""
         actor = factories.ActorFactory()
         note = factories.ObjectFactory(
             type=ObjectContext.Types.NOTE,
@@ -485,7 +485,7 @@ class ActivityTestCase(BaseTestCase):
         undo.do()  # Should complete without error
 
     def test_do_add_adds_item_to_actor_owned_collection(self):
-        """Test that Add activity adds an item to an actor-owned collection"""
+        """Add activity adds an item to an actor-owned collection"""
         local_domain = factories.DomainFactory(name="local.example.com", local=True)
 
         alice = factories.ActorFactory(
@@ -525,7 +525,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_do_add_fails_when_collection_not_owned_by_actor(self):
-        """Test that Add activity fails when trying to add to a collection not owned by the actor"""
+        """Add activity fails when trying to add to a collection not owned by the actor"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
         alice = factories.ActorFactory(
@@ -567,7 +567,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_do_add_when_target_is_none(self):
-        """Test that Add activity handles gracefully when target is None"""
+        """Add activity handles gracefully when target is None"""
         actor = factories.ActorFactory()
         note = factories.ObjectFactory()
 
@@ -582,7 +582,7 @@ class ActivityTestCase(BaseTestCase):
         add_activity.do()
 
     def test_do_remove_removes_item_from_actor_owned_collection(self):
-        """Test that Remove activity removes an item from an actor-owned collection"""
+        """Remove activity removes an item from an actor-owned collection"""
         local_domain = factories.DomainFactory(name="local.example.com", local=True)
 
         alice = factories.ActorFactory(
@@ -626,7 +626,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_do_remove_from_followers_collection(self):
-        """Test that Remove activity can remove an item from actor's followers"""
+        """Remove activity can remove an item from actor's followers"""
         local_domain = factories.DomainFactory(name="local.example.com", local=True)
 
         alice = factories.ActorFactory(
@@ -656,7 +656,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_do_remove_fails_when_collection_not_owned_by_actor(self):
-        """Test that Remove activity fails when trying to remove from a collection not owned by the actor"""
+        """Remove activity fails when trying to remove from a collection not owned by the actor"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
         alice = factories.ActorFactory(
@@ -695,7 +695,7 @@ class ActivityTestCase(BaseTestCase):
         )
 
     def test_do_remove_when_target_is_none(self):
-        """Test that Remove activity handles gracefully when target is None"""
+        """Remove activity handles gracefully when target is None"""
         actor = factories.ActorFactory()
         note = factories.ObjectFactory()
 

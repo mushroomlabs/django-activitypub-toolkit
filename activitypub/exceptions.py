@@ -14,9 +14,5 @@ class DocumentResolutionError(Exception):
     pass
 
 
-class MessageProcessorException(Exception):
-    pass
-
-
-class DropMessage(MessageProcessorException):
+class DropMessage(Exception):
     pass

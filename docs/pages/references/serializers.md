@@ -1,9 +1,9 @@
 # Serializers Reference
 
 Serializers handle conversion between Django model instances and
-JSON-LD representations for ActivityPub federation. They work in
-conjunction with the framing system to produce context-appropriate
-output.
+JSON-LD representations for ActivityPub federation. They use
+field-based configuration to control how data is embedded or
+referenced.
 
 ## Core Serializer Classes
 
@@ -49,24 +49,30 @@ serializer = LinkedDataSerializer(
 expanded_data = serializer.data
 ```
 
-**Integration with Framing:**
+**Embedded vs Referenced Serialization:**
 
-The serializer produces expanded JSON-LD, which the framing system
-then shapes based on context:
+The serializer can use different serializers for main subjects vs embedded objects:
 
 ```python
-from activitypub.frames import FrameRegistry
+serializer = LinkedDataSerializer(
+    instance=reference,
+    context={'viewer': viewer},
+    embedded=False  # Main subject - shows all fields
+)
 
-serializer = LinkedDataSerializer(instance=reference, context={'viewer': viewer})
-frame = FrameRegistry.auto_frame(serializer)  # Automatic frame selection
-document = frame.to_framed_document()  # Apply context-aware shaping
+# For embedded objects, automatically uses embedded variant if configured
+embedded_serializer = LinkedDataSerializer(
+    instance=reference,
+    context={'viewer': viewer},
+    embedded=True  # Embedded - omits collection endpoints
+)
 ```
 
 ## Collection Serializers
 
 ### CollectionContextSerializer
 
-::: activitypub.serializers.collections.CollectionContextSerializer
+::: activitypub.serializers.as2.CollectionContextSerializer
     heading_level: 3
 
 Specialized serializer for collection contexts. Handles pagination and
@@ -110,30 +116,27 @@ class CustomObjectSerializer(ContextModelSerializer):
 
 ## Serialization Pipeline
 
-The complete serialization pipeline involves three stages:
+The complete serialization pipeline involves two stages:
 
 1. **Serialization** - `LinkedDataSerializer` produces expanded
-   JSON-LD with full predicate URIs
-2. **Framing** - Frames shape the structure based on context
-   (omit/reference/embed decisions)
-3. **Compaction** - JSON-LD compaction produces readable output with
+   JSON-LD with full predicate URIs. Field definitions control
+   whether related objects are embedded, referenced, or omitted.
+2. **Compaction** - JSON-LD compaction produces readable output with
    short keys and `@context`
 
 ```python
 # In a view
 serializer = LinkedDataSerializer(instance=reference, context={'viewer': viewer})
-frame = FrameRegistry.auto_frame(serializer)
-expanded_framed = frame.to_framed_document()
+expanded = serializer.data
 
 # Get compact context and compact the document
 context = serializer.get_compact_context(reference)
-compacted = jsonld.compact(expanded_framed, context)
+compacted = jsonld.compact(expanded, context)
 ```
 
 This separation of concerns allows each stage to focus on its
 responsibility:
-- Serializers extract and convert data
-- Frames shape structure based on context
+- Serializers extract and convert data, using field types to control structure
 - Compaction provides readability
 
 ## Access Control Patterns
@@ -169,12 +172,10 @@ def show_followers(self, instance, viewer):
     return False  # Others can't see followers
 ```
 
-### Combined with Framing
+### Field-Level Exclusion
 
-Access control happens at serialization time. Framing happens
-afterward and only sees fields that passed access control. This means
-sensitive fields are completely excluded from the document, not just
-hidden by framing.
+Access control happens at serialization time, completely excluding
+fields from the document before they are even serialized.
 
 ## Performance Considerations
 
@@ -182,14 +183,14 @@ Serialization involves:
 - Querying context models for a reference
 - Walking through `LINKED_DATA_FIELDS` mappings
 - Resolving references for foreign keys
-- Potentially recursing for embedded objects (via framing)
+- Potentially recursing for embedded objects (via `EmbeddedReferenceField`)
 
 For high-traffic endpoints, consider:
 
 1. **Caching** - Cache serialized output for public resources
 2. **Selective Loading** - Use `select_related` and `prefetch_related`
    when querying references
-3. **Depth Limits** - Frame configuration controls embedding depth to
-   prevent expensive recursion
+3. **Depth Limits** - `EmbeddedReferenceField` has a `max_depth` parameter
+   to prevent expensive recursion
 4. **Lazy Evaluation** - Serializers evaluate lazily; access `.data`
    only when needed
