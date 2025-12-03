@@ -2,7 +2,7 @@
 title: Creating Custom Context Models
 ---
 
-This tutorial teaches you how to extend Django ActivityPub Toolkit with custom context models for specialized vocabularies. You will learn to handle vocabulary extensions from platforms like Mastodon and Lemmy, and create entirely new vocabularies for your domain-specific needs.
+This tutorial teaches you how to extend Django ActivityPub Toolkit with custom context models for specialized vocabularies. You will learn to handle vocabulary extensions from platforms like Mastodon, and create entirely new vocabularies for your domain-specific needs.
 
 By the end of this tutorial, you will understand how to map RDF predicates to Django fields, implement context detection logic, and integrate custom contexts into the toolkit's processing pipeline.
 
@@ -42,6 +42,7 @@ MY_CONTEXT = Context(
 ```
 
 Each `Context` has four fields:
+
 - `url`: The URL where the context document can be fetched
 - `document`: The JSON-LD context document as a Python dict
 - `namespace`: An RDF namespace for creating URIs (optional)
@@ -102,81 +103,82 @@ The context document defines the semantics of `myvocab:customProperty` and `myvo
 
 ## Understanding Context Models
 
-Context models implement the storage and processing layer for Context definitions. They translate between RDF graphs and Django's relational model. Each context model represents a specific vocabulary and provides Django fields for storing vocabulary data.
+Context models implement the storage and processing layer for specific object types from particular applications or platforms. They translate between RDF graphs and Django's relational model. Context models are composable - each handles only its specific fields without overlapping with other contexts. Multiple context models can process the same reference, each extracting their respective fields.
 
 A context model extends `AbstractContextModel` and defines:
 
-- `CONTEXT` - Reference to the Context definition (optional, for documentation)
+- `CONTEXT` - Reference to the Context definition (required for proper serialization)
 - `LINKED_DATA_FIELDS` - Mapping from Django field names to RDF predicates
-- `should_handle_reference()` - Logic to detect when this context applies
+- `should_handle_reference()` - Logic to detect when this context applies (discriminates by object type, not namespace presence)
 - Django fields for storing vocabulary data
 
-Multiple context models can attach to the same reference. An actor might have `ActorContext` for AS2 properties and `SecV1Context` for cryptographic keys. Your custom context model adds additional vocabulary without interfering with existing contexts.
+Multiple context models can attach to the same reference. An actor might have `ActorContext` for AS2 properties and `SecV1Context` for cryptographic keys. A note might have `ObjectContext` for basic Note properties and `MastodonNoteContext` for Mastodon-specific extensions. Your custom context model adds additional vocabulary without interfering with existing contexts. Context models are composable - each handles only its specific fields.
 
-## Scenario: Adding Mastodon Extensions
+## Scenario: Handling Mastodon Notes
 
-Mastodon extends ActivityPub with several custom properties. The `featured` property links to a collection of pinned posts. The `sensitive` flag marks content requiring warnings. These extensions use Mastodon's vocabulary namespace.
+Mastodon extends the basic ActivityStreams Note type with platform-specific features like content warnings, visibility settings, and sensitive media flags. The AS2 context handles basic Note properties (type, content, published), while a specialized Mastodon context handles Mastodon-specific extensions. Context models are composable - each handles only its specific fields without overlapping.
 
-First, examine the existing Mastodon context definition in the toolkit:
+First, examine the existing Mastodon context definition:
 
 ```python
-from activitypub.contexts import MASTODON_CONTEXT, MASTODON
+from activitypub.contexts import MASTODON_CONTEXT, MASTODON, AS2
 
-# The context defines Mastodon's vocabulary
-print(MASTODON_CONTEXT.url)  # http://joinmastodon.org/ns
+# The context defines Mastodon's vocabulary extensions
+print(MASTODON_CONTEXT.url)  # https://docs.joinmastodon.org/spec/activitypub/
 print(MASTODON_CONTEXT.namespace)  # Namespace('http://joinmastodon.org/ns#')
 
 # Access vocabulary terms
-featured_pred = MASTODON.featured  # http://joinmastodon.org/ns#featured
-sensitive_pred = MASTODON.sensitive  # http://joinmastodon.org/ns#sensitive
+sensitive_pred = MASTODON.sensitive   # Mastodon-specific property
+blurhash_pred = MASTODON.blurhash     # Media preview hash
 ```
 
-The `MASTODON_CONTEXT` is already included in the toolkit's preset contexts, so you don't need to register it. Now create a context model that implements storage for Mastodon properties in `journal/mastodon_context.py`:
+Now create a context model that handles ONLY Mastodon-specific fields. AS2 fields are handled by other context models:
 
 ```python
 from django.db import models
 from activitypub.models import AbstractContextModel
-from activitypub.contexts import MASTODON, MASTODON_CONTEXT
+from activitypub.contexts import MASTODON_CONTEXT, MASTODON, AS2
+import rdflib
 
-class MastodonContext(AbstractContextModel):
-    """Context model for Mastodon-specific extensions."""
+class MastodonNoteContext(AbstractContextModel):
+    """Context model for Mastodon Note objects - handles Mastodon-specific fields only."""
 
     CONTEXT = MASTODON_CONTEXT
     LINKED_DATA_FIELDS = {
-        'featured': MASTODON.featured,
+        # Mastodon-specific fields only (don't overlap with AS2 or other contexts)
         'sensitive': MASTODON.sensitive,
+        'atom_uri': MASTODON.atomUri,
+        'conversation': MASTODON.conversation,
+        'voters_count': MASTODON.votersCount,
     }
 
-    # Featured collection - posts the actor has pinned
-    featured = models.ForeignKey(
-        'activitypub.Reference',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='mastodon_featured_by'
-    )
+    # Content moderation fields
+    sensitive = models.BooleanField(default=False, help_text="Contains sensitive content")
 
-    # Content warning flag
-    sensitive = models.BooleanField(default=False)
+    # Mastodon-specific metadata
+    atom_uri = models.URLField(max_length=500, null=True, blank=True)
+    conversation = models.URLField(max_length=500, null=True, blank=True)
+    voters_count = models.IntegerField(null=True, blank=True)
 
     @classmethod
     def should_handle_reference(cls, g, reference):
-        """Check if this reference has Mastodon properties."""
-        subject_uri = g.value(subject=rdflib.URIRef(reference.uri),
-                             predicate=MASTODON.featured)
-        sensitive_val = g.value(subject=rdflib.URIRef(reference.uri),
-                               predicate=MASTODON.sensitive)
+        """Check if this is a Mastodon Note by type + Mastodon-specific fields."""
+        subject_uri = rdflib.URIRef(reference.uri)
 
-        return featured_val is not None or sensitive_val is not None
+        # Must be a Note type (handled by AS2 context)
+        type_val = g.value(subject=subject_uri, predicate=AS2.type)
+        if type_val != AS2.Note:
+            return False
 
-    class Meta:
-        verbose_name = 'Mastodon Context'
-        verbose_name_plural = 'Mastodon Contexts'
+        # Must have Mastodon-specific properties to confirm it's from Mastodon
+        mastodon_fields = (
+            g.value(subject=subject_uri, predicate=MASTODON.sensitive) or
+            g.value(subject=subject_uri, predicate=MASTODON.atomUri) or
+            g.value(subject=subject_uri, predicate=MASTODON.conversation)
+        )
+
+        return mastodon_fields is not None
 ```
-
-The `LINKED_DATA_FIELDS` dictionary maps Django field names to RDF predicates. When processing a graph, the toolkit walks through this mapping and extracts values for each predicate.
-
-The `should_handle_reference()` method determines whether this context applies to a reference. Check if the graph contains any predicates from your vocabulary. Return `True` if the context should process this reference, `False` otherwise.
 
 ## Registering the Context Model
 
@@ -190,7 +192,7 @@ FEDERATION = {
     'ACTOR_VIEW': 'journal:actor',
     'OBJECT_VIEW': 'journal:entry-detail',
     'EXTRA_CONTEXT_MODELS': [
-        'journal.mastodon_context.MastodonContext',
+        'journal.mastodon_context.MastodonNoteContext',
     ],
 }
 ```
@@ -202,32 +204,36 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
-Now when the toolkit processes JSON-LD documents with Mastodon properties, it automatically creates `MastodonContext` instances.
+Now when the toolkit processes JSON-LD documents representing Mastodon notes, it automatically creates `MastodonNoteContext` instances that handle Mastodon-specific fields for that object type.
 
 ## Testing the Custom Context
 
-Create a test document with Mastodon properties. In the Django shell:
+Create a test document representing a Mastodon note. In the Django shell:
 
 ```python
 python manage.py shell
 
 from activitypub.models import LinkedDataDocument, Reference
 
-# Simulate receiving a document with Mastodon extensions
+# Simulate receiving a Mastodon note document
 document = {
-    "id": "https://mastodon.social/@alice/123456",
+    "id": "https://mastodon.social/users/alice/statuses/123456",
     "@context": [
         "https://www.w3.org/ns/activitystreams",
-        {
-            "toot": "http://joinmastodon.org/ns#",
-            "featured": {"@id": "toot:featured", "@type": "@id"},
-            "sensitive": "toot:sensitive"
-        }
+        "https://docs.joinmastodon.org/spec/activitypub/"
     ],
     "type": "Note",
-    "content": "This is a test post",
-    "published": "2025-01-15T10:00:00Z",
-    "sensitive": True
+    "content": "<p>Check out this amazing sunset photo! 🌅</p>",
+    "published": "2025-01-15T18:30:00Z",
+    "sensitive": True,
+    "atomUri": "https://mastodon.social/users/alice/statuses/123456",
+    "conversation": "tag:mastodon.social,2025-01-15:objectId=123456:objectType=Conversation",
+    "attachment": [
+        {
+            "type": "Image",
+            "url": "https://files.mastodon.social/media/sunset.jpg"
+        }
+    ]
 }
 
 # Process the document
@@ -235,46 +241,60 @@ doc = LinkedDataDocument.make(document)
 doc.load()
 
 # Check that both contexts were created
-ref = Reference.objects.get(uri='https://mastodon.social/@alice/123456')
-obj_ctx = ref.get_by_context('activitypub.models.ObjectContext')
-mastodon_ctx = ref.get_by_context('journal.mastodon_context.MastodonContext')
+ref = Reference.objects.get(uri='https://mastodon.social/users/alice/statuses/123456')
 
-print(f"Object content: {obj_ctx.content}")
-print(f"Sensitive flag: {mastodon_ctx.sensitive}")
+# AS2 context handles basic Note properties
+as2_ctx = ref.get_by_context('activitypub.models.ObjectContext')
+
+# Mastodon context handles Mastodon-specific extensions
+mastodon_ctx = ref.get_by_context('journal.mastodon_context.MastodonNoteContext')
+
+print(f"Note content: {as2_ctx.content if as2_ctx else 'N/A'}")
+print(f"Sensitive: {mastodon_ctx.sensitive}")
+print(f"Conversation: {mastodon_ctx.conversation}")
 ```
 
-The same reference now has two contexts. `ObjectContext` handles standard AS2 properties. `MastodonContext` handles Mastodon extensions. They coexist without conflict.
+Context models are composable. The AS2 context handles basic Note properties (type, content, published), while the Mastodon context handles only Mastodon-specific extensions like the sensitive flag and conversation threading. Together they represent the complete Mastodon note object without field overlap.
 
 ## Accessing Custom Context Data
 
-Update your journal entry model to provide access to Mastodon properties:
+Update your journal entry model to provide access to Mastodon note properties:
 
 ```python
 class JournalEntry(models.Model):
-    # ... existing fields ...
-    
+    """Application model for journal entries."""
+    reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    # ... other fields ...
+
     @property
     def mastodon(self):
-        """Access Mastodon-specific context."""
-        from journal.mastodon_context import MastodonContext
-        return self.reference.get_by_context(MastodonContext)
-    
+        """Access Mastodon note context."""
+        from journal.mastodon_context import MastodonNoteContext
+        return self.reference.get_by_context(MastodonNoteContext)
+
     @property
     def is_sensitive(self):
-        """Check if content is marked sensitive."""
+        """Check if entry contains sensitive content."""
         mastodon_ctx = self.mastodon
         return mastodon_ctx.sensitive if mastodon_ctx else False
+
+    @property
+    def conversation_id(self):
+        """Get Mastodon conversation ID for threading."""
+        mastodon_ctx = self.mastodon
+        return mastodon_ctx.conversation if mastodon_ctx else None
 ```
 
 Now you can query entries by their Mastodon properties:
 
 ```python
-# Find all sensitive entries
-from journal.mastodon_context import MastodonContext
+# Find all entries marked as sensitive
+from journal.mastodon_context import MastodonNoteContext
 
-sensitive_contexts = MastodonContext.objects.filter(sensitive=True)
-sensitive_entries = JournalEntry.objects.filter(
-    reference__mastodon_mastodoncontext_context__in=sensitive_contexts
+sensitive_entries = MastodonNoteContext.objects.filter(sensitive=True)
+entries = JournalEntry.objects.filter(
+    reference__journal_mastodoncontext_context__in=sensitive_entries
 )
 ```
 
@@ -402,24 +422,24 @@ python manage.py makemigrations
 python manage.py migrate
 ```
 
-## Creating Entries with Custom Context
+## Creating Entries with Mastodon Context
 
-Update the entry creation method to include mood data:
+You can create journal entries that include Mastodon-specific metadata. This allows entries to federate with Mastodon servers while preserving platform-specific features like content warnings:
 
 ```python
 class JournalEntry(models.Model):
     # ... existing code ...
-    
+
     @classmethod
     def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
-                     title=None, duration=None, mood_level=None, mood_type=None):
-        """Create a journal entry with mood tracking."""
-        from journal.mood_context import MoodContext
-        
+                     title=None, duration=None, sensitive=False):
+        """Create a journal entry with optional Mastodon context."""
+        from journal.mastodon_context import MastodonNoteContext
+
         # Generate reference and create AS2 context
         domain = Domain.get_default()
         reference = ObjectContext.generate_reference(domain)
-        
+
         obj_context = ObjectContext.make(
             reference=reference,
             type=ObjectContext.Types.NOTE,
@@ -428,7 +448,53 @@ class JournalEntry(models.Model):
             published=timezone.now(),
             duration=duration,
         )
-        
+
+        # Create Mastodon context if entry is marked sensitive
+        if sensitive:
+            MastodonNoteContext.objects.create(
+                reference=reference,
+                sensitive=True,
+            )
+
+        # Create application entry
+        entry = cls.objects.create(
+            reference=reference,
+            user=user,
+            entry_type=entry_type,
+        )
+
+        return entry
+```
+
+## Creating Entries with Mood Tracking
+
+Beyond handling existing platform vocabularies, you can also create domain-specific vocabularies. The following example shows how to add mood tracking to journal entries.
+
+Update the entry creation method to include both Mastodon and mood data:
+
+```python
+class JournalEntry(models.Model):
+    # ... existing code ...
+
+    @classmethod
+    def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
+                     title=None, duration=None, mood_level=None, mood_type=None):
+        """Create a journal entry with mood tracking."""
+        from journal.mood_context import MoodContext
+
+        # Generate reference and create AS2 context
+        domain = Domain.get_default()
+        reference = ObjectContext.generate_reference(domain)
+
+        obj_context = ObjectContext.make(
+            reference=reference,
+            type=ObjectContext.Types.NOTE,
+            content=content,
+            name=title,
+            published=timezone.now(),
+            duration=duration,
+        )
+
         # Create mood context if mood data provided
         if mood_level is not None or mood_type is not None:
             MoodContext.objects.create(
@@ -436,16 +502,16 @@ class JournalEntry(models.Model):
                 mood_level=mood_level,
                 mood_type=mood_type,
             )
-        
+
         # Create application entry
         entry = cls.objects.create(
             reference=reference,
             user=user,
             entry_type=entry_type,
         )
-        
+
         return entry
-    
+
     @property
     def mood(self):
         """Access mood tracking context."""
@@ -453,7 +519,7 @@ class JournalEntry(models.Model):
         return self.reference.get_by_context(MoodContext)
 ```
 
-Update the admin form to include mood fields:
+Update the admin form to include both sensitive content flag and mood fields:
 
 ```python
 class JournalEntryForm(forms.Form):
@@ -462,6 +528,7 @@ class JournalEntryForm(forms.Form):
     title = forms.CharField(max_length=200, required=False)
     content = forms.CharField(widget=forms.Textarea, required=True)
     duration_minutes = forms.IntegerField(required=False, min_value=0)
+    sensitive = forms.BooleanField(required=False, help_text="Mark as sensitive content")
     mood_level = forms.ChoiceField(
         choices=[('', '---')] + list(MoodContext.MoodLevel.choices),
         required=False
@@ -471,27 +538,29 @@ class JournalEntryForm(forms.Form):
         required=False
     )
 
-# Update the changelist_view to handle mood data
+# Update the changelist_view to handle Mastodon and mood data
 def changelist_view(self, request, extra_context=None):
     if request.method == 'POST':
         form = JournalEntryForm(request.POST)
         if form.is_valid():
             # ... existing duration handling ...
-            
+
+            sensitive = form.cleaned_data.get('sensitive', False)
             mood_level = form.cleaned_data.get('mood_level')
             mood_type = form.cleaned_data.get('mood_type')
-            
+
             JournalEntry.create_entry(
                 user=form.cleaned_data['user'],
                 content=form.cleaned_data['content'],
                 entry_type=form.cleaned_data['entry_type'],
                 title=form.cleaned_data['title'] or None,
                 duration=duration,
+                sensitive=sensitive,
                 mood_level=int(mood_level) if mood_level else None,
                 mood_type=mood_type if mood_type else None,
             )
             self.message_user(request, 'Journal entry created successfully')
-    
+
     # ... rest of method ...
 ```
 

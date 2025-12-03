@@ -26,7 +26,9 @@ When you navigate relationships in the Fediverse, you work primarily with refere
 
 ## Context Models
 
-Context models attach vocabulary-specific meaning to references. When you need to read or write attributes defined by a particular RDF namespace, you use the corresponding context model.
+Context models attach application-specific meaning to references for particular object types. When you need to read or write attributes for a specific kind of object (like "Lemmy Community" or "Mastodon Status"), you use the corresponding context model.
+
+Context models are composable and organized by "what kind of thing is this?" rather than "which namespace prefix does it use?" Each context model handles only its specific fields without overlapping with other contexts. Multiple context models can process the same reference, each extracting their respective fields.
 
 ActivityStreams 2.0, the core vocabulary for ActivityPub, maps to context models like `ObjectContext`, `ActorContext`, and `ActivityContext`. These models store properties such as `content`, `name`, `published`, and relationship pointers like `attributed_to` and `in_reply_to`.
 
@@ -43,7 +45,7 @@ print(obj.name)     # "My First Post"
 
 A single reference can have multiple context models attached. An actor might have both `ActorContext` (for AS2 properties like `preferred_username` and `inbox`) and `SECv1Context` (for cryptographic key information). Extensions from platforms like Mastodon or Lemmy would add their own context models.
 
-This separation means vocabulary extensions don't interfere with each other. Each context model extracts only the predicates it recognizes, storing them in its own database table. Applications choose which contexts matter for their use case.
+Context models discriminate by object type and application identity, not just namespace presence. A Lemmy community context model would check both that the object is a Group type AND that it has Lemmy-specific properties, ensuring it only processes objects from the expected application.
 
 ## From JSON-LD to Context Models
 
@@ -51,7 +53,7 @@ When a remote JSON-LD document arrives, the toolkit processes it through a defin
 
 The toolkit walks through all subjects in the graph, creating or retrieving Reference instances for each. For each reference, it checks which context models should handle the data by calling their `should_handle_reference` method.
 
-Context models that recognize the resource extract their relevant predicates from the graph and populate their fields. A `Note` object triggers `ObjectContext` to extract `content`, `published`, and `attributed_to`. If the note also includes Mastodon's `sensitive` flag, a Mastodon-specific context model could extract that separately.
+Context models discriminate by object type and application identity. A `LemmyCommunityContext` would check that the object is a Group type AND has Lemmy-specific properties before processing it. Multiple context models can process the same reference if they match different criteria - they extract their respective fields independently without conflict.
 
 This process happens only once when the document first arrives. After that, all data access goes through Django's ORM, querying the context model tables directly. Graph operations are expensive, so the toolkit converts the graph to relational form and then works relationally.
 
@@ -132,30 +134,52 @@ The reference links everything together. The context model handles federation. Y
 
 ## Custom Vocabularies
 
-Applications that work with specialized vocabularies create their own context models by extending `AbstractContextModel`. Each context model defines which predicates it handles and how to map them to Django fields.
+Applications that work with specialized object types create their own context models by extending `AbstractContextModel`. Each context model handles only its specific fields without overlapping with other contexts. The `should_handle_reference` method discriminates by object type and application identity.
 
 ```python
 from rdflib import Namespace
 from activitypub.models import AbstractContextModel
+from activitypub.contexts import AS2, LEMMY, SCHEMA, LEMMY_CONTEXT
 from django.db import models
 
-LEMMY = Namespace('https://join-lemmy.org/ns#')
+class LemmyCommunityContext(AbstractContextModel):
+    """Handles Lemmy-specific fields for Lemmy Community objects."""
 
-class LemmyContext(AbstractContextModel):
+    CONTEXT = LEMMY_CONTEXT  # Required for proper serialization
     LINKED_DATA_FIELDS = {
+        # Only Lemmy-specific fields (AS2 fields handled by other contexts)
         'stickied': LEMMY.stickied,
         'locked': LEMMY.locked,
+        'posting_restricted_to_mods': LEMMY.postingRestrictedToMods,
+
+        # Schema.org fields not covered by other contexts
+        'language': SCHEMA.inLanguage,
     }
-    
+
+    # Only fields specific to this context
     stickied = models.BooleanField(default=False)
     locked = models.BooleanField(default=False)
-    
+    posting_restricted_to_mods = models.BooleanField(default=False)
+    language = models.CharField(max_length=10, null=True, blank=True)
+
     @classmethod
     def should_handle_reference(cls, g, reference):
-        # Check if the graph includes Lemmy-specific predicates
-        stickied_val = reference.get_value(g, predicate=LEMMY.stickied)
-        locked_val = reference.get_value(g, predicate=LEMMY.locked)
-        return stickied_val is not None or locked_val is not None
+        """Check if this is a Lemmy Community by type + Lemmy-specific properties."""
+        subject_uri = rdflib.URIRef(reference.uri)
+
+        # Must be a Group type (handled by AS2 context)
+        type_val = g.value(subject=subject_uri, predicate=AS2.type)
+        if type_val != AS2.Group:
+            return False
+
+        # Must have Lemmy-specific properties to confirm it's from Lemmy
+        lemmy_fields = (
+            g.value(subject=subject_uri, predicate=LEMMY.stickied) or
+            g.value(subject=subject_uri, predicate=LEMMY.postingRestrictedToMods) or
+            g.value(subject=subject_uri, predicate=LEMMY.locked)
+        )
+
+        return lemmy_fields is not None
 ```
 
 Register custom context models in settings to have them automatically process incoming documents:
