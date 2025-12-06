@@ -13,11 +13,11 @@ TEST_DOCUMENTS_FOLDER = os.path.abspath(
 )
 
 
-def with_document_file(path):
+def with_document_file(path, base_folder=TEST_DOCUMENTS_FOLDER):
     def decorator(function_at_test):
         @wraps(function_at_test)
         def inner(*args, **kw):
-            full_path = os.path.join(TEST_DOCUMENTS_FOLDER, path)
+            full_path = os.path.join(base_folder, path)
             if not os.path.exists(full_path):
                 raise SkipTest("Document {full_path} not found")
             with open(full_path) as f:
@@ -32,7 +32,7 @@ def with_document_file(path):
     return decorator
 
 
-def with_remote_reference(uri, path):
+def with_remote_reference(uri, path, base_folder=TEST_DOCUMENTS_FOLDER):
     def decorator(function_at_test):
         @wraps(function_at_test)
         def inner(*args, **kw):
@@ -49,11 +49,11 @@ def with_remote_reference(uri, path):
     return decorator
 
 
-def use_nodeinfo(domain_url, path):
+def use_nodeinfo(domain_url, path, base_folder=TEST_DOCUMENTS_FOLDER):
     def decorator(function_at_test):
         @wraps(function_at_test)
         def inner(*args, **kw):
-            full_path = os.path.join(TEST_DOCUMENTS_FOLDER, path)
+            full_path = os.path.join(base_folder, path)
             if not os.path.exists(full_path):
                 raise SkipTest("Document {full_path} not found")
 
