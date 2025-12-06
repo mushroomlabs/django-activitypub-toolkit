@@ -1,0 +1,77 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    "https://w3id.org/security/v1"
+  ],
+  "attributedTo": "https://piefed.example.com/c/rdf/moderators",
+  "endpoints": {
+    "sharedInbox": "https://piefed.example.com/inbox"
+  },
+  "featured": "https://piefed.example.com/c/rdf/featured",
+  "followers": "https://piefed.example.com/c/rdf/followers",
+  "icon": {
+    "type": "Image",
+    "url": "https://media.piefed.example.com/communities/De/ad/Beef.webp"
+  },
+  "id": "https://piefed.example.com/c/rdf",
+  "inbox": "https://piefed.example.com/c/rdf/inbox",
+  "lemmy:tagsForPosts": [
+    {
+      "background_color": "#000000",
+      "blur_images": null,
+      "display_name": "RDF",
+      "id": "https://piefed.example.com/c/rdf/tag/110",
+      "text_color": "#cb1515",
+      "type": "lemmy:CommunityTag"
+    },
+    {
+      "background_color": "#111111",
+      "blur_images": null,
+      "display_name": "Linked Data",
+      "id": "https://piefed.example.com/c/rdf/tag/111",
+      "text_color": "#000000",
+      "type": "lemmy:CommunityTag"
+    }
+  ],
+  "moderators": "https://piefed.example.com/c/rdf/moderators",
+  "name": "Rdf",
+  "newModsWanted": false,
+  "outbox": "https://piefed.example.com/c/rdf/outbox",
+  "postingRestrictedToMods": false,
+  "postingWarning": "",
+  "preferredUsername": "rdf",
+  "privateMods": false,
+  "publicKey": {
+    "id": "https://piefed.example.com/c/rdf#main-key",
+    "owner": "https://piefed.example.com/c/rdf",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nTEST_KEY\n-----END PUBLIC KEY-----\n"
+  },
+  "published": "1970-01-01T11:58:00.000000+00:00",
+  "sensitive": false,
+  "source": {
+    "content": "**Welcome to Rdf**  \r\n\r\nA community to learn about RDF",
+    "mediaType": "text/markdown"
+  },
+  "summary": "<p><strong>Welcome to Rdf</strong> </p><p>A Communuty to learn about RDF</p>\n",
+  "tag": [
+    {
+      "background_color": "#000000",
+      "blur_images": null,
+      "display_name": "RDF",
+      "id": "https://piefed.example.com/c/rdf/tag/110",
+      "text_color": "#cb1515",
+      "type": "CommunityTag"
+    },
+    {
+      "background_color": "#111111",
+      "blur_images": null,
+      "display_name": "Linked Data",
+      "id": "https://piefed.example.com/c/rdf/tag/111",
+      "text_color": "#000000",
+      "type": "CommunityTag"
+    }
+  ],
+  "type": "Group",
+  "updated": "2025-12-05T00:00:00.000000+00:00",
+  "url": "https://piefed.example.com/c/rdf"
+}
