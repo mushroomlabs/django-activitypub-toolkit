@@ -201,17 +201,19 @@ class FollowRequestAdmin(admin.ModelAdmin):
     list_filter = ("status",)
 
 
+@admin.register(models.Language)
+class LanguageAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "iso_639_1", "iso_639_3")
+    search_fields = ("code", "name")
+    list_filter = ("iso_639_1",)
+
+
 __all__ = [
-    "NotificationAdmin",
-    "LinkAdmin",
-    "ObjectAdmin",
-    "CollectionAdmin",
-    "CollectionPageAdmin",
-    "CollectionItemAdmin",
     "SecV1ContextAdmin",
     "DomainAdmin",
     "AccountAdmin",
     "ActorAdmin",
     "ActivityAdmin",
     "FollowRequestAdmin",
+    "LanguageAdmin",
 ]

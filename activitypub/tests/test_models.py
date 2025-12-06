@@ -9,10 +9,12 @@ from activitypub.models import (
     CollectionContext,
     CollectionItem,
     EndpointContext,
+    Language,
     LinkContext,
     LinkedDataDocument,
     ObjectContext,
     Reference,
+    LanguageMap,
 )
 
 from .base import BaseTestCase, use_nodeinfo, with_document_file
@@ -376,8 +378,8 @@ class ActivityTestCase(BaseTestCase):
             reference__uri="https://remote.example.com/users/bob",
             reference__domain=remote_domain,
         )
-        # Don't set a liked collection for this actor
 
+        # Don't set a liked collection for this actor
         note = factories.ObjectFactory(
             reference__uri="http://testserver/objects/note-456",
             reference__domain=self.local_instance.domain,
@@ -708,3 +710,74 @@ class ActivityTestCase(BaseTestCase):
 
         # Should not crash
         remove_activity.do()
+
+
+class LanguageTestCase(BaseTestCase):
+    def test_can_create_language(self):
+        language = Language.objects.create(
+            code="en",
+            iso_639_1="en",
+            iso_639_3="eng",
+            name="English",
+        )
+        self.assertEqual(language.code, "en")
+        self.assertEqual(language.iso_639_1, "en")
+        self.assertEqual(language.iso_639_3, "eng")
+        self.assertEqual(language.name, "English")
+        self.assertEqual(str(language), "English (en)")
+
+    def test_can_create_language_variant(self):
+        language = Language.objects.create(
+            code="pt-BR",
+            iso_639_1="pt",
+            iso_639_3="por",
+            name="Portuguese (Brazil)",
+        )
+        self.assertEqual(language.code, "pt-BR")
+        self.assertEqual(language.iso_639_1, "pt")
+
+    def test_language_code_is_unique(self):
+        Language.objects.create(code="en", iso_639_1="en", iso_639_3="eng", name="English")
+        with self.assertRaises(Exception):
+            Language.objects.create(code="en", iso_639_1="en", iso_639_3="eng", name="English")
+
+    def test_top_languages_enum(self):
+        self.assertEqual(LanguageMap.EN.code, "en")
+        self.assertEqual(LanguageMap.EN.iso_639_3, "eng")
+        self.assertEqual(LanguageMap.EN.name, "English")
+
+        self.assertEqual(LanguageMap.PT_BR.code, "pt-BR")
+        self.assertEqual(LanguageMap.PT_BR.iso_639_3, "por")
+        self.assertEqual(LanguageMap.PT_BR.name, "Portuguese (Brazil)")
+
+    def test_can_load_languages(self):
+        self.assertEqual(Language.objects.count(), 0)
+
+        Language.load()
+
+        self.assertGreater(Language.objects.count(), 0)
+        self.assertEqual(Language.objects.count(), len(LanguageMap))
+
+        en_language = Language.objects.get(code="en")
+        self.assertEqual(en_language.iso_639_1, "en")
+        self.assertEqual(en_language.iso_639_3, "eng")
+        self.assertEqual(en_language.name, "English")
+
+        pt_br_language = Language.objects.get(code="pt-BR")
+        self.assertEqual(pt_br_language.iso_639_1, "pt")
+        self.assertEqual(pt_br_language.iso_639_3, "por")
+        self.assertEqual(pt_br_language.name, "Portuguese (Brazil)")
+
+        pt_language = Language.objects.get(code="pt")
+        self.assertEqual(pt_language.iso_639_1, "pt")
+        self.assertEqual(pt_language.iso_639_3, "por")
+        self.assertEqual(pt_language.name, "Portuguese")
+
+    def test_load_languages_is_idempotent(self):
+        Language.load()
+        count_first = Language.objects.count()
+
+        Language.load()
+        count_second = Language.objects.count()
+
+        self.assertEqual(count_first, count_second)
