@@ -3,7 +3,6 @@ hide:
   - toc
 ---
 
-
 # How-To Guides
 
 How-to guides are task-oriented instructions for solving specific
@@ -24,6 +23,8 @@ options, settings, and customization for your federation setup.
 database migrations required for the toolkit's models.
 
 ## Federation Tasks
+
+**[Working with Reference-Based Relationships](reference_based_relationships.md)** - Use ReferenceField and RelatedContextField to work with federated data structures without requiring persistence.
 
 **[Federate Existing Content](federate_existing_content.md)** - Add
 federation capabilities to your existing Django models and content.

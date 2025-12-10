@@ -18,6 +18,7 @@ from pyld import jsonld
 from ..exceptions import DocumentResolutionError, InvalidDomainError
 from ..settings import app_settings
 from .base import generate_ulid
+from .fields import ReferenceField
 
 logger = logging.getLogger(__name__)
 
@@ -34,26 +35,6 @@ class NotificationManager(models.Manager):
             ],
         )
         return qs.annotate(verified=Exists(verified_sqs), processed=Exists(processed_sqs))
-
-
-class ReferenceField(models.ManyToManyField):
-    """
-    Custom field for referencing Reference instances. Given
-    that linked data *can* provide multiple values for the same
-    attribute, we will simplify the model by always using many-to-many
-    relationships.
-
-    Potential improvements:
-
-     - materialize whole document
-     - indicate required contexts
-     - validate data
-    """
-
-    def __init__(self, **kwargs):
-        kwargs.setdefault("related_name", "+")
-        kwargs.setdefault("to", Reference)
-        super().__init__(**kwargs)
 
 
 class Domain(TimeStampedModel):

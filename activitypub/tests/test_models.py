@@ -10,11 +10,11 @@ from activitypub.models import (
     CollectionItem,
     EndpointContext,
     Language,
+    LanguageMap,
     LinkContext,
     LinkedDataDocument,
     ObjectContext,
     Reference,
-    LanguageMap,
 )
 
 from .base import BaseTestCase, use_nodeinfo, with_document_file

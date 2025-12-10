@@ -47,6 +47,121 @@ A single reference can have multiple context models attached. An actor might hav
 
 Context models discriminate by object type and application identity, not just namespace presence. A Lemmy community context model would check both that the object is a Group type AND that it has Lemmy-specific properties, ensuring it only processes objects from the expected application.
 
+## Reference-Based Relationships
+
+Traditional Django many-to-many relationships require both sides of the relationship to have primary keys. This creates a chicken-and-egg problem when working with federated content that may not be persisted immediately. The toolkit solves this with **reference-based relationships** that link via `Reference` objects instead of model primary keys.
+
+### ReferenceField: Many-to-Many Without Persistence
+
+The `ReferenceField` is a specialized many-to-many field that creates relationships between `Reference` objects rather than model instances. This enables several key capabilities:
+
+- **Query relationships on unsaved instances** - Access related data before saving the model
+- **Lazy context loading** - Load ActivityStreams contexts only when needed
+- **Federation-first design** - Work with references before resolving their content
+
+Instead of creating through tables with `source_model_id → target_model_id`, `ReferenceField` creates tables with `source_reference_id → target_reference_id`:
+
+```sql
+-- Traditional M2M through table
+CREATE TABLE app_model_tags (
+    id INTEGER PRIMARY KEY,
+    model_id INTEGER REFERENCES app_model(id),
+    tag_id INTEGER REFERENCES app_tag(id)
+);
+
+-- ReferenceField through table
+CREATE TABLE app_model_tags (
+    id INTEGER PRIMARY KEY,
+    source_reference_id INTEGER REFERENCES activitypub_reference(id),
+    target_reference_id INTEGER REFERENCES activitypub_reference(id)
+);
+```
+
+Usage example:
+
+```python
+from activitypub.models import ReferenceField
+
+class ObjectContext(models.Model):
+    reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
+    tags = ReferenceField()  # Links to Reference objects
+
+    class Meta:
+        abstract = True
+
+# Works even on unsaved instances
+obj = ObjectContext(reference=some_ref)
+obj.tags.add(tag_ref1, tag_ref2)  # Works immediately
+related_tags = obj.tags.all()     # Queries work
+```
+
+### RelatedContextField: Lazy Context Navigation
+
+The `RelatedContextField` provides lazy access to ActivityStreams contexts through a `ContextProxy`. This allows you to navigate and modify context data without loading it from the database until necessary.
+
+```python
+from activitypub.models import RelatedContextField
+
+class Site(models.Model):
+    reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
+    as2 = RelatedContextField(ObjectContext)
+
+# Navigate contexts without database hits
+site = Site.objects.get(pk=1)
+site.as2.name = "My Site"           # Creates context if needed
+sidebar_ref = site.as2.source.first()  # ReferenceField works on proxy
+site.as2.tags.add(tag_ref)          # Relationships work
+
+# Persist when ready
+if should_save:
+    site.as2.save()
+```
+
+### Benefits of Reference-Based Relationships
+
+**Deferred Persistence** - Work with federated data structures before deciding what to persist:
+
+```python
+# Process incoming activity without saving anything
+activity = ActivityContext(reference=activity_ref)
+actor = activity.actor.get_by_context(ActorContext)
+
+# Only save what matters for your application
+if activity.type == 'Create' and actor.is_local:
+    activity.save()
+    actor.save()
+```
+
+**Memory Efficient** - Load context data only when accessed:
+
+```python
+# No database queries until actually needed
+site.as2.name  # ← First access loads ObjectContext
+site.as2.tags.all()  # ← Subsequent access reuses loaded context
+```
+
+**DRF Integration** - Enable complex serializer traversals on unsaved data:
+
+```python
+class ActivitySerializer(serializers.Serializer):
+    actor_name = serializers.CharField(source="as2.actor.name")
+    object_content = serializers.CharField(source="as2.object.content")
+    tags = serializers.SerializerMethodField()
+
+    def get_tags(self, obj):
+        return [tag.uri for tag in obj.as2.tags.all()]
+```
+
+**Signal Compatibility** - ReferenceField maintains full compatibility with Django's signal system:
+
+```python
+@receiver(m2m_changed, sender=ObjectContext.tags.through)
+def on_tags_changed(sender, instance, action, pk_set, **kwargs):
+    if action == 'post_add':
+        # Handle tag additions
+        pass
+```
+
 ## From JSON-LD to Context Models
 
 When a remote JSON-LD document arrives, the toolkit processes it through a defined pipeline. First, the document is stored as a `LinkedDataDocument` associated with its reference. Then the document is parsed into an RDF graph using rdflib.
@@ -82,24 +197,22 @@ Your application models should link to references, not directly to context model
 
 ```python
 from django.db import models
-from activitypub.models import Reference
+from activitypub.models import Reference, RelatedContextField
 
 class Post(models.Model):
     reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
     author = models.ForeignKey('auth.User', on_delete=models.CASCADE)
-    
-    @property
-    def AS2(self):
-        from activitypub.models import ObjectContext
-        return self.reference.get_by_context(ObjectContext)
-    
+
+    # Use RelatedContextField for convenient access
+    as2 = RelatedContextField(ObjectContext)
+
     @property
     def title(self):
-        return self.AS2.name
-    
+        return self.as2.name
+
     @property
     def body(self):
-        return self.AS2.content
+        return self.as2.content
 ```
 
 This pattern keeps your application models focused on your business logic while delegating ActivityPub concerns to the context models. You can add methods that combine data from multiple contexts or compute derived values.
@@ -138,7 +251,7 @@ Applications that work with specialized object types create their own context mo
 
 ```python
 from rdflib import Namespace
-from activitypub.models import AbstractContextModel
+from activitypub.models import AbstractContextModel, ReferenceField
 from activitypub.contexts import AS2, LEMMY, SCHEMA, LEMMY_CONTEXT
 from django.db import models
 
@@ -154,6 +267,9 @@ class LemmyCommunityContext(AbstractContextModel):
 
         # Schema.org fields not covered by other contexts
         'language': SCHEMA.inLanguage,
+
+        # Use ReferenceField for relationships
+        'moderators': LEMMY.moderators,
     }
 
     # Only fields specific to this context
@@ -161,6 +277,9 @@ class LemmyCommunityContext(AbstractContextModel):
     locked = models.BooleanField(default=False)
     posting_restricted_to_mods = models.BooleanField(default=False)
     language = models.CharField(max_length=10, null=True, blank=True)
+
+    # ReferenceField works on unsaved instances
+    moderators = ReferenceField()
 
     @classmethod
     def should_handle_reference(cls, g, reference):
@@ -205,5 +324,7 @@ The reference-context architecture embodies several key principles:
 **Extensibility.** New vocabularies add new context models without affecting existing ones. Multiple contexts coexist on the same reference.
 
 **Explicit resolution.** You control when to fetch remote data. References can exist without resolved data until you need it.
+
+**Federation-first relationships.** ReferenceField and RelatedContextField enable working with federated data structures before deciding what to persist, supporting lazy loading and deferred persistence patterns.
 
 These principles guide how you build applications on the toolkit. Think in terms of references when navigating the graph. Think in terms of contexts when working with specific vocabularies. Think in terms of Django models when implementing your application logic.

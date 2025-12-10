@@ -9,7 +9,6 @@ from ..serializers import (
     EmbeddedCollectionContextSerializer,
     LinkedDataSerializer,
 )
-
 from .base import BaseTestCase
 
 

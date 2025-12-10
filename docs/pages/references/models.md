@@ -20,6 +20,16 @@ These models manage the fundamental entities for ActivityPub federation.
     options:
       heading_level: 4
 
+### Field Types
+
+::: activitypub.models.ReferenceField
+    options:
+      heading_level: 4
+
+::: activitypub.models.RelatedContextField
+    options:
+      heading_level: 4
+
 ### Accounts and Actors
 
 ::: activitypub.models.Account
@@ -88,35 +98,13 @@ These models store ActivityStreams 2.0 vocabulary data attached to references.
     options:
       heading_level: 4
 
-## Security and Integrity
+### Reference Relationships
 
-Models for cryptographic operations and message integrity verification.
-
-::: activitypub.models.SecV1Context
+::: activitypub.models.fields.ReferenceRelationship
     options:
       heading_level: 4
 
-::: activitypub.models.HttpMessageSignature
-    options:
-      heading_level: 4
-
-## Notifications and Processing
-
-Models for handling incoming activities and background processing.
-
-::: activitypub.models.Notification
-    options:
-      heading_level: 4
-
-::: activitypub.models.NotificationProcessResult
-    options:
-      heading_level: 4
-
-::: activitypub.models.NotificationIntegrityProof
-    options:
-      heading_level: 4
-
-::: activitypub.models.NotificationProofVerification
+::: activitypub.models.fields.ContextProxy
     options:
       heading_level: 4
 
