@@ -433,34 +433,50 @@ class ReferenceRelatedManager:
 
 class ContextProxy:
     def __init__(self, reference, context_class):
-        object.__setattr__(self, "_reference", reference)
-        object.__setattr__(self, "_context_class", context_class)
-        object.__setattr__(self, "_instance", None)
-        object.__setattr__(self, "_dirty", False)
+        object.__setattr__(self, "__reference", reference)
+        object.__setattr__(self, "__context_class", context_class)
+        object.__setattr__(self, "__instance", None)
+        object.__setattr__(self, "__dirty", False)
 
     def _get_instance(self):
-        if object.__getattribute__(self, "_instance") is None:
-            reference = object.__getattribute__(self, "_reference")
-            ctx_class = object.__getattribute__(self, "_context_class")
+        if object.__getattribute__(self, "__instance") is None:
+            reference = object.__getattribute__(self, "__reference")
+            ctx_class = object.__getattribute__(self, "__context_class")
             context = reference.get_by_context(ctx_class) or ctx_class(reference=reference)
-            object.__setattr__(self, "_instance", context)
-        return object.__getattribute__(self, "_instance")
+            object.__setattr__(self, "__instance", context)
+        return object.__getattribute__(self, "__instance")
 
     def __getattr__(self, name):
         instance = self._get_instance()
         return getattr(instance, name)
 
     def __setattr__(self, name, value):
-        setattr(self._get_instance(), name, value)
-        object.__setattr__(self, "_dirty", True)
+        # MUST handle internal attributes first
+        if name in (
+            "_ContextProxy__reference",
+            "_ContextProxy__context_class",
+            "_ContextProxy__instance",
+            "_ContextProxy__dirty",
+        ):
+            object.__setattr__(self, name, value)
+            return
+
+        # Set on the actual instance, not the proxy
+        instance = self._get_instance()
+        setattr(instance, name, value)
+
+        # Mark as dirty
+        object.__setattr__(self, "__dirty", True)
 
     def save(self):
         """Save the context if it's been modified"""
-        if object.__getattribute__(self, "_dirty"):
-            instance = object.__getattribute__(self, "_instance")
+        dirty = object.__getattribute__(self, "__dirty")
+
+        if dirty:
+            instance = object.__getattribute__(self, "__instance")
             if instance:
                 instance.save()
-                object.__setattr__(self, "_dirty", False)
+                object.__setattr__(self, "__dirty", False)
 
 
 class RelatedContextField:
@@ -469,11 +485,18 @@ class RelatedContextField:
 
     def __set_name__(self, owner, name):
         self.name = name
+        self.cache_name = f"_cached_proxy_{name}"
 
     def __get__(self, instance, owner=None):
         if instance is None:
             return self
-        return ContextProxy(instance.reference, self.context_class)
+
+        # Return cached proxy so _dirty flag persists
+        if not hasattr(instance, self.cache_name):
+            proxy = ContextProxy(instance.reference, self.context_class)
+            setattr(instance, self.cache_name, proxy)
+
+        return getattr(instance, self.cache_name)
 
 
 __all__ = ("ReferenceField", "RelatedContextField")
