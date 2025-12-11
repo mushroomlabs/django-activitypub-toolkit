@@ -436,6 +436,7 @@ class ContextProxy:
         object.__setattr__(self, "_reference", reference)
         object.__setattr__(self, "_context_class", context_class)
         object.__setattr__(self, "_instance", None)
+        object.__setattr__(self, "_dirty", False)
 
     def _get_instance(self):
         if object.__getattribute__(self, "_instance") is None:
@@ -451,6 +452,15 @@ class ContextProxy:
 
     def __setattr__(self, name, value):
         setattr(self._get_instance(), name, value)
+        object.__setattr__(self, "_dirty", True)
+
+    def save(self):
+        """Save the context if it's been modified"""
+        if object.__getattribute__(self, "_dirty"):
+            instance = object.__getattribute__(self, "_instance")
+            if instance:
+                instance.save()
+                object.__setattr__(self, "_dirty", False)
 
 
 class RelatedContextField:
