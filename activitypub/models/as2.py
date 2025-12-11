@@ -165,7 +165,10 @@ class LinkContext(AbstractContextModel):
 
 
 class BaseAs2ObjectContext(AbstractAs2ObjectContext):
-    LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {"type": RDF.type}
+    LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {
+        "type": RDF.type,
+        "source": AS2.source,
+    }
 
     objects = InheritanceManager()
 
@@ -264,6 +267,7 @@ class ActorContext(BaseAs2ObjectContext):
         "endpoints": AS2.endpoints,
         "moved_to": AS2.movedTo,
         "also_known_as": AS2.alsoKnownAs,
+        "source": AS2.source,
     }
 
     EXTRA_CONTEXT = {
@@ -291,6 +295,7 @@ class ActorContext(BaseAs2ObjectContext):
         Reference, related_name="actor_endpoints", null=True, blank=True, on_delete=models.SET_NULL
     )
 
+    source = ReferenceField()
     inbox = models.OneToOneField(
         Reference,
         related_name="inbox_owner_actor",
