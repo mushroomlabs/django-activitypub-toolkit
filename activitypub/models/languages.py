@@ -1,6 +1,9 @@
 from enum import Enum
 
+import rdflib
 from django.db import models
+
+from .linked_data import Reference, AbstractContextModel
 
 
 class LanguageMap(Enum):
@@ -94,7 +97,7 @@ class LanguageMap(Enum):
 
     @property
     def code(self) -> str:
-        return self.value[0]
+        return self.value[0].lower()
 
     @property
     def iso_639_3(self) -> str:
@@ -109,8 +112,17 @@ class LanguageMap(Enum):
         return self.value[2]
 
 
-class Language(models.Model):
-    code = models.CharField(max_length=10, primary_key=True, help_text="Identifier code")
+class Language(AbstractContextModel):
+    """
+    Language resource using URN-based URIs with BCP 47 codes.
+    URIs are opaque identifiers, not dereferenceable URLs.
+    """
+
+    URI_PREFIX = "urn:bcp47:"
+
+    code = models.CharField(
+        max_length=10, unique=True, db_index=True, help_text="BCP 47 language tag"
+    )
     name = models.CharField(max_length=100, help_text="Human-readable language name")
     iso_639_1 = models.CharField(
         max_length=2, null=True, db_index=True, help_text="ISO 639-1 code"
@@ -123,15 +135,37 @@ class Language(models.Model):
         return f"{self.name} ({self.code})"
 
     @classmethod
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
+        return reference.uri.startswith(cls.URI_PREFIX)
+
+    @classmethod
+    def load_from_graph(cls, g: rdflib.Graph, reference: Reference):
+        pass  # We are not really getting this from outside
+
+    @classmethod
+    def create_language(cls, code, iso_639_1, iso_639_3, name):
+        normalized_code = code.lower()
+        reference, _ = Reference.objects.get_or_create(
+            uri=f"{cls.URI_PREFIX}{normalized_code}", domain=None
+        )
+
+        language, _ = cls.objects.update_or_create(
+            reference=reference,
+            code=normalized_code,
+            defaults={
+                "name": name,
+                "iso_639_3": iso_639_3,
+                "iso_639_1": iso_639_1,
+            },
+        )
+
+        return language
+
+    @classmethod
     def load(cls):
-        for language in LanguageMap:
-            cls.objects.update_or_create(
-                code=language.code,
-                defaults={
-                    "name": language.name,
-                    "iso_639_3": language.iso_639_3,
-                    "iso_639_1": language.iso_639_1,
-                },
+        for lang in LanguageMap:
+            cls.create_language(
+                code=lang.code, iso_639_1=lang.iso_639_1, iso_639_3=lang.iso_639_3, name=lang.name
             )
 
 

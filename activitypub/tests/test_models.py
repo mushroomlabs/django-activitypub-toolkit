@@ -714,7 +714,7 @@ class ActivityTestCase(BaseTestCase):
 
 class LanguageTestCase(BaseTestCase):
     def test_can_create_language(self):
-        language = Language.objects.create(
+        language = Language.create_language(
             code="en",
             iso_639_1="en",
             iso_639_3="eng",
@@ -727,26 +727,29 @@ class LanguageTestCase(BaseTestCase):
         self.assertEqual(str(language), "English (en)")
 
     def test_can_create_language_variant(self):
-        language = Language.objects.create(
+        language = Language.create_language(
             code="pt-BR",
             iso_639_1="pt",
             iso_639_3="por",
             name="Portuguese (Brazil)",
         )
-        self.assertEqual(language.code, "pt-BR")
+        self.assertEqual(language.code, "pt-br")
         self.assertEqual(language.iso_639_1, "pt")
 
     def test_language_code_is_unique(self):
-        Language.objects.create(code="en", iso_639_1="en", iso_639_3="eng", name="English")
+        en = Language.create_language(code="en", iso_639_1="en", iso_639_3="eng", name="English")
         with self.assertRaises(Exception):
-            Language.objects.create(code="en", iso_639_1="en", iso_639_3="eng", name="English")
+            reference = en.reference
+            Language.objects.create(
+                reference=reference, code="en", iso_639_1="en", iso_639_3="eng", name="English"
+            )
 
     def test_top_languages_enum(self):
         self.assertEqual(LanguageMap.EN.code, "en")
         self.assertEqual(LanguageMap.EN.iso_639_3, "eng")
         self.assertEqual(LanguageMap.EN.name, "English")
 
-        self.assertEqual(LanguageMap.PT_BR.code, "pt-BR")
+        self.assertEqual(LanguageMap.PT_BR.code, "pt-br")
         self.assertEqual(LanguageMap.PT_BR.iso_639_3, "por")
         self.assertEqual(LanguageMap.PT_BR.name, "Portuguese (Brazil)")
 
@@ -763,7 +766,7 @@ class LanguageTestCase(BaseTestCase):
         self.assertEqual(en_language.iso_639_3, "eng")
         self.assertEqual(en_language.name, "English")
 
-        pt_br_language = Language.objects.get(code="pt-BR")
+        pt_br_language = Language.objects.get(code="pt-br")
         self.assertEqual(pt_br_language.iso_639_1, "pt")
         self.assertEqual(pt_br_language.iso_639_3, "por")
         self.assertEqual(pt_br_language.name, "Portuguese (Brazil)")
