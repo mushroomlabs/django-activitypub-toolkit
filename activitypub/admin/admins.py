@@ -59,9 +59,10 @@ class ActivityAdmin(admin.ModelAdmin):
 @admin.register(models.SecV1Context)
 class SecV1ContextAdmin(admin.ModelAdmin):
     list_display = ("owned_by", "key_id")
+    exclude = ("private_key_pem",)
 
-    def owned_by(self, object):
-        return self.owner.first()
+    def owned_by(self, obj):
+        return obj.owner.first()
 
     def has_change_permission(self, request, obj=None):
         return False
