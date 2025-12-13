@@ -209,7 +209,15 @@ class LanguageAdmin(admin.ModelAdmin):
     list_filter = ("iso_639_1",)
 
 
+@admin.register(models.ActivityPubServer)
+class ActivityPubServerAdmin(admin.ModelAdmin):
+    list_display = ("domain", "software_family", "version")
+    list_filter = ("software_family",)
+    search_fields = ("domain__name",)
+
+
 __all__ = [
+    "ActivityPubServerAdmin",
     "SecV1ContextAdmin",
     "DomainAdmin",
     "AccountAdmin",
