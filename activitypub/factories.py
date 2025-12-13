@@ -177,3 +177,11 @@ class NotificationProcessResultFactory(factory.django.DjangoModelFactory):
 
     class Meta:
         model = models.NotificationProcessResult
+
+
+class SecV1ContextFactory(factory.django.DjangoModelFactory):
+    reference = factory.SubFactory(ReferenceFactory)
+    public_key_pem = factory.Faker("text", max_nb_chars=200)
+
+    class Meta:
+        model = models.SecV1Context

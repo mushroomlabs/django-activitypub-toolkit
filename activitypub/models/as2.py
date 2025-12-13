@@ -8,7 +8,9 @@ from rdflib import RDF, Namespace
 from ..contexts import AS2_CONTEXT
 from ..settings import app_settings
 from .base import _file_location, generate_ulid
+from .fields import RelatedContextField
 from .linked_data import AbstractContextModel, Reference, ReferenceField
+from .sec import SecV1Context
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +333,8 @@ class ActorContext(BaseAs2ObjectContext):
         blank=True,
         on_delete=models.SET_NULL,
     )
+
+    secv1 = RelatedContextField(SecV1Context)
 
     @property
     def followed_by(self):

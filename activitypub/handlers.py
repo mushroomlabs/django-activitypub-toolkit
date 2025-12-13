@@ -1,6 +1,6 @@
 import logging
 
-from django.db.models.signals import m2m_changed, post_save, pre_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from . import tasks
@@ -8,7 +8,7 @@ from .models.ap import ActivityPubServer, Actor, FollowRequest
 from .models.as2 import BaseAs2ObjectContext, ObjectContext
 from .models.collections import CollectionContext
 from .models.linked_data import Domain, Notification
-from .signals import notification_accepted
+from .signals import notification_accepted, reference_field_changed
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +50,8 @@ def on_ap_object_create_define_related_collections(sender, **kw):
             CollectionContext.make(instance.likes, name=f"Likes for {reference.uri}")
 
 
-@receiver(m2m_changed, sender=BaseAs2ObjectContext.in_reply_to.through)
-@receiver(m2m_changed, sender=ObjectContext.in_reply_to.through)
+@receiver(reference_field_changed, sender=BaseAs2ObjectContext.in_reply_to.through)
+@receiver(reference_field_changed, sender=ObjectContext.in_reply_to.through)
 def on_new_reply_add_to_replies_collection(sender, **kw):
     action = kw["action"]
     instance = kw["instance"]

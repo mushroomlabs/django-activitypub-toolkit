@@ -3,7 +3,7 @@ from enum import Enum
 import rdflib
 from django.db import models
 
-from .linked_data import Reference, AbstractContextModel
+from .linked_data import AbstractContextModel, Reference
 
 
 class LanguageMap(Enum):

@@ -1,7 +1,38 @@
+from typing import Any, Optional
+
 from django.apps import apps
 from django.db import models
-from django.db.models.fields.related_descriptors import ManyToManyDescriptor
-from django.db.models.signals import m2m_changed
+
+from ..signals import reference_field_changed
+
+
+class ReferenceFieldRemote:
+    """
+    Remote field metadata for ReferenceField.
+    Mimics the structure of ManyToManyRel for compatibility.
+    """
+
+    def __init__(self, model: str, related_name: str):
+        self.model = model
+        self.related_name = related_name
+        self._through: Optional[Any] = None
+
+    @property
+    def through(self):
+        """
+        Get the through model, resolving string references if needed.
+        """
+        if isinstance(self._through, str):
+            # Resolve the string reference to the actual model
+            return apps.get_model(self._through)
+        return self._through
+
+    @through.setter
+    def through(self, value):
+        """
+        Set the through model.
+        """
+        self._through = value
 
 
 class ReferenceRelationship(models.Model):
@@ -33,9 +64,9 @@ class ReferenceRelationship(models.Model):
 _through_model_cache = {}
 
 
-class ReferenceField(models.ManyToManyField):
+class ReferenceField(models.Field):
     """
-    Many-to-many field that links via reference FKs instead of model PKs.
+    Custom field that links via reference FKs instead of model PKs.
 
     Creates a through table that links source_reference_id to target_reference_id,
     allowing queries without requiring the source instance to have a pk.
@@ -53,30 +84,34 @@ class ReferenceField(models.ManyToManyField):
         related_refs = obj.source.all()  # Queries via obj.reference, not obj.pk
     """
 
-    def __init__(self, **kwargs):
-        kwargs.setdefault("related_name", "+")
-        kwargs.setdefault("to", "activitypub.Reference")
-        # Don't set through=None - we'll set it in contribute_to_class
+    def __init__(self, to="activitypub.Reference", related_name="+", **kwargs):
+        self.to = to
+        self.related_name = related_name
+        self.through = None
+
+        # Field is not stored in database - it's a relationship
+        kwargs["editable"] = False
+        kwargs.setdefault("serialize", False)
+
         super().__init__(**kwargs)
 
-    def contribute_to_class(self, cls, name, **kwargs):
+        # Create a remote_field object to hold metadata
+        self.remote_field = ReferenceFieldRemote(model=to, related_name=related_name)
+
+    def contribute_to_class(self, cls, name, private_only=False):
         # Skip for abstract models
         if cls._meta.abstract:
-            super().contribute_to_class(cls, name, **kwargs)
+            super().contribute_to_class(cls, name, private_only)
             return
 
-        # Type assertion: remote_field is always set in __init__
-        assert self.remote_field is not None
-
-        # Create our custom through model BEFORE calling parent
-        # This prevents Django from creating its default through model
+        # Create our custom through model
         self._create_through_model(cls, name)
 
-        # Now let parent handle the rest
-        super().contribute_to_class(cls, name, **kwargs)
+        # Let parent handle basic field setup
+        super().contribute_to_class(cls, name, private_only)
 
         # Replace the descriptor with our custom one
-        setattr(cls, name, ReferenceRelatedDescriptor(self.remote_field, reverse=False))
+        setattr(cls, name, ReferenceRelatedDescriptor(self, reverse=False))
 
     def _create_through_model(self, cls, name):
         """
@@ -164,18 +199,128 @@ class ReferenceField(models.ManyToManyField):
         kwargs.pop("through", None)
         return name, path, args, kwargs
 
+    def m2m_field_name(self):
+        """
+        Return the name of the FK field on the through table that points to the source model.
 
-class ReferenceRelatedDescriptor(ManyToManyDescriptor):
+        For ReferenceField, this is 'source_reference' instead of the default.
+        """
+        return "source_reference"
+
+    def m2m_reverse_field_name(self):
+        """
+        Return the name of the FK field on the through table that points to the target model.
+
+        For ReferenceField, this is 'target_reference' instead of the default.
+        """
+        return "target_reference"
+
+    def m2m_target_field_name(self):
+        """
+        Return the name of the field on the target model.
+        """
+        return "id"
+
+    def m2m_reverse_target_field_name(self):
+        """
+        Return the name of the field on the source model.
+        """
+        return "id"
+
+    def db_type(self, connection):
+        """
+        ReferenceField doesn't have a database column.
+        The relationship is stored in the through table.
+        """
+        return None
+
+    def get_internal_type(self):
+        """
+        Return the internal field type identifier.
+        """
+        return "ReferenceField"
+
+    def get_attname_column(self):
+        """
+        Override to prevent Django from creating a database column.
+        Returns (attname, None) to indicate no column should be created.
+        """
+        return self.get_attname(), None
+
+    def db_parameters(self, connection):
+        """
+        Override to ensure no database column is created.
+        """
+        return {"type": None, "check": None}
+
+    def contribute_to_related_class(self, cls, related):
+        """
+        Override to prevent reverse relation setup.
+        ReferenceField doesn't support reverse relations.
+        """
+        pass
+
+    def get_prep_value(self, value):
+        """
+        Convert Reference instances to their PKs for database queries.
+        """
+        if value is None:
+            return None
+
+        if hasattr(value, "pk"):
+            return value.pk
+        return value
+
+    def to_python(self, value):
+        """
+        Convert database value to Python object.
+        For ReferenceField, this is handled by the descriptor/manager.
+        """
+        return value
+
+    def get_lookup(self, lookup_name):
+        """
+        Override to provide custom lookups for ReferenceField filtering.
+
+        This enables QuerySet filtering like:
+            SecV1Context.objects.filter(owner=actor_ref)
+            SecV1Context.objects.filter(owner__in=[ref1, ref2])
+            SecV1Context.objects.filter(owner__isnull=True)
+        """
+        from .lookups import ReferenceFieldExact, ReferenceFieldIn, ReferenceFieldIsNull
+
+        if lookup_name == "exact":
+            return ReferenceFieldExact
+        elif lookup_name == "in":
+            return ReferenceFieldIn
+        elif lookup_name == "isnull":
+            return ReferenceFieldIsNull
+
+        return super().get_lookup(lookup_name)
+
+
+class ReferenceRelatedDescriptor:
     """
     Descriptor that provides access to the ReferenceRelatedManager.
-    Inherits from ManyToManyDescriptor but returns our custom manager.
     """
+
+    def __init__(self, field, reverse=False):
+        self.field = field
+        self.reverse = reverse
+
+    @property
+    def through(self):
+        """
+        Provide access to the through model at the class level.
+        This enables code like: Model.field.through
+        """
+        return self.field.remote_field.through
 
     def __get__(self, instance, cls=None):
         if instance is None:
             return self
 
-        # Return our custom manager instead of the default one
+        # Return our custom manager
         return ReferenceRelatedManager(
             instance=instance,
             field=self.field,
@@ -183,6 +328,14 @@ class ReferenceRelatedDescriptor(ManyToManyDescriptor):
         )
 
     def __set__(self, instance, value):
+        # Allow setting to None for validation purposes
+        if value is None:
+            return
+
+        # Allow setting to a ReferenceRelatedManager (happens during full_clean)
+        if isinstance(value, ReferenceRelatedManager):
+            return
+
         raise AttributeError(
             f"Cannot set values directly on ReferenceField '{self.field.name}'. "
             "Use the manager methods: add(), set(), remove(), clear()"
@@ -300,9 +453,9 @@ class ReferenceRelatedManager:
             if created:
                 added_pks.add(ref.pk)
 
-        # Send m2m_changed signal if any were added
+        # Send reference_field_changed signal if any were added
         if added_pks:
-            m2m_changed.send(
+            reference_field_changed.send(
                 sender=self.through,
                 instance=self.instance,
                 action="post_add",
@@ -310,6 +463,7 @@ class ReferenceRelatedManager:
                 model=self.target_model,
                 pk_set=added_pks,
                 using=self.through.objects.db,
+                field=self.field,
             )
 
     def remove(self, *references):
@@ -339,9 +493,9 @@ class ReferenceRelatedManager:
             target_reference__in=references,
         ).delete()
 
-        # Send m2m_changed signal if any were removed
+        # Send reference_field_changed signal if any were removed
         if removed_pks:
-            m2m_changed.send(
+            reference_field_changed.send(
                 sender=self.through,
                 instance=self.instance,
                 action="post_remove",
@@ -349,6 +503,7 @@ class ReferenceRelatedManager:
                 model=self.target_model,
                 pk_set=removed_pks,
                 using=self.through.objects.db,
+                field=self.field,
             )
 
     def clear(self):
@@ -371,9 +526,9 @@ class ReferenceRelatedManager:
             source_reference=self.instance.reference,
         ).delete()
 
-        # Send m2m_changed signal if any were removed
+        # Send reference_field_changed signal if any were removed
         if removed_pks:
-            m2m_changed.send(
+            reference_field_changed.send(
                 sender=self.through,
                 instance=self.instance,
                 action="post_clear",
@@ -381,6 +536,7 @@ class ReferenceRelatedManager:
                 model=self.target_model,
                 pk_set=removed_pks,
                 using=self.through.objects.db,
+                field=self.field,
             )
 
     def set(self, references, clear=False):
