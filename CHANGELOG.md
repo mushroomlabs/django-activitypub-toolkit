@@ -6,6 +6,23 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2025-12-13
+
+### Added
+
+- Admin entry for ActivityPub Servers
+- `as:source` property to actor model
+
+### Changed
+
+- Updated SecV1 admin configuration
+- Implemented caching for ContextProxy instances
+- Converted Language to a proper Context model
+
+### Fixed
+
+- Added check for related context save requirements
+
 ## [0.1.4] - 2025-12-08
 
 
