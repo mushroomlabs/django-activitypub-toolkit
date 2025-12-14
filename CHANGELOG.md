@@ -6,22 +6,31 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.5] - 2025-12-13
+## [0.1.6] - 2025-12-14
 
 ### Added
 
-- Admin entry for ActivityPub Servers
-- `as:source` property to actor model
+- Admin interfaces for Reference, LinkedDataDocument, and BaseAs2ObjectContext models
+- `document_loaded` signal for tracking document processing
+- `webfinger_lookup` task for resolving ActivityPub actors via WebFinger
+- `as_rdf` property to Reference model for RDF operations
 
 ### Changed
 
-- Updated SecV1 admin configuration
-- Implemented caching for ContextProxy instances
-- Converted Language to a proper Context model
+- Optimized context loading by moving CONTEXTS_BY_URL creation to avoid global state
+- Updated SCHEMA namespace from HTTPS to HTTP
+- Refactored ActorContext model by removing secv1 field
+- Improved ReferenceField and ReferenceRelationship models with cleaner code
+- Enhanced LinkedDataDocument loading with better filtering and signal emission
+- Updated admin configurations with improved list displays and filters
+- Fixed SecV1Context to use correct `private_key_pem` field name
+- Improved HttpDocumentResolver signing key retrieval
+- Cleaned up test cases by removing RelatedContextField tests
 
 ### Fixed
 
-- Added check for related context save requirements
+- Better error handling in Reference.make() method for invalid domains
+- Improved reference field handling in graph loading
 
 ## [0.1.4] - 2025-12-08
 

@@ -73,7 +73,7 @@ class SecV1Context(AbstractContextModel):
         return HTTPSignatureHeaderAuth(
             headers=["(request-target)", "user-agent", "host", "date"],
             algorithm="rsa-sha256",
-            key=self.private_pem.encode("utf-8"),
+            key=self.private_key_pem.encode("utf-8"),
             key_id=self.key_id,
         )
 
@@ -86,6 +86,9 @@ class SecV1Context(AbstractContextModel):
             return True
         except (AssertionError, InvalidSignature):
             return False
+
+    def __str__(self):
+        return self.reference.uri
 
     @classmethod
     def generate_reference(cls, domain: Domain):

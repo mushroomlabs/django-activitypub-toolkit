@@ -14,12 +14,11 @@ from .settings import app_settings
 logger = logging.getLogger(__name__)
 
 
-CONTEXTS_BY_URL = {c.url: c for c in app_settings.PRESET_CONTEXTS}
-
-
 def builtin_document_loader(url: str, options={}):
     try:
-        context = CONTEXTS_BY_URL[url]
+        context_map = {c.url: c for c in app_settings.PRESET_CONTEXTS}
+
+        context = context_map[url]
         return context.as_pyld
     except KeyError:
         logger.info(f"Fetching remote context: {url!r}")
@@ -62,8 +61,9 @@ class LocalDocumentHandler(HTTPHandler, HTTPSHandler):
         )
 
     def _fetch_local(self, req):
+        context_map = {c.url: c for c in app_settings.PRESET_CONTEXTS}
         url = req.get_full_url()
-        context = CONTEXTS_BY_URL.get(url)
+        context = context_map.get(url)
 
         if context is None:
             return None
@@ -92,6 +92,8 @@ class ActivityPubConfig(AppConfig):
     def ready(self):
         from . import handlers  # noqa
         from . import signals  # noqa
+
+        app_settings.load()
 
         secure_rdflib()
         jsonld.set_document_loader(builtin_document_loader)

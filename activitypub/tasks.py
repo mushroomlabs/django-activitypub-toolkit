@@ -7,7 +7,9 @@ from django.db import transaction
 from .contexts import AS2
 from .exceptions import DropMessage, UnprocessableJsonLd
 from .models import (
+    Account,
     Activity,
+    ActorContext,
     CollectionContext,
     LinkedDataDocument,
     Notification,
@@ -26,6 +28,36 @@ logger = logging.getLogger(__name__)
 @shared_task
 def clear_processed_messages():
     Notification.objects.filter(processed=True).delete()
+
+
+@shared_task
+def webfinger_lookup(subject_name: str):
+    try:
+        username, domain = subject_name.split("@", 1)
+        webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{subject_name}"
+
+        response = requests.get(
+            webfinger_url, headers={"Accept": "application/jrd+json"}, timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Find the self link with application/activity+json type
+        for link in data.get("links", []):
+            if link.get("rel") == "self" and "activity+json" in link.get("type", ""):
+                uri = link.get("href")
+                with transaction.atomic():
+                    reference = Reference.make(uri)
+                    reference.resolve()
+
+                    actor = reference.get_by_context(ActorContext)
+                    if actor:
+                        Account.objects.get_or_create(
+                            actor=actor, domain=domain, defaults={"username": username}
+                        )
+
+    except (requests.RequestException, ValueError, KeyError) as e:
+        logger.warning(f"Webfinger lookup failed for {subject_name}: {e}")
 
 
 @shared_task
@@ -83,14 +115,13 @@ def send_notification(notification_id):
 
         # Serialize to expanded JSON-LD (main subject, not embedded)
         serializer = LinkedDataSerializer(
-            instance=notification.resource,
-            embedded=False,
-            context={"viewer": viewer}
+            instance=notification.resource, embedded=False, context={"viewer": viewer}
         )
         expanded_document = serializer.data
 
         # Compact the document
         from pyld import jsonld
+
         context = serializer.get_compact_context(notification.resource)
         compacted_document = jsonld.compact(expanded_document, context)
 

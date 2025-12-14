@@ -18,6 +18,10 @@ class ReferenceFieldRemote:
         self._through: Optional[Any] = None
 
     @property
+    def parent_link(self):
+        return None
+
+    @property
     def through(self):
         """
         Get the through model, resolving string references if needed.
@@ -45,14 +49,10 @@ class ReferenceRelationship(models.Model):
     """
 
     source_reference = models.ForeignKey(
-        "activitypub.Reference",
-        on_delete=models.CASCADE,
-        related_name="+",
+        "activitypub.Reference", related_name="+", on_delete=models.CASCADE
     )
     target_reference = models.ForeignKey(
-        "activitypub.Reference",
-        on_delete=models.CASCADE,
-        related_name="+",
+        "activitypub.Reference", related_name="+", on_delete=models.CASCADE
     )
 
     class Meta:

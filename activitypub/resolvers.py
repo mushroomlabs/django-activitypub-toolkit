@@ -1,7 +1,7 @@
 import requests
 
 from activitypub.exceptions import DocumentResolutionError
-from activitypub.models import ActivityPubServer, Domain
+from activitypub.models import ActivityPubServer, Domain, SecV1Context
 from activitypub.settings import app_settings
 
 
@@ -40,7 +40,10 @@ class HttpDocumentResolver(BaseDocumentResolver):
         try:
             domain = Domain.get_default()
             server, _ = ActivityPubServer.objects.get_or_create(domain=domain)
-            signing_key = server and server.actor and server.actor.main_cryptographic_keypair
+
+            signing_key = (
+                server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
+            )
             auth = signing_key and signing_key.signed_request_auth
             response = requests.get(
                 uri,

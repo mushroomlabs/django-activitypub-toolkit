@@ -4,6 +4,19 @@ from .. import models
 from . import actions, filters
 
 
+@admin.register(models.Reference)
+class ReferenceAdmin(admin.ModelAdmin):
+    list_display = ("uri", "domain", "status")
+    list_filter = ("status",)
+    search_fields = ("uri", "domain__name")
+
+
+@admin.register(models.LinkedDataDocument)
+class LinkedDataDocumentAdmin(admin.ModelAdmin):
+    list_display = ("reference",)
+    search_fields = ("reference__uri",)
+
+
 @admin.register(models.ActorContext)
 class ActorAdmin(admin.ModelAdmin):
     list_display = ("uri", "type", "inbox_url", "outbox_url", "following_url", "followers_url")
@@ -79,7 +92,7 @@ class CollectionAdmin(admin.ModelAdmin):
 
 @admin.register(models.CollectionPageContext)
 class CollectionPageAdmin(admin.ModelAdmin):
-    list_display = ("uri", "name", "part_of")
+    list_display = ("uri", "name")
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -134,6 +147,16 @@ class CollectionItemAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(models.BaseAs2ObjectContext)
+class BaseAs2ObjectAdmin(admin.ModelAdmin):
+    list_display = ("uri", "name", "content")
+    list_filter = ("media_type",)
+    search_fields = ("reference__uri",)
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(models.ObjectContext)
 class ObjectAdmin(admin.ModelAdmin):
     list_display = ("uri", "type", "name", "content")
@@ -146,8 +169,9 @@ class ObjectAdmin(admin.ModelAdmin):
 
 @admin.register(models.LinkContext)
 class LinkAdmin(admin.ModelAdmin):
-    list_display = ("href", "media_type")
-    list_filter = ("media_type",)
+    list_display = ("reference", "type", "href", "name")
+    list_filter = ("type",)
+    select_related = ("reference",)
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -198,7 +222,7 @@ class NotificationAdmin(admin.ModelAdmin):
 
 @admin.register(models.FollowRequest)
 class FollowRequestAdmin(admin.ModelAdmin):
-    list_display = ("activity", "follower", "followed", "status")
+    list_display = ("id", "status")
     list_filter = ("status",)
 
 
@@ -206,7 +230,7 @@ class FollowRequestAdmin(admin.ModelAdmin):
 class LanguageAdmin(admin.ModelAdmin):
     list_display = ("code", "name", "iso_639_1", "iso_639_3")
     search_fields = ("code", "name")
-    list_filter = ("iso_639_1",)
+    list_filter = ("iso_639_3",)
 
 
 @admin.register(models.ActivityPubServer)

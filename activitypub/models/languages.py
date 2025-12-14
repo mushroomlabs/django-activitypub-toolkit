@@ -145,9 +145,7 @@ class Language(AbstractContextModel):
     @classmethod
     def create_language(cls, code, iso_639_1, iso_639_3, name):
         normalized_code = code.lower()
-        reference, _ = Reference.objects.get_or_create(
-            uri=f"{cls.URI_PREFIX}{normalized_code}", domain=None
-        )
+        reference = Reference.make(uri=f"{cls.URI_PREFIX}{normalized_code}")
 
         language, _ = cls.objects.update_or_create(
             reference=reference,

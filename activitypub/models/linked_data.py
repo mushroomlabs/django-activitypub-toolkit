@@ -17,6 +17,7 @@ from pyld import jsonld
 
 from ..exceptions import DocumentResolutionError, InvalidDomainError
 from ..settings import app_settings
+from ..signals import document_loaded
 from .base import generate_ulid
 from .fields import ReferenceField
 
@@ -123,11 +124,15 @@ class Reference(StatusModel):
     def is_named_node(self):
         return not self.uri.startswith(self.SKOLEM_BASE_URI)
 
+    @property
+    def as_rdf(self):
+        return rdflib.URIRef(self.uri)
+
     def get_by_context(self, context_model: type["AbstractContextModel"]):
         return context_model.objects.filter(reference=self).first()
 
     def get_value(self, g: rdflib, predicate):
-        return g.value(rdflib.URIRef(self.uri), predicate)
+        return g.value(self.as_rdf, predicate)
 
     @transaction.atomic()
     def resolve(self, force=False):
@@ -177,7 +182,10 @@ class Reference(StatusModel):
     def make(cls, uri: str):
         ref = cls.objects.filter(uri=uri).first()
         if not ref:
-            domain = Domain.make(uri)
+            try:
+                domain = Domain.make(uri)
+            except InvalidDomainError:
+                domain = None
             ref = cls.objects.create(uri=uri, domain=domain)
         return ref
 
@@ -220,16 +228,18 @@ class LinkedDataDocument(models.Model):
             for triple in new_triples:
                 g.add(triple)
 
-            references = [
-                r
-                for r, _ in (
-                    Reference.objects.get_or_create(uri=str(uri)) for uri in set(g.subjects())
-                )
-            ]
+            references = [Reference.make(uri=str(uri)) for uri in set(g.subjects())]
 
             for reference in references:
-                for context_model in app_settings.CONTEXT_MODELS:
+                context_models = [
+                    ctx
+                    for ctx in app_settings.CONTEXT_MODELS
+                    if ctx.should_handle_reference(g=g, reference=reference)
+                ]
+                for context_model in context_models:
                     context_model.load_from_graph(g=g, reference=reference)
+
+            document_loaded.send_robust(document=self, sender=self.__class__)
 
         except (KeyError, AssertionError):
             raise ValueError("Failed to load document")
@@ -297,12 +307,17 @@ class AbstractContextModel(models.Model):
         Given a parsed RDF graph and a Reference (subject),
         extract all matching triples and populate this context model.
         """
-        if not cls.should_handle_reference(g=g, reference=reference):
-            return
-
         subject_uri = rdflib.URIRef(reference.uri)
         attrs = {}
-        pointers = {}
+        reference_fields = {}
+
+        scalar_types = (
+            models.BooleanField,
+            models.CharField,
+            models.TextField,
+            models.IntegerField,
+            models.DateTimeField,
+        )
 
         for field_name, predicate in cls.LINKED_DATA_FIELDS.items():
             try:
@@ -313,8 +328,18 @@ class AbstractContextModel(models.Model):
             if field is None:
                 continue
 
-            # Handle scalar types
-            if isinstance(field, (models.CharField, models.TextField, models.DateTimeField)):
+            # Handle reference fields
+            if isinstance(field, ReferenceField):
+                refs = [
+                    Reference.make(uri=str(v))
+                    for v in g.objects(subject_uri, predicate)
+                    if not isinstance(v, rdflib.Literal)
+                ]
+                if refs:
+                    reference_fields[field_name] = refs
+
+            # Handle direct attributes scalar types
+            elif isinstance(field, scalar_types):
                 value = g.value(subject_uri, predicate)
                 if value is not None:
                     attrs[field_name] = value.toPython()
@@ -324,28 +349,25 @@ class AbstractContextModel(models.Model):
                 value = g.value(subject_uri, predicate)
                 if value is None or isinstance(value, rdflib.Literal):
                     continue
-                target_ref, _ = Reference.objects.get_or_create(uri=str(value))
-                attrs[field_name] = target_ref
+                attrs[field_name] = Reference.make(uri=str(value))
 
-            # Handle reference fields
-            elif isinstance(field, ReferenceField):
-                refs = []
-                values = list(g.objects(subject_uri, predicate))
-                for v in values:
-                    if not isinstance(v, rdflib.Literal):
-                        ref, _ = Reference.objects.get_or_create(uri=str(v))
-                        refs.append(ref)
-                pointers[field_name] = refs
-
-        if not attrs and not pointers:
+        if not attrs and not reference_fields:
             return None
 
         obj, _ = cls.objects.update_or_create(reference=reference, defaults=attrs)
 
-        # Handle reference fields after save
-        for field_name, refs in pointers.items():
-            field = cls._meta.get_field(field_name)
-            getattr(obj, field_name).set(refs)
+        # Handle reference FKs after save
+
+        for field_name, refs in reference_fields.items():
+            existing = getattr(obj, field_name).all()
+            to_add = set(refs).difference(set(existing))
+            to_remove = set(existing).difference(set(refs))
+
+            for ref in to_remove:
+                getattr(obj, field_name).remove(ref)
+
+            for ref in to_add:
+                getattr(obj, field_name).add(ref)
 
         return obj
 
