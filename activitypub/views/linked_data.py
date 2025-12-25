@@ -4,13 +4,12 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from pyld import jsonld
-from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from ..models import Reference
 from ..parsers import ActivityStreamsJsonParser, JsonLdParser
-from ..renderers import ActivityJsonRenderer, JsonLdRenderer
+from ..renderers import ActivityJsonRenderer, BrowsableLinkedDataRenderer, JsonLdRenderer
 from ..serializers import LinkedDataSerializer
 
 logger = logging.getLogger(__name__)
@@ -23,7 +22,7 @@ class LinkedDataModelView(APIView):
 
     def get_renderers(self):
         if settings.DEBUG:
-            self.renderer_classes = (BrowsableAPIRenderer,) + self.renderer_classes
+            self.renderer_classes = (BrowsableLinkedDataRenderer,) + self.renderer_classes
         return super().get_renderers()
 
     def get_object(self):
