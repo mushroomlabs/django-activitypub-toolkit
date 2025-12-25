@@ -28,38 +28,41 @@ def resolve_references(modeladmin, request, queryset):
     messages.success(request, f"Resolved {successful} out of {selected} selected references")
 
 
-@admin.action(description="Process selected messages")
-def process_messages(modeladmin, request, queryset):
+@admin.action(description="Process selected notifications")
+def process_notifications(modeladmin, request, queryset):
     successful = 0
-    for message in queryset:
+    for notification in queryset:
         try:
-            assert not message.is_processed, f"Message {message.id} is already processed"
-            result = message.process()
-            ok = result.result == models.MessageProcessResult.Types.OK
-            assert ok, f"{result.get_result_display()} result for {message.id}"
+            assert not notification.is_processed, f"{notification} has been processed already"
+            if notification.is_outgoing:
+                result = tasks.send_notification(notification.id)
+
+            ok = result.result == models.NotificationProcessResult.Types.OK
+            assert ok, f"{result.get_result_display()} result for {notification.id}"
             successful += 1
         except AssertionError as exc:
             messages.warning(request, str(exc))
         except (AssertionError, Exception) as exc:
-            messages.error(request, f"Error processing {message.id}: {exc}")
+            messages.error(request, f"Error processing {notification.id}: {exc}")
 
     if successful:
         messages.success(request, f"Processed {successful} message(s)")
 
 
 @admin.action(description="Process selected messages (Force)")
-def force_process_messages(modeladmin, request, queryset):
+def force_process_notifications(modeladmin, request, queryset):
     successful = 0
-    for message in queryset:
+    for notification in queryset:
         try:
-            result = message.process(force=True)
-            ok = result.result == models.MessageProcessResult.Types.OK
-            assert ok, f"{result.get_result_display()} result for {message.id}"
+            if notification.is_outgoing:
+                result = tasks.send_notification(notification.id)
+            ok = result.result == models.NotificationProcessResult.Types.OK
+            assert ok, f"{result.get_result_display()} result for {notification.id}"
             successful += 1
         except AssertionError as exc:
             messages.warning(request, str(exc))
         except (AssertionError, Exception) as exc:
-            messages.error(request, f"Error processing {message.id}: {exc}")
+            messages.error(request, f"Error processing {notification.id}: {exc}")
 
     if successful:
         messages.success(request, f"Processed {successful} message(s)")

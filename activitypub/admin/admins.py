@@ -180,9 +180,9 @@ class LinkAdmin(admin.ModelAdmin):
 @admin.register(models.Notification)
 class NotificationAdmin(admin.ModelAdmin):
     list_display = (
-        "resource",
-        "sender",
-        "target",
+        "get_resource",
+        "get_sender",
+        "get_target",
         "get_activity_type",
         "get_processed",
         "get_verified",
@@ -196,13 +196,25 @@ class NotificationAdmin(admin.ModelAdmin):
 
     actions = (
         actions.verify_message_integrity,
-        actions.process_messages,
-        actions.force_process_messages,
+        actions.process_notifications,
+        actions.force_process_notifications,
     )
+
+    @admin.display(description="Resource")
+    def get_resource(self, obj):
+        return obj.resource
+
+    @admin.display(description="Sender")
+    def get_sender(self, obj):
+        return obj.sender
+
+    @admin.display(description="Target")
+    def get_target(self, obj):
+        return obj.target
 
     @admin.display(boolean=True, description="Processed?")
     def get_processed(self, obj):
-        return obj.processed
+        return obj.is_processed
 
     @admin.display(boolean=True, description="Verified Integrity Proof?")
     def get_verified(self, obj):
@@ -210,11 +222,8 @@ class NotificationAdmin(admin.ModelAdmin):
 
     @admin.display(description="Activity Type")
     def get_activity_type(self, obj):
-        try:
-            activity = obj.message.reference.activitypub_activitycontext_context
-            return activity.get_type_display()
-        except models.Reference.RelatedObjectDoesNotExist:
-            return None
+        activity = obj.resource.get_by_context(models.ActivityContext)
+        return activity and activity.get_type_display()
 
     def has_change_permission(self, request, obj=None):
         return False
