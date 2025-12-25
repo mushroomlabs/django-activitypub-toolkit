@@ -15,7 +15,7 @@ from model_utils.managers import InheritanceManager
 from model_utils.models import StatusModel, TimeStampedModel
 from pyld import jsonld
 
-from ..exceptions import DocumentResolutionError, InvalidDomainError
+from ..exceptions import DocumentResolutionError, InvalidDomainError, ReferenceRedirect
 from ..settings import app_settings
 from ..signals import document_loaded
 from .base import generate_ulid
@@ -99,13 +99,13 @@ class Reference(StatusModel):
 
     SKOLEM_BASE_URI = "urn:ulid:"
 
-    STATUS = Choices("unknown", "resolved", "failed")
+    STATUS = Choices("unknown", "resolved", "redirected", "failed")
 
     uri = models.CharField(max_length=2083, unique=True)
     domain = models.ForeignKey(
         Domain, related_name="references", null=True, blank=True, on_delete=models.SET_NULL
     )
-    resolved_at = MonitorField(monitor="status", when=["resolved"])
+    resolved_at = MonitorField(monitor="status", when=["resolved", "redirected"])
     failed_at = MonitorField(monitor="status", when=["failed"])
 
     @property
@@ -166,6 +166,8 @@ class Reference(StatusModel):
             except DocumentResolutionError:
                 logger.exception(f"failed to resolve {self.uri}")
                 self.status = self.STATUS.failed
+            except ReferenceRedirect:
+                self.status = self.STATUS.redirected
             else:
                 return
             finally:
@@ -393,11 +395,11 @@ class Notification(models.Model):
 
     @property
     def is_outgoing(self):
-        return self.sender.is_local and not self.recipient.is_local
+        return self.sender.is_local and not self.target.is_local
 
     @property
     def is_incoming(self):
-        return self.recipient.is_local and not self.sender.is_local
+        return self.target.is_local and not self.sender.is_local
 
     @property
     def is_verified(self):

@@ -1,6 +1,6 @@
 import requests
 
-from activitypub.exceptions import DocumentResolutionError
+from activitypub.exceptions import DocumentResolutionError, ReferenceRedirect
 from activitypub.models import ActivityPubServer, Domain, SecV1Context
 from activitypub.settings import app_settings
 
@@ -37,20 +37,22 @@ class HttpDocumentResolver(BaseDocumentResolver):
         return uri.startswith("http://") or uri.startswith("https://")
 
     def resolve(self, uri):
-        try:
-            domain = Domain.get_default()
-            server, _ = ActivityPubServer.objects.get_or_create(domain=domain)
+        domain = Domain.get_default()
+        server, _ = ActivityPubServer.objects.get_or_create(domain=domain)
 
-            signing_key = (
-                server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
-            )
-            auth = signing_key and signing_key.signed_request_auth
-            response = requests.get(
-                uri,
-                headers={"Accept": "application/activity+json,application/ld+json"},
-                auth=auth,
-            )
-            response.raise_for_status()
+        signing_key = (
+            server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
+        )
+        auth = signing_key and signing_key.signed_request_auth
+        response = requests.get(
+            uri,
+            headers={"Accept": "application/activity+json,application/ld+json"},
+            auth=auth,
+            allow_redirects=False,
+        )
+        if response.status_code < 300:
             return response.json()
-        except requests.HTTPError:
+        elif 300 <= response.status_code < 400:
+            raise ReferenceRedirect(location=response.headers.get("Location"))
+        else:
             raise DocumentResolutionError
