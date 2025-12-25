@@ -3,6 +3,7 @@ import logging
 import requests
 from celery import shared_task
 from django.db import transaction
+from pyld import jsonld
 
 from .contexts import AS2
 from .exceptions import DropMessage, UnprocessableJsonLd
@@ -53,7 +54,7 @@ def webfinger_lookup(subject_name: str):
                     actor = reference.get_by_context(ActorContext)
                     if actor:
                         Account.objects.get_or_create(
-                            actor=actor, domain=domain, defaults={"username": username}
+                            actor=actor, domain=reference.domain, defaults={"username": username}
                         )
 
     except (requests.RequestException, ValueError, KeyError) as e:
@@ -105,11 +106,11 @@ def send_notification(notification_id):
     try:
         notification = Notification.objects.get(id=notification_id)
 
-        signing_key = SecV1Context.valid.filter(owner__uri=notification.sender.uri).first()
+        signing_key = SecV1Context.valid.filter(owner=notification.sender).first()
 
         assert signing_key is not None, "Could not find valid key pair for sender"
 
-        inbox_owner = Actor.objects.filter(outbox=notification.target).first()
+        inbox_owner = Actor.objects.filter(inbox=notification.target).first()
 
         viewer = inbox_owner and inbox_owner.reference or Reference.make(str(AS2.Public))
 
@@ -119,9 +120,6 @@ def send_notification(notification_id):
         )
         expanded_document = serializer.data
 
-        # Compact the document
-        from pyld import jsonld
-
         context = serializer.get_compact_context(notification.resource)
         compacted_document = jsonld.compact(expanded_document, context)
 
@@ -129,7 +127,7 @@ def send_notification(notification_id):
         for adapter in app_settings.DOCUMENT_PROCESSORS:
             adapter.process_outgoing(compacted_document)
 
-        logger.info(f"Sending message to {notification.recipient.uri}")
+        logger.info(f"Sending message to {notification.target.uri}")
         headers = {"Content-Type": "application/activity+json"}
         response = requests.post(
             notification.target.uri,
