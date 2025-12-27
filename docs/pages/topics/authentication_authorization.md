@@ -107,14 +107,13 @@ Consider an application that wants to support bearer token authentication for tr
 ```python
 from activitypub.models import NotificationIntegrityProof, NotificationProofVerification
 from django.db import models
+from myapp.models import TrustedService
 
 class BearerTokenProof(NotificationIntegrityProof):
     token_value = models.CharField(max_length=255)
     
     def verify(self, fetch_missing_keys=False):
         # Check token against allowed tokens for this sender
-        from myapp.models import TrustedService
-        
         service = TrustedService.objects.filter(
             actor_reference=self.notification.sender,
             token=self.token_value,

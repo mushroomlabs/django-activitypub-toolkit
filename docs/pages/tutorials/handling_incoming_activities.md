@@ -200,6 +200,7 @@ import logging
 from django.dispatch import receiver
 from activitypub.signals import activity_done
 from activitypub.models import ActivityContext
+from myapp.models import JournalEntry, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +215,6 @@ def notify_user_of_interaction(sender, activity, **kwargs):
 
 def handle_like_notification(activity):
     """Notify a user that their content was liked."""
-    from myapp.models import JournalEntry
-    
     try:
         # Check if the liked object is one of our entries
         entry = JournalEntry.objects.get(reference=activity.object)
@@ -230,8 +229,6 @@ def handle_like_notification(activity):
 
 def handle_follow_notification(activity):
     """Notify a user that someone followed them."""
-    from myapp.models import UserProfile
-    
     try:
         # Check if the followed actor is one of our users
         profile = UserProfile.objects.get(actor_reference=activity.object)
@@ -263,15 +260,15 @@ This handler runs after the toolkit has already updated the collections. Your co
 Another common use case is handling Flag activities for content moderation. The toolkit doesn't have built-in moderation workflows, so you implement your own:
 
 ```python
+from django.core.mail import send_mail
+from myapp.models import JournalEntry
+
 @receiver(activity_done)
 def handle_moderation_flags(sender, activity, **kwargs):
     """Alert moderators when content is flagged."""
     
     if activity.type != ActivityContext.Types.FLAG:
         return
-    
-    from django.core.mail import send_mail
-    from myapp.models import JournalEntry
     
     try:
         # Get the flagged object
@@ -304,12 +301,12 @@ Only authenticated notifications proceed to activity processing. The domain bloc
 Implement additional authorization in your handlers if needed. For example, you might want to enforce custom policies on which users can interact with your content:
 
 ```python
+from myapp.models import BlockedUser
+from activitypub.models import ActivityContext, NotificationProcessResult
+
 @receiver(notification_accepted)
 def enforce_interaction_policy(sender, notification, **kwargs):
     """Enforce custom policies before standard processing."""
-    
-    from myapp.models import BlockedUser
-    from activitypub.models import ActivityContext
     
     activity_ref = notification.resource
     activity = activity_ref.get_by_context(ActivityContext)
@@ -318,7 +315,6 @@ def enforce_interaction_policy(sender, notification, **kwargs):
     if activity.actor and BlockedUser.objects.filter(actor_reference=activity.actor).exists():
         logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
         # Mark notification as rejected
-        from activitypub.models import NotificationProcessResult
         NotificationProcessResult.objects.create(
             notification=notification,
             type=NotificationProcessResult.Types.FORBIDDEN,

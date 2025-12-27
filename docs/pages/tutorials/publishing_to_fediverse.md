@@ -148,6 +148,8 @@ The activity has three critical fields:
 Activities should be added to the actor's outbox collection. This makes them discoverable through the outbox endpoint and provides a record of what the actor has published.
 
 ```python
+from activitypub.models import ActorContext
+
 @classmethod
 def create_entry(cls, user, content, title=None):
     """Create a journal entry with activity and add to outbox."""
@@ -183,7 +185,6 @@ def create_entry(cls, user, content, title=None):
     )
     
     # Add to outbox
-    from activitypub.models import ActorContext
     actor = actor_ref.get_by_context(ActorContext)
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
@@ -205,6 +206,7 @@ Add addressing to your activities:
 
 ```python
 from activitypub.schemas import AS2
+from activitypub.models import ActorContext
 
 @classmethod
 def create_entry(cls, user, content, title=None, public=True):
@@ -241,7 +243,6 @@ def create_entry(cls, user, content, title=None, public=True):
     )
     
     # Set addressing
-    from activitypub.models import ActorContext
     actor = actor_ref.get_by_context(ActorContext)
     
     if public:
@@ -274,7 +275,7 @@ The core of publishing is delivering activities to follower inboxes. The toolkit
 Add delivery to your entry creation:
 
 ```python
-from activitypub.models import Notification
+from activitypub.models import Notification, Actor
 from activitypub.tasks import send_notification
 
 @classmethod
@@ -312,7 +313,6 @@ def create_entry(cls, user, content, title=None, public=True):
     )
     
     # Set addressing
-    from activitypub.models import ActorContext, Actor
     actor = actor_ref.get_by_context(Actor)
     
     if public:
@@ -403,11 +403,11 @@ You should see log entries showing the HTTP POST requests to follower inboxes.
 When content changes, send an Update activity. Add an update method to your model:
 
 ```python
+from activitypub.models import ObjectContext, ActivityContext, Actor
+from activitypub.schemas import AS2
+
 def update_content(self, content, title=None):
     """Update the entry and send Update activity to followers."""
-    
-    from activitypub.models import ObjectContext, ActivityContext, Actor
-    from activitypub.schemas import AS2
     
     # Update the object
     obj = self.reference.get_by_context(ObjectContext)
@@ -461,11 +461,11 @@ The Update activity uses the same delivery pattern as Create. The `object` field
 When content is deleted, send a Delete activity. Add a delete method:
 
 ```python
+from activitypub.models import ObjectContext, ActivityContext, Actor
+from activitypub.schemas import AS2
+
 def delete_entry(self):
     """Delete the entry and send Delete activity to followers."""
-    
-    from activitypub.models import ObjectContext, ActivityContext, Actor
-    from activitypub.schemas import AS2
     
     # Create Delete activity before deleting the object
     domain = Domain.get_default()
@@ -509,6 +509,267 @@ def delete_entry(self):
 ```
 
 The Delete activity is sent before the object is removed. Remote servers receive the activity and can remove their cached copies of the content.
+
+## Understanding Projections
+
+When remote servers fetch your actors, objects, or activities, the toolkit uses **projections** to control what data appears in the JSON-LD response. Projections provide a declarative way to specify which fields to include, which to omit, and which related objects to embed.
+
+Projections separate presentation logic from data storage. Context models store all available data. Projections determine what subset of that data gets exposed to external viewers, and how it gets formatted.
+
+### The ReferenceProjection Base Class
+
+All projections inherit from `ReferenceProjection`. This base class handles the standard workflow:
+
+1. Find all context models attached to a reference
+2. Build an expanded JSON-LD document with all fields as full predicate URIs
+3. Apply field filtering, embedding, and omission rules from `Meta`
+4. Compact the document using appropriate `@context` definitions
+
+The default projection includes all fields from all context models and outputs references as `{"@id": "uri"}` without embedding. This is appropriate for most scenarios.
+
+### Creating Custom Projections
+
+Create custom projections when you need to control output differently for specific object types. For example, an `ActorProjection` embeds the public key, while a `CollectionProjection` includes total item counts.
+
+Define a projection in `journal/projections.py`:
+
+```python
+from activitypub.projections import ReferenceProjection
+from activitypub.contexts import AS2
+from journal.mood_context import MoodContext
+
+class JournalEntryProjection(ReferenceProjection):
+    class Meta:
+        # Omit some fields to keep responses compact
+        omit = (
+            AS2.bcc,  # Never expose blind copy recipients
+            AS2.bto,  # Never expose blind copy recipients
+        )
+```
+
+The `Meta` class supports several options for controlling output:
+
+- **`fields`** - Allowlist of predicates to include (mutually exclusive with `omit`)
+- **`omit`** - Denylist of predicates to exclude
+- **`embed`** - Predicates whose references should be embedded using the same projection class
+- **`overrides`** - Dict mapping predicates to specific projection classes for embedding
+- **`extra`** - Dict mapping method names to predicates for computed fields
+
+### Embedding Related Objects
+
+By default, related references appear as `{"@id": "uri"}`. Use `embed` or `overrides` to include the full object inline.
+
+```python
+from activitypub.projections import ReferenceProjection, CollectionWithTotalProjection
+from activitypub.contexts import AS2
+
+class NoteProjection(ReferenceProjection):
+    class Meta:
+        overrides = {
+            AS2.replies: CollectionWithTotalProjection,  # Embed replies with count
+            AS2.likes: CollectionWithTotalProjection,    # Embed likes with count
+            AS2.shares: CollectionWithTotalProjection,   # Embed shares with count
+        }
+```
+
+When a remote server fetches a Note with this projection, the replies, likes, and shares collections are embedded with their total counts rather than just appearing as URIs.
+
+The `embed` option uses the same projection class for embedding:
+
+```python
+class QuestionProjection(ReferenceProjection):
+    class Meta:
+        embed = (AS2.oneOf, AS2.anyOf)  # Embed poll options
+```
+
+This embeds the poll choices directly in the Question object, so viewers see the options without making additional HTTP requests.
+
+### Adding Computed Fields
+
+Use the `extra` Meta option to add fields computed at serialization time. Define a method on your projection class and map it to a predicate:
+
+```python
+from activitypub.contexts import AS2, SEC_V1_CONTEXT, SECv1
+from activitypub.projections import ReferenceProjection, PublicKeyProjection, use_context
+from activitypub.models import Reference
+
+class ActorProjection(ReferenceProjection):
+    @use_context(SEC_V1_CONTEXT.url)
+    def get_public_key(self):
+        """Embed the actor's public key for signature verification."""
+        references = Reference.objects.filter(
+            activitypub_secv1context_context__owner=self.reference
+        )
+        projections = [PublicKeyProjection(reference=ref, parent=self) for ref in references]
+        return [p.get_expanded() for p in projections]
+    
+    class Meta:
+        extra = {"get_public_key": SECv1.publicKey}
+```
+
+The `@use_context` decorator registers that this field requires the Security v1 context. The toolkit automatically includes it in the `@context` array when compacting.
+
+The method receives `self` with access to `self.reference` (the Reference being projected) and `self.scope` (viewer and request context). Return data in expanded JSON-LD format (dicts with `@id`, `@value`, `@type` keys).
+
+### Access Control with scope
+
+Projections receive a `scope` dict containing viewer information and the HTTP request. Use this to conditionally include fields based on who's viewing:
+
+```python
+class JournalEntryProjection(ReferenceProjection):
+    def get_private_notes(self):
+        """Only show private notes to the author."""
+        viewer = self.scope.get('viewer')
+        obj = self.reference.get_by_context(ObjectContext)
+        
+        # Check if viewer is the author
+        if obj and obj.attributed_to.all():
+            author = obj.attributed_to.first()
+            if viewer and viewer.uri == author.uri:
+                mood = self.reference.get_by_context(MoodContext)
+                if mood and mood.mood_notes:
+                    return [{"@value": mood.mood_notes}]
+        
+        return None  # Omit field if not authorized
+    
+    class Meta:
+        extra = {"get_private_notes": MOOD.notes}
+```
+
+Return `None` to omit the field from output. The field won't appear in the JSON-LD document at all for unauthorized viewers.
+
+### Field-Level Access Control
+
+Context models can also implement `show_<field>()` methods that control visibility:
+
+```python
+class MoodContext(AbstractContextModel):
+    # ... field definitions ...
+    
+    def show_mood_notes(self, scope):
+        """Only show mood notes to the entry author."""
+        viewer = scope.get('viewer')
+        obj = self.reference.get_by_context(ObjectContext)
+        
+        if obj and obj.attributed_to.all():
+            author = obj.attributed_to.first()
+            return viewer and viewer.uri == author.uri
+        
+        return False
+```
+
+The projection automatically checks for `show_<field>` methods when building output. If the method returns `False`, that field is omitted.
+
+### Using Projections in Views
+
+The `LinkedDataModelView` base class uses projections to render responses. Override `get_projection_class()` to select which projection to use:
+
+```python
+from activitypub.views import LinkedDataModelView
+from journal.projections import JournalEntryProjection
+from journal.models import JournalEntry
+
+class JournalEntryView(LinkedDataModelView):
+    def get_projection_class(self, reference):
+        """Use custom projection for journal entries."""
+        if hasattr(reference, 'journal_entry'):
+            return JournalEntryProjection
+        
+        return super().get_projection_class(reference)
+```
+
+The `ActivityPubObjectDetailView` in the toolkit already implements smart projection selection based on context type (actors get `ActorProjection`, collections get collection projections, etc.). You can subclass it and override `get_projection_class()` for application-specific types.
+
+### Built-in Projections
+
+The toolkit provides several projection classes for common ActivityPub patterns:
+
+**`ReferenceProjection`** - Base class, includes all fields, no embedding
+
+**`ActorProjection`** - Embeds public keys for signature verification
+
+**`CollectionProjection`** - Includes items and total count
+
+**`CollectionPageProjection`** - Includes items for a specific page
+
+**`CollectionWithFirstPageProjection`** - Embeds the first page while omitting items
+
+**`CollectionWithTotalProjection`** - Shows only the total count, omits items
+
+**`QuestionProjection`** - Embeds poll choices (oneOf/anyOf)
+
+**`NoteProjection`** - Overrides for replies, likes, and shares collections
+
+**`PublicKeyProjection`** - Minimal projection for embedded public keys
+
+Use these as-is or extend them for application-specific behavior.
+
+### Projection Workflow Example
+
+When a remote server requests `GET https://yourserver.com/entries/123`, here's what happens:
+
+1. `LinkedDataModelView.get()` retrieves the Reference for that URI
+2. `get_projection_class(reference)` selects `JournalEntryProjection`
+3. The projection's `build()` method:
+   - Finds all context models (ObjectContext, MoodContext, etc.)
+   - Builds expanded JSON-LD with all predicates as full URIs
+   - Applies Meta rules (omit, embed, overrides)
+   - Calls extra field methods (e.g., `get_private_notes()`)
+   - Checks `show_<field>()` methods for access control
+4. `get_compacted()` compacts the document using registered contexts
+5. The view returns the compacted JSON-LD in the response
+
+### Testing Projections
+
+Test projections in the Django shell:
+
+```python
+from activitypub.models import Reference
+from journal.projections import JournalEntryProjection
+
+# Get a reference
+ref = Reference.objects.get(uri='http://localhost:8000/entries/1')
+
+# Create projection with viewer context
+projection = JournalEntryProjection(
+    reference=ref,
+    scope={'viewer': None, 'request': None}
+)
+
+# Build and get expanded form
+projection.build()
+expanded = projection.get_expanded()
+print(expanded)
+
+# Get compacted form
+compacted = projection.get_compacted()
+print(compacted)
+```
+
+Check that omitted fields don't appear, embedded objects are included, and access control works correctly for different viewers.
+
+### When to Create Custom Projections
+
+Create custom projections when:
+
+- You need to omit sensitive fields (like BCC recipients)
+- You want to embed related objects to reduce HTTP requests
+- You have computed fields that depend on multiple context models
+- You need viewer-specific access control
+- You're optimizing for bandwidth (omitting verbose fields)
+
+Use the default `ReferenceProjection` when the automatic behavior (include all fields, don't embed) is sufficient.
+
+### Projections vs. Context Models
+
+Context models store data extracted from incoming JSON-LD. Projections present data when serving JSON-LD. The separation means you can:
+
+- Store comprehensive data from remote servers (all fields)
+- Present optimized data to remote servers (selected fields)
+- Add computed fields without modifying storage models
+- Implement viewer-specific access control at presentation time
+
+This architecture keeps data storage concerns separate from API presentation concerns.
 
 ## Understanding HTTP Signatures
 

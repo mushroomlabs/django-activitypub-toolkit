@@ -161,7 +161,7 @@ Create your application model in `journal/models.py`:
 ```python
 from django.db import models
 from django.contrib.auth.models import User
-from activitypub.models import Reference
+from activitypub.models import Reference, ObjectContext
 
 class JournalEntry(models.Model):
     class EntryType(models.TextChoices):
@@ -193,7 +193,6 @@ class JournalEntry(models.Model):
     @property
     def as2(self):
         """Access the ActivityStreams context for this entry."""
-        from activitypub.models import ObjectContext
         return self.reference.get_by_context(ObjectContext)
 ```
 

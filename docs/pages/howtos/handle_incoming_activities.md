@@ -82,11 +82,10 @@ Notify users when they receive interactions:
 
 ```python
 from django.core.mail import send_mail
+from yourapp.models import Post, UserProfile
 
 def handle_like_notification(activity):
     """Send notification when content is liked."""
-    from yourapp.models import Post
-    
     try:
         # Check if the liked object is one of our posts
         post = Post.objects.get(reference=activity.object)
@@ -105,8 +104,6 @@ def handle_like_notification(activity):
 
 def handle_follow_notification(activity):
     """Notify user when someone follows them."""
-    from yourapp.models import UserProfile
-    
     try:
         # Check if the followed actor is one of our users
         profile = UserProfile.objects.get(actor_reference=activity.object)
@@ -128,14 +125,13 @@ Process Flag activities for content moderation:
 
 ```python
 import logging
+from yourapp.models import Post
+from django.core.mail import send_mail
 
 logger = logging.getLogger(__name__)
 
 def handle_moderation_flag(activity):
     """Alert moderators when content is flagged."""
-    from yourapp.models import Post
-    from django.core.mail import send_mail
-    
     try:
         # Get the flagged object
         flagged_ref = activity.object
@@ -163,10 +159,10 @@ def handle_moderation_flag(activity):
 Sync ActivityPub events with your application's models:
 
 ```python
+from yourapp.models import Post, Like
+
 def handle_like_notification(activity):
     """Update application state when content is liked."""
-    from yourapp.models import Post, Like
-    
     try:
         post = Post.objects.get(reference=activity.object)
         
@@ -194,13 +190,13 @@ Enforce application-specific policies before standard processing:
 
 ```python
 from activitypub.signals import notification_accepted
+from yourapp.models import BlockedUser
+from activitypub.models import ActivityContext
+from activitypub.exceptions import DropMessage
 
 @receiver(notification_accepted)
 def enforce_interaction_policy(sender, notification, **kwargs):
     """Enforce custom policies before standard processing."""
-    from yourapp.models import BlockedUser
-    from activitypub.models import ActivityContext
-    
     activity_ref = notification.resource
     activity = activity_ref.get_by_context(ActivityContext)
     
@@ -209,7 +205,6 @@ def enforce_interaction_policy(sender, notification, **kwargs):
         logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
         
         # Prevent further processing
-        from activitypub.exceptions import DropMessage
         raise DropMessage("Actor is blocked")
 ```
 
@@ -308,7 +303,6 @@ class ActivityHandlerTest(TestCase):
         )
         
         # Trigger signal
-        from activitypub.signals import activity_done
         activity_done.send(sender=ActivityContext, activity=activity)
         
         # Assert notification was sent

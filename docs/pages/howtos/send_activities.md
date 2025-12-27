@@ -217,10 +217,11 @@ def delete_post(self):
 Create activities for user interactions like likes:
 
 ```python
+from activitypub.models import ActorContext
+from yourapp.models import Like
+
 def like_post(user, post):
     """Like a post and send activity to the post author's inbox."""
-    from activitypub.models import ActorContext
-    
     domain = Domain.get_default()
     
     # Create Like activity
@@ -256,7 +257,6 @@ def like_post(user, post):
         send_notification.delay(notification_id=str(notification.id))
     
     # Record like locally
-    from yourapp.models import Like
     Like.objects.create(
         user=user,
         post=post,
@@ -271,10 +271,10 @@ def like_post(user, post):
 Send Follow activities to remote actors:
 
 ```python
+from activitypub.models import ActorContext
+
 def follow_user(follower, followed_actor_uri):
     """Follow a remote user."""
-    from activitypub.models import ActorContext
-    
     domain = Domain.get_default()
     
     # Get or create reference to followed actor
@@ -362,6 +362,7 @@ Test that activities are published correctly:
 ```python
 from django.test import TestCase
 from yourapp.models import Post
+from activitypub.models import Notification
 
 class PublishingTest(TestCase):
     def test_create_post_publishes_activity(self):
@@ -387,7 +388,6 @@ class PublishingTest(TestCase):
         self.assertEqual(activity.object, post.reference)
         
         # Check notifications were created
-        from activitypub.models import Notification
         notifications = Notification.objects.filter(resource=activity.reference)
         self.assertEqual(notifications.count(), len(actor.followers_inboxes))
 ```
@@ -413,13 +413,11 @@ tail -f celery.log
 Handle delivery failures gracefully:
 
 ```python
-from activitypub.models import NotificationProcessResult
+from activitypub.models import NotificationProcessResult, Notification
 
 # Check delivery results
 def check_delivery_status(activity_ref):
     """Check delivery status for an activity."""
-    from activitypub.models import Notification
-    
     notifications = Notification.objects.filter(resource=activity_ref)
     
     for notification in notifications:
@@ -435,12 +433,11 @@ The toolkit records delivery results but doesn't retry automatically. You can im
 
 ```python
 from celery import shared_task
+from activitypub.models import Notification, NotificationProcessResult
 
 @shared_task
 def retry_failed_deliveries():
     """Retry failed deliveries."""
-    from activitypub.models import Notification, NotificationProcessResult
-    
     # Find notifications with failed results
     failed_results = NotificationProcessResult.objects.filter(
         result__in=[

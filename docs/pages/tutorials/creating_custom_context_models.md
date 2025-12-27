@@ -261,6 +261,8 @@ Context models are composable. The AS2 context handles basic Note properties (ty
 Update your journal entry model to provide access to Mastodon note properties:
 
 ```python
+from journal.mastodon_context import MastodonNoteContext
+
 class JournalEntry(models.Model):
     """Application model for journal entries."""
     reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
@@ -270,7 +272,6 @@ class JournalEntry(models.Model):
     @property
     def mastodon(self):
         """Access Mastodon note context."""
-        from journal.mastodon_context import MastodonNoteContext
         return self.reference.get_by_context(MastodonNoteContext)
 
     @property
@@ -427,6 +428,8 @@ python manage.py migrate
 You can create journal entries that include Mastodon-specific metadata. This allows entries to federate with Mastodon servers while preserving platform-specific features like content warnings:
 
 ```python
+from journal.mastodon_context import MastodonNoteContext
+
 class JournalEntry(models.Model):
     # ... existing code ...
 
@@ -434,8 +437,6 @@ class JournalEntry(models.Model):
     def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
                      title=None, duration=None, sensitive=False):
         """Create a journal entry with optional Mastodon context."""
-        from journal.mastodon_context import MastodonNoteContext
-
         # Generate reference and create AS2 context
         domain = Domain.get_default()
         reference = ObjectContext.generate_reference(domain)
@@ -473,6 +474,8 @@ Beyond handling existing platform vocabularies, you can also create domain-speci
 Update the entry creation method to include both Mastodon and mood data:
 
 ```python
+from journal.mood_context import MoodContext
+
 class JournalEntry(models.Model):
     # ... existing code ...
 
@@ -480,8 +483,6 @@ class JournalEntry(models.Model):
     def create_entry(cls, user, content, entry_type=EntryType.PERSONAL,
                      title=None, duration=None, mood_level=None, mood_type=None):
         """Create a journal entry with mood tracking."""
-        from journal.mood_context import MoodContext
-
         # Generate reference and create AS2 context
         domain = Domain.get_default()
         reference = ObjectContext.generate_reference(domain)
@@ -515,7 +516,6 @@ class JournalEntry(models.Model):
     @property
     def mood(self):
         """Access mood tracking context."""
-        from journal.mood_context import MoodContext
         return self.reference.get_by_context(MoodContext)
 ```
 
@@ -564,30 +564,6 @@ def changelist_view(self, request, extra_context=None):
     # ... rest of method ...
 ```
 
-## Serializing Custom Context
-
-When serving entries with custom context, the serializer automatically includes all registered contexts. The toolkit includes your custom context in the `@context` array, and the context document defines how other servers should interpret your vocabulary terms.
-
-Since you registered `MOOD_CONTEXT` in settings, it will be included when serializing objects that have mood data. The context document you defined provides the vocabulary mapping:
-
-```json
-{
-  "@context": [
-    "https://www.w3.org/ns/activitystreams",
-    "https://fedjournal.example/contexts/mood.jsonld"
-  ],
-  "id": "http://localhost:8000/entries/1",
-  "type": "Note",
-  "content": "Had a great workout today!",
-  "published": "2025-01-15T10:00:00Z",
-  "duration": "PT45M",
-  "mood:level": 5,
-  "mood:type": "energetic"
-}
-```
-
-Other servers might not understand your mood vocabulary, but they can still process the standard AS2 properties. Servers that do implement mood tracking can extract and use that data. Make sure your context document is publicly accessible at the URL you specified in the Context definition.
-
 ## Querying Across Contexts
 
 Custom contexts integrate with Django's ORM, enabling complex queries across vocabularies:
@@ -619,34 +595,6 @@ mood_distribution = MoodContext.objects.values('mood_type').annotate(
 
 The ability to query across contexts while maintaining vocabulary separation is a key advantage of this architecture.
 
-## Custom Serializers for Context Models
-
-If your context needs specialized serialization logic, create a custom serializer and register it:
-
-```python
-# journal/serializers.py
-from activitypub.serializers import ContextModelSerializer
-
-class MoodContextSerializer(ContextModelSerializer):
-    def show_mood_notes(self, instance, viewer):
-        """Only show mood notes to the entry's author."""
-        entry = instance.reference.journal_entry
-        return viewer and viewer == entry.user.reference
-```
-
-Register it in settings:
-
-```python
-FEDERATION = {
-    # ... other settings ...
-    'CUSTOM_SERIALIZERS': {
-        'journal.mood_context.MoodContext': 'journal.serializers.MoodContextSerializer',
-    },
-}
-```
-
-Now mood notes only appear in serialized output when the viewer is the author.
-
 ## Best Practices
 
 **Namespace carefully.** Use URIs you control for custom vocabularies. Include your domain name to ensure global uniqueness. Document your vocabulary so others can implement it.
@@ -666,5 +614,7 @@ You have learned to create custom Context definitions and their corresponding co
 The pattern applies universally: define your Context with namespace and document, register it in settings, create the context model with field mappings, implement detection logic, register the model, and run migrations. Multiple contexts coexist on references, each handling its vocabulary independently.
 
 Custom contexts enable applications to extend ActivityPub without forking the protocol. Your mood tracking vocabulary might gain adoption. Other servers implementing it can federate mood data with yours. This is how the Fediverse evolves—through vocabulary extension rather than protocol modification.
+
+To learn how to present your custom context data to remote viewers when they fetch your objects, see the Publishing to the Fediverse tutorial, which covers projections for controlling JSON-LD output.
 
 The next tutorial covers handling incoming activities, where you will learn to process federated actions that arrive at your server's inbox.

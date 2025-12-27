@@ -10,11 +10,23 @@ from ..decorators import calculate_digest, collect_signature
 from ..models import (
     ActivityContext,
     Actor,
+    ActorContext,
+    CollectionContext,
+    CollectionPageContext,
     Domain,
     HttpSignatureProof,
     LinkedDataDocument,
     Notification,
+    QuestionContext,
     Reference,
+)
+from ..projections import (
+    ActorProjection,
+    CollectionPageProjection,
+    CollectionProjection,
+    CollectionWithFirstPageProjection,
+    QuestionProjection,
+    ReferenceProjection,
 )
 from ..tasks import process_incoming_notification
 from .linked_data import LinkedDataModelView
@@ -42,6 +54,34 @@ def is_outbox_owner(actor_reference: Reference, uri):
 @method_decorator(calculate_digest(), name="dispatch")
 @method_decorator(collect_signature(), name="dispatch")
 class ActivityPubObjectDetailView(LinkedDataModelView):
+    def get_projection_class(self, reference):
+        if is_an_outbox(reference.uri):
+            return CollectionWithFirstPageProjection
+
+        # Check for ActorContext
+        if reference.get_by_context(ActorContext):
+            return ActorProjection
+
+        # Check for QuestionContext
+        if reference.get_by_context(QuestionContext):
+            return QuestionProjection
+
+        # Check for CollectionPageContext
+        if reference.get_by_context(CollectionPageContext):
+            return CollectionPageProjection
+
+        # Check for CollectionContext
+        if reference.get_by_context(CollectionContext):
+            collection = reference.get_by_context(CollectionContext)
+            # Use CollectionWithFirstPageProjection if collection has pages
+            if collection.pages.exists():
+                return CollectionWithFirstPageProjection
+            else:
+                return CollectionProjection
+
+        # Default
+        return ReferenceProjection
+
     def get(self, *args, **kw):
         reference = self.get_object()
         if is_an_inbox(reference.uri):

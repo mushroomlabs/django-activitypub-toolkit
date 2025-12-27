@@ -3,7 +3,6 @@ import logging
 import requests
 from celery import shared_task
 from django.db import transaction
-from pyld import jsonld
 
 from .contexts import AS2
 from .exceptions import DropMessage, UnprocessableJsonLd
@@ -19,7 +18,7 @@ from .models import (
 )
 from .models.ap import ActivityPubServer, Actor
 from .models.sec import SecV1Context
-from .serializers import LinkedDataSerializer
+from .projections import ReferenceProjection
 from .settings import app_settings
 from .signals import notification_accepted
 
@@ -102,7 +101,6 @@ def process_incoming_notification(notification_id):
 
 @shared_task
 def send_notification(notification_id):
-    """ """
     try:
         notification = Notification.objects.get(id=notification_id)
 
@@ -114,14 +112,10 @@ def send_notification(notification_id):
 
         viewer = inbox_owner and inbox_owner.reference or Reference.make(str(AS2.Public))
 
-        # Serialize to expanded JSON-LD (main subject, not embedded)
-        serializer = LinkedDataSerializer(
-            instance=notification.resource, embedded=False, context={"viewer": viewer}
-        )
-        expanded_document = serializer.data
-
-        context = serializer.get_compact_context(notification.resource)
-        compacted_document = jsonld.compact(expanded_document, context)
+        # Serialize to JSON-LD using projection
+        projection = ReferenceProjection(reference=notification.resource, scope={"viewer": viewer})
+        projection.build()
+        compacted_document = projection.get_compacted()
 
         # Apply document processors
         for adapter in app_settings.DOCUMENT_PROCESSORS:

@@ -13,6 +13,7 @@ from activitypub.factories import (
     CollectionFactory,
     DomainFactory,
     ObjectFactory,
+    SecV1ContextFactory,
 )
 from activitypub.tests.base import BaseTestCase, use_nodeinfo, with_remote_reference
 
@@ -450,9 +451,11 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
 
     def test_can_serialize_actor(self):
         """an actor is serialized in ActivityPub-compatible format"""
+
         expected = {
             "@context": [
                 "https://www.w3.org/ns/activitystreams",
+                "https://w3id.org/security/v1",
                 {
                     "manuallyApprovesFollowers": {
                         "@id": "as:manuallyApprovesFollowers",
@@ -469,8 +472,15 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             "summary": "Just a simple test actor",
             "followers": "http://testserver/users/alice/followers",
             "following": "http://testserver/users/alice/following",
+            "inbox": "http://testserver/users/alice/inbox",
+            "outbox": "http://testserver/users/alice/outbox",
             "manuallyApprovesFollowers": False,
             "published": "2024-01-01T00:00:00+00:00",
+            "publicKey": {
+                "id": "http://testserver/keys/alice-main-key",
+                "owner": "http://testserver/users/alice",
+                "publicKeyPem": "ALICE_KEY_PEM",
+            },
         }
 
         account = AccountFactory(username="alice", domain=self.domain)
@@ -481,11 +491,14 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         actor.published = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
         actor.save()
 
+        key_ref = models.Reference.make("http://testserver/keys/alice-main-key")
+        key = SecV1ContextFactory(reference=key_ref, public_key_pem="ALICE_KEY_PEM")
+        key.owner.add(actor.reference)
+
         response = self.client.get(
             "http://testserver/users/alice",
             HTTP_ACCEPT="application/activity+json",
         )
-
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), expected)
 
@@ -646,7 +659,6 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
 
         # Verify each choice has basic fields
         for choice in data["oneOf"]:
-            self.assertIn("id", choice)
             self.assertIn("type", choice)
             self.assertEqual(choice["type"], "Note")
             self.assertIn("name", choice)

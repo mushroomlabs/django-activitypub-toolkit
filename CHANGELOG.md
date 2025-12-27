@@ -6,6 +6,33 @@ The format is based on [Keep a
 Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Projection system for controlling JSON-LD presentation and access control
+  - `ReferenceProjection` base class with declarative Meta configuration
+  - Built-in projections for actors, collections, notes, and questions
+  - Support for field allowlists, denylists, and computed fields
+  - Automatic context tracking and JSON-LD compaction
+  - Viewer-scoped access control via `scope` parameter
+  - `@use_context` decorator for registering required contexts
+- Comprehensive projection documentation
+  - Understanding Projections topic guide covering architecture and lifecycle
+  - Projections reference documentation with API details
+  - Integration examples in publishing and custom context tutorials
+
+### Changed
+
+- Moved all module-level imports from function scope to module scope in documentation code samples
+- Improved code quality and consistency across all documentation examples
+- Enhanced projection integration in LinkedDataModelView
+
+### Fixed
+
+- Function-level import violations in documentation code samples across tutorials, how-tos, and topic guides
+- Import organization in projection examples for better clarity
+
 ## [0.1.6] - 2025-12-14
 
 ### Added

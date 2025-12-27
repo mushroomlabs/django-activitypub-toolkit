@@ -9,6 +9,7 @@ from ..contexts import AS2_CONTEXT
 from ..settings import app_settings
 from .base import _file_location, generate_ulid
 from .linked_data import AbstractContextModel, Reference, ReferenceField
+from .sec import SecV1Context
 
 logger = logging.getLogger(__name__)
 
@@ -257,8 +258,8 @@ class EndpointContext(AbstractContextModel):
 class ActorContext(BaseAs2ObjectContext):
     LINKED_DATA_FIELDS = BaseAs2ObjectContext.LINKED_DATA_FIELDS | {
         "type": RDF.type,
-        "inbox": LDP.inbox | AS2.inbox,
-        "outbox": LDP.outbox | AS2.outbox,
+        "inbox": LDP.inbox,
+        "outbox": LDP.outbox,
         "following": AS2.following,
         "followers": AS2.followers,
         "liked": AS2.liked,
@@ -360,6 +361,10 @@ class ActorContext(BaseAs2ObjectContext):
     def following_url(self):
         return self.following and self.following.uri
 
+    @property
+    def public_key(self):
+        return SecV1Context.valid.filter(owner=self.reference).first()
+
     def __str__(self):
         return self.uri or f"Unreferenced actor {self.id}"
 
@@ -427,26 +432,12 @@ class ActivityContext(BaseAs2ObjectContext):
         blank=True,
         on_delete=models.SET_NULL,
     )
-    result = models.ForeignKey(
-        Reference,
-        related_name="result_activities",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-    )
     origin = models.ForeignKey(
         Reference,
         related_name="origin_activities",
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-    )
-    instrument = models.ForeignKey(
-        Reference,
-        related_name="activities_as_target",
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
     )
     result = models.ForeignKey(
         Reference,

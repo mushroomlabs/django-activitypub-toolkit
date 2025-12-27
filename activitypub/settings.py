@@ -70,19 +70,6 @@ class AppSettings:
         extra_context_models = {}
         disabled_context_models = {}
 
-        custom_context_serializers = {
-            "activitypub.models.CollectionContext": "activitypub.serializers.CollectionContextSerializer",  # noqa
-            "activitypub.models.CollectionPageContext": "activitypub.serializers.CollectionPageContextSerializer",  # noqa
-            "activitypub.models.QuestionContext": "activitypub.serializers.QuestionContextSerializer",  # noqa
-        }
-
-        embedded_context_serializers = {
-            "activitypub.models.ActorContext": "activitypub.serializers.EmbeddedActorContextSerializer",  # noqa
-            "activitypub.models.CollectionContext": "activitypub.serializers.EmbeddedCollectionContextSerializer",  # noqa
-            # Note: CollectionPageContext doesn't have an embedded variant
-            # because pages are always shown with their items
-        }
-
     @property
     def PRESET_CONTEXTS(self):
         contexts = self.LinkedData.default_contexts.union(self.LinkedData.extra_contexts)
@@ -107,20 +94,6 @@ class AppSettings:
         disabled = self.LinkedData.disabled_context_models
 
         return [import_string(s) for s in default.union(extra).difference(disabled)]
-
-    @property
-    def CUSTOM_CONTEXT_SERIALIZERS(self):
-        return {
-            import_string(model_path): import_string(serializer_path)
-            for model_path, serializer_path in self.LinkedData.custom_context_serializers.items()
-        }
-
-    @property
-    def EMBEDDED_CONTEXT_SERIALIZERS(self):
-        return {
-            import_string(model_path): import_string(serializer_path)
-            for model_path, serializer_path in self.LinkedData.embedded_context_serializers.items()
-        }
 
     def __init__(self):
         self.load()
@@ -147,8 +120,6 @@ class AppSettings:
             "EXTRA_CONTEXT_MODELS": (self.LinkedData, "extra_context_models"),
             "EXTRA_CONTEXTS": (self.LinkedData, "extra_contexts"),
             "DISABLED_CONTEXT_MODELS": (self.LinkedData, "disabled_context_models"),
-            "CUSTOM_CONTEXT_SERIALIZERS": (self.LinkedData, "custom_context_serializers"),
-            "EMBEDDED_CONTEXT_SERIALIZERS": (self.LinkedData, "embedded_context_serializers"),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 

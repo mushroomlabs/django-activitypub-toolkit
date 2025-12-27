@@ -12,8 +12,10 @@ This section provides technical reference documentation for Django ActivityPub T
 
 **[Models](models.md)** - Database models for ActivityPub data structures, references, and context models.
 
+**[Projections](projections.md)** - Projection classes for controlling JSON-LD output and presentation to external viewers.
+
 **[Message Processors](message_processors.md)** - Classes for processing incoming and outgoing ActivityPub messages.
 
-**[Serializers](serializers.md)** - JSON-LD serialization and deserialization utilities.
+**[Serializers](serializers.md)** - NodeInfo serializer for server metadata discovery.
 
 **[Settings](settings.md)** - Configuration options and customization settings.

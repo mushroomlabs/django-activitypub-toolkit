@@ -1,7 +1,8 @@
 import logging
 
-from activitypub.models import Reference
 from django.core.management.base import BaseCommand
+
+from activitypub.models import Reference
 
 logger = logging.getLogger(__name__)
 

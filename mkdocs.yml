@@ -25,13 +25,15 @@ nav:
       - topics/index.md
       - Understanding Linked Data and RDF: topics/linked_data_fundamentals.md
       - References and Context Models: topics/reference_context_architecture.md
-      - From JSON-LD to Django Models: topics/jsonld_to_django.md
+      - Parsing JSON-LD Documents: topics/jsonld_to_django.md
+      - Understanding Projections: topics/projections.md
       - Pull-Based Federation: topics/pull_based_federation.md
       - Authentication and Authorization: topics/authentication_authorization.md
       - Configuration and Customization: topics/application_settings.md
   - Reference:
       - references/index.md
       - Models: references/models.md
+      - Projections: references/projections.md
       - Document Processors: references/document_processors.md
       - Serializers: references/serializers.md
       - Settings: references/settings.md
