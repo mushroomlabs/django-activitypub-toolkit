@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .. import models
 from . import actions, filters
+from .base import ContextModelAdmin
 
 
 @admin.register(models.Reference)
