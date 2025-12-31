@@ -78,8 +78,8 @@ class InboxViewTestCase(TransactionTestCase):
         self.assertEqual(activity.type, models.Activity.Types.FOLLOW)
 
         # Verify follow request was created
-        follow_request = models.FollowRequest.objects.get(activity=activity)
-        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.pending)
+        follow_request = models.FollowRequest.objects.get(activity=activity.reference)
+        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.submitted)
         self.assertEqual(str(follow_request.follower.uri), remote_actor_uri)
         self.assertEqual(str(follow_request.followed.uri), "http://testserver/users/bob")
 
@@ -94,7 +94,11 @@ class InboxViewTestCase(TransactionTestCase):
             actor=remote_actor.reference,
             object=self.account.actor.reference,
         )
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
         # Post accept activity
         accept_activity = {
@@ -229,7 +233,9 @@ class InboxViewTestCase(TransactionTestCase):
         self.assertFalse(followers_collection.contains(remote_actor.reference))
 
         # Verify follow request was deleted
-        self.assertFalse(models.FollowRequest.objects.filter(activity=follow_activity).exists())
+        self.assertFalse(
+            models.FollowRequest.objects.filter(activity=follow_activity.reference).exists()
+        )
 
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
@@ -876,8 +882,8 @@ class ActivityOutboxTestCase(TransactionTestCase):
         # Note: The activity ID will be assigned by the server
         self.assertTrue(
             models.FollowRequest.objects.filter(
-                activity__actor=self.account.actor.reference,
-                activity__object=alice.reference,
+                follower=self.account.actor.reference,
+                followed=alice.reference,
             ).exists(),
             "FollowRequest should be created",
         )

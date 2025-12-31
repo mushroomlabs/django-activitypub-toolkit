@@ -74,24 +74,23 @@ def on_new_reply_add_to_replies_collection(sender, **kw):
 def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
     follow_request = kw["instance"]
 
-    if not kw["created"] or follow_request.status != FollowRequest.STATUS.pending:
+    if not kw["created"] or follow_request.status != FollowRequest.STATUS.submitted:
         return
 
-    if not follow_request.activity.object.is_local:
+    if not follow_request.followed.is_local:
         return
 
     try:
-        follower_ref = follow_request.activity.actor
-        target_ref = follow_request.activity.object
         for reject_policy in app_settings.REJECT_FOLLOW_REQUEST_POLICIES:
-            reject_policy(follower=follower_ref, target=target_ref)
+            reject_policy(follower=follow_request.follower, target=follow_request.followed)
     except RejectedFollowRequest as e:
         logger.info(f"Follow request rejected: {str(e)}")
         follow_request.reject()
         return
 
-    to_follow = follow_request.activity.object.get_by_context(Actor)
-    if not to_follow.manually_approves_followers:
+    to_follow = follow_request.followed.get_by_context(Actor)
+
+    if to_follow is not None and not to_follow.manually_approves_followers:
         follow_request.accept()
 
 

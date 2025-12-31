@@ -23,7 +23,11 @@ class FollowRequestPolicyTestCase(TestCase):
             object=self.local_actor.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
         self.assertEqual(follow_request.status, models.FollowRequest.STATUS.accepted)
 
@@ -38,9 +42,13 @@ class FollowRequestPolicyTestCase(TestCase):
             object=self.local_actor.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
-        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.pending)
+        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.submitted)
 
     @override_settings(
         FEDERATION={
@@ -60,7 +68,11 @@ class FollowRequestPolicyTestCase(TestCase):
             object=self.local_actor.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
         self.assertEqual(follow_request.status, models.FollowRequest.STATUS.rejected)
 
@@ -82,7 +94,11 @@ class FollowRequestPolicyTestCase(TestCase):
             object=self.local_actor.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
         self.assertEqual(follow_request.status, models.FollowRequest.STATUS.accepted)
 
@@ -106,7 +122,11 @@ class FollowRequestPolicyTestCase(TestCase):
             object=self.local_actor.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
         self.assertEqual(follow_request.status, models.FollowRequest.STATUS.rejected)
 
@@ -122,9 +142,13 @@ class FollowRequestPolicyTestCase(TestCase):
             object=remote_target.reference,
         )
 
-        follow_request = models.FollowRequest.objects.create(activity=follow_activity)
+        follow_request = models.FollowRequest.objects.create(
+            follower=follow_activity.actor,
+            followed=follow_activity.object,
+            activity=follow_activity.reference,
+        )
 
-        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.pending)
+        self.assertEqual(follow_request.status, models.FollowRequest.STATUS.submitted)
 
 
 def reject_all_policy(follower, target):

@@ -105,7 +105,10 @@ class Activity(ActivityContext):
 
     def _do_follow(self):
         FollowRequest.objects.update_or_create(
-            activity=self, defaults={"status": FollowRequest.STATUS.pending}
+            activity=self.reference,
+            follower=self.actor,
+            followed=self.object,
+            defaults={"status": FollowRequest.STATUS.submitted},
         )
 
     def _undo_follow(self):
@@ -129,7 +132,9 @@ class Activity(ActivityContext):
             if collection is not None:
                 collection.remove(item=follower_ref)
 
-        FollowRequest.objects.filter(activity=self).delete()
+        FollowRequest.objects.filter(
+            follower=self.actor, followed=self.object, activity=self.reference
+        ).delete()
 
     def _do_add(self):
         # NOTE: no validation at this level whether actor can or can
@@ -231,9 +236,8 @@ class Activity(ActivityContext):
 
     def _do_accept(self):
         accepted_activity = self.object.get_by_context(Activity)
-
         if accepted_activity.type == self.Types.FOLLOW:
-            request = FollowRequest.objects.filter(activity=accepted_activity).first()
+            request = FollowRequest.objects.filter(activity=self.object).first()
             if request is not None:
                 request.accept()
 
@@ -485,18 +489,10 @@ class Account(models.Model):
 
 
 class FollowRequest(StatusModel, TimeStampedModel):
-    STATUS = Choices("pending", "accepted", "rejected")
-    activity = models.OneToOneField(
-        Activity, related_name="follow_request", on_delete=models.CASCADE
-    )
-
-    @property
-    def follower(self):
-        return self.activity.actor
-
-    @property
-    def followed(self):
-        return self.activity.object
+    STATUS = Choices("submitted", "blocked", "accepted", "rejected")
+    follower = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
+    followed = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
+    activity = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
 
     @transaction.atomic()
     def accept(self):
@@ -506,44 +502,36 @@ class FollowRequest(StatusModel, TimeStampedModel):
         self.status = self.STATUS.accepted
         self.save()
 
-        follower_ref = self.activity.actor
-        followed_ref = self.activity.object
-
-        # If any of the references is nullable, there is nothing we can add to any collection
-        if follower_ref is None or followed_ref is None:
-            return
-
-        # TODO: should we resolve references too, or just having references is enough?
-        follower: Optional[Actor] = follower_ref and follower_ref.get_by_context(Actor)
-        followed: Optional[Actor] = followed_ref and followed_ref.get_by_context(Actor)
+        follower_actor: Optional[Actor] = self.follower.get_by_context(Actor)
+        followed_actor: Optional[Actor] = self.followed.get_by_context(Actor)
 
         # If followed is not on follower's following collection, add to it
-        if follower is not None and follower.following is not None:
-            following_collection = CollectionContext.make(reference=follower.following)
-            if not following_collection.contains(followed_ref):
-                following_collection.append(item=followed_ref)
+        if follower_actor is not None and follower_actor.following is not None:
+            following_collection = CollectionContext.make(reference=follower_actor.following)
+            if not following_collection.contains(self.followed):
+                following_collection.append(item=self.followed)
 
         # If follower is not on followed's followers collection, add to it
-        if followed is not None and followed.followers is not None:
-            follower_collection = CollectionContext.make(reference=followed.followers)
-            if not follower_collection.contains(follower_ref):
-                follower_collection.append(item=follower_ref)
+        if followed_actor is not None and followed_actor.followers is not None:
+            follower_collection = CollectionContext.make(reference=followed_actor.followers)
+            if not follower_collection.contains(self.follower):
+                follower_collection.append(item=self.follower)
 
-            logger.info(f"{followed} accepts follow from {follower}")
+            logger.info(f"{self.followed} accepts follow from {self.follower}")
 
-            # Generate and send the accept activity
-            accept_reference = ActivityContext.generate_reference(followed_ref.domain)
+        # Generate and send the accept activity
+        accept_reference = ActivityContext.generate_reference(domain=self.followed.domain)
 
-            accept = Activity.make(
-                accept_reference,
-                actor=followed_ref,
-                type=Activity.Types.ACCEPT,
-                object=self.activity.reference,
-            )
+        Activity.make(
+            reference=accept_reference,
+            actor=self.followed,
+            type=Activity.Types.ACCEPT,
+            object=self.activity,
+        )
 
-            Notification.objects.create(
-                resource=accept.reference, sender=followed.reference, target=follower.inbox
-            )
+        Notification.objects.create(
+            resource=accept_reference, sender=self.followed, target=self.follower
+        )
 
     @transaction.atomic()
     def reject(self):
@@ -553,29 +541,29 @@ class FollowRequest(StatusModel, TimeStampedModel):
         self.status = self.STATUS.rejected
         self.save()
 
-        follower: Optional[Actor] = self.activity.actor and self.activity.actor.get_by_context(
-            Actor
-        )
-        followed: Optional[Actor] = self.activity.object and self.activity.object.get_by_context(
-            Actor
-        )
+        follower_actor: Optional[Actor] = self.follower.get_by_context(Actor)
+        followed_actor: Optional[Actor] = self.followed.get_by_context(Actor)
 
-        if followed is None or follower is None:
+        if followed_actor is None or follower_actor is None:
             return
 
-        if followed.reference.is_local and not follower.reference.is_local:
-            logger.info(f"{followed} rejects follow from {follower}")
+        if self.followed.is_local and not self.follower.is_local:
+            logger.info(f"{self.followed} rejects follow from {self.follower}")
 
-            reject_reference = ActivityContext.generate_reference(followed.reference.domain)
+            reject_reference = ActivityContext.generate_reference(self.followed.domain)
             reject = Activity.make(
                 reference=reject_reference,
-                actor=followed.reference,
+                actor=self.followed,
                 type=Activity.Types.REJECT,
-                object=self.activity.reference,
+                object=self.activity,
             )
+
             Notification.objects.create(
-                resource=reject.reference, sender=followed.reference, target=follower.inbox
+                resource=reject.reference, sender=self.followed, target=follower_actor.inbox
             )
+
+    class Meta:
+        unique_together = ("follower", "followed")
 
 
 __all__ = (
