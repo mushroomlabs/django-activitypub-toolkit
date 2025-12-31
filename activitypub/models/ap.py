@@ -546,7 +546,7 @@ class FollowRequest(StatusModel, TimeStampedModel):
             )
 
     @transaction.atomic()
-    def rejected(self):
+    def reject(self):
         if self.status == self.STATUS.rejected:
             return
 
@@ -563,7 +563,7 @@ class FollowRequest(StatusModel, TimeStampedModel):
         if followed is None or follower is None:
             return
 
-        if followed.is_local and not follower.is_local:
+        if followed.reference.is_local and not follower.reference.is_local:
             logger.info(f"{followed} rejects follow from {follower}")
 
             reject_reference = ActivityContext.generate_reference(followed.reference.domain)

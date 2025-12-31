@@ -22,3 +22,7 @@ class ReferenceRedirect(Exception):
 
 class DropMessage(Exception):
     pass
+
+
+class RejectedFollowRequest(Exception):
+    pass

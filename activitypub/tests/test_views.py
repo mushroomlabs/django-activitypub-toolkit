@@ -21,7 +21,11 @@ CONTENT_TYPE = "application/ld+json"
 
 
 @override_settings(
-    FEDERATION={"DEFAULT_URL": "http://testserver", "FORCE_INSECURE_HTTP": True},
+    FEDERATION={
+        "DEFAULT_URL": "http://testserver",
+        "FORCE_INSECURE_HTTP": True,
+        "REJECT_FOLLOW_REQUEST_CHECKS": [],
+    },
     ALLOWED_HOSTS=["testserver"],
 )
 class InboxViewTestCase(TransactionTestCase):

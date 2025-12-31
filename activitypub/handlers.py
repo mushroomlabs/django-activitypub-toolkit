@@ -4,10 +4,12 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from . import tasks
+from .exceptions import RejectedFollowRequest
 from .models.ap import ActivityPubServer, Actor, FollowRequest
 from .models.as2 import BaseAs2ObjectContext, ObjectContext
 from .models.collections import CollectionContext
 from .models.linked_data import Domain, Notification
+from .settings import app_settings
 from .signals import notification_accepted, reference_field_changed
 
 logger = logging.getLogger(__name__)
@@ -72,10 +74,25 @@ def on_new_reply_add_to_replies_collection(sender, **kw):
 def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
     follow_request = kw["instance"]
 
-    if kw["created"] and follow_request.status == FollowRequest.STATUS.pending:
-        to_follow = follow_request.activity.object.get_by_context(Actor)
-        if not to_follow.manually_approves_followers:
-            follow_request.accept()
+    if not kw["created"] or follow_request.status != FollowRequest.STATUS.pending:
+        return
+
+    if not follow_request.activity.object.is_local:
+        return
+
+    try:
+        follower_ref = follow_request.activity.actor
+        target_ref = follow_request.activity.object
+        for reject_policy in app_settings.REJECT_FOLLOW_REQUEST_POLICIES:
+            reject_policy(follower=follower_ref, target=target_ref)
+    except RejectedFollowRequest as e:
+        logger.info(f"Follow request rejected: {str(e)}")
+        follow_request.reject()
+        return
+
+    to_follow = follow_request.activity.object.get_by_context(Actor)
+    if not to_follow.manually_approves_followers:
+        follow_request.accept()
 
 
 @receiver(notification_accepted, sender=Notification)

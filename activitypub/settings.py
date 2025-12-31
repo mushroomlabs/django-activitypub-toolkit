@@ -36,6 +36,9 @@ class AppSettings:
             "activitypub.processors.CompactJsonLdDocumentProcessor",
         ]
 
+    class Policies:
+        follow_request_rejection_policies = []
+
     class LinkedData:
         default_contexts = {
             "activitypub.contexts.AS2_CONTEXT",
@@ -95,6 +98,10 @@ class AppSettings:
 
         return [import_string(s) for s in default.union(extra).difference(disabled)]
 
+    @property
+    def REJECT_FOLLOW_REQUEST_POLICIES(self):
+        return [import_string(s) for s in self.Policies.follow_request_rejection_policies]
+
     def __init__(self):
         self.load()
 
@@ -120,6 +127,10 @@ class AppSettings:
             "EXTRA_CONTEXT_MODELS": (self.LinkedData, "extra_context_models"),
             "EXTRA_CONTEXTS": (self.LinkedData, "extra_contexts"),
             "DISABLED_CONTEXT_MODELS": (self.LinkedData, "disabled_context_models"),
+            "REJECT_FOLLOW_REQUEST_CHECKS": (
+                self.Policies,
+                "follow_request_rejection_policies",
+            ),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 
