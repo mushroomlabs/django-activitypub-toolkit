@@ -20,13 +20,17 @@ class NodeInfo(View):
                     {
                         "rel": "http://nodeinfo.diaspora.software/ns/schema/2.0",
                         "href": f"{scheme}{host}/nodeinfo/2.0",
-                    }
+                    },
+                    {
+                        "rel": "http://nodeinfo.diaspora.software/ns/schema/2.1",
+                        "href": f"{scheme}{host}/nodeinfo/2.1",
+                    },
                 ]
             }
         )
 
 
-class NodeInfo2(View):
+class NodeInfo20(View):
     def get_metadata(self, request):
         return {}
 
@@ -39,6 +43,32 @@ class NodeInfo2(View):
         return JsonResponse(
             {
                 "version": "2.0",
+                "software": {
+                    "name": app_settings.NodeInfo.software_name,
+                    "version": app_settings.NodeInfo.software_version,
+                },
+                "protocols": ["activitypub"],
+                "services": {"outbound": [], "inbound": []},
+                "openRegistrations": app_settings.Instance.open_registrations,
+                "metadata": self.get_metadata(request),
+                "usage": self.get_usage(request),
+            }
+        )
+
+
+class NodeInfo21(View):
+    def get_metadata(self, request):
+        return {}
+
+    def get_usage(self, request):
+        default_domain = Domain.get_default()
+        host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
+        return {"users": {"total": Account.objects.filter(domain__name=host).count()}}
+
+    def get(self, request):
+        return JsonResponse(
+            {
+                "version": "2.1",
                 "software": {
                     "name": app_settings.NodeInfo.software_name,
                     "version": app_settings.NodeInfo.software_version,
@@ -126,4 +156,4 @@ class HostMeta(View):
         return HttpResponse(xml.strip().replace(8 * " ", ""), content_type=CONTENT_TYPE)
 
 
-__all__ = ["NodeInfo", "NodeInfo2", "Webfinger", "HostMeta"]
+__all__ = ["NodeInfo", "NodeInfo20", "NodeInfo21", "Webfinger", "HostMeta"]
