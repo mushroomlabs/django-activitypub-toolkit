@@ -35,6 +35,8 @@ class AbstractAs2ObjectContext(AbstractContextModel):
         "start_time": AS2.startTime,
         "end_time": AS2.endTime,
         "duration": AS2.duration,
+        "sensitive": AS2.sensitive,
+        "source": AS2.source,
         "context": AS2.context,
         "generator": AS2.generator,
         "icon": AS2.icon,
@@ -61,6 +63,13 @@ class AbstractAs2ObjectContext(AbstractContextModel):
         "url_link": AS2.url,
     }
 
+    # Extra context definitions for AS2 extensions not in the standard context
+    EXTRA_CONTEXT = {
+        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+        "Hashtag": "as:Hashtag",
+        "Emoji": "as:Emoji",
+    }
+
     name = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
     summary = models.TextField(null=True, blank=True)
@@ -69,8 +78,8 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.DurationField(null=True, blank=True)
+    sensitive = models.BooleanField(default=False)
     media_type = models.CharField(max_length=64, null=True, blank=True)
-
     url = models.URLField(null=True, blank=True)
     url_link = ReferenceField()
 
@@ -90,6 +99,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     cc = ReferenceField()
     bto = ReferenceField()
     bcc = ReferenceField()
+    source = ReferenceField()
 
     replies = models.ForeignKey(
         Reference,
@@ -166,10 +176,7 @@ class LinkContext(AbstractContextModel):
 
 
 class BaseAs2ObjectContext(AbstractAs2ObjectContext):
-    LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {
-        "type": RDF.type,
-        "source": AS2.source,
-    }
+    LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {"type": RDF.type}
 
     objects = InheritanceManager()
 
@@ -185,18 +192,6 @@ class BaseAs2ObjectContext(AbstractAs2ObjectContext):
 
 
 class ObjectContext(BaseAs2ObjectContext):
-    LINKED_DATA_FIELDS = BaseAs2ObjectContext.LINKED_DATA_FIELDS | {
-        "sensitive": AS2.sensitive,
-        "source": AS2.source,
-    }
-
-    # Extra context definitions for AS2 extensions not in the standard context
-    EXTRA_CONTEXT = {
-        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-        "Hashtag": "as:Hashtag",
-        "Emoji": "as:Emoji",
-    }
-
     class Types(models.TextChoices):
         ARTICLE = str(AS2.Article)
         AUDIO = str(AS2.Audio)
@@ -214,9 +209,7 @@ class ObjectContext(BaseAs2ObjectContext):
         HASHTAG = str(AS2.Hashtag)
         EMOJI = str(AS2.Emoji)
 
-    type = models.CharField(max_length=128, choices=Types.choices)
-    sensitive = models.BooleanField(default=False)
-    source = ReferenceField()
+    type = models.CharField(max_length=128, choices=Types.choices, null=True, blank=True)
 
     @classmethod
     def generate_reference(cls, domain):
@@ -255,6 +248,18 @@ class EndpointContext(AbstractContextModel):
         return any([v is not None for v in values])
 
 
+class SourceContentContext(AbstractContextModel):
+    LINKED_DATA_FIELDS = {"content": AS2.content, "media_type": AS2.mediaType}
+
+    content = models.TextField()
+    media_type = models.CharField(max_length=300, null=True, blank=True)
+
+    @classmethod
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
+        is_embedded = reference.uri != str(g.identifier)
+        return is_embedded and reference.get_value(g, predicate=AS2.content) is not None
+
+
 class ActorContext(BaseAs2ObjectContext):
     LINKED_DATA_FIELDS = BaseAs2ObjectContext.LINKED_DATA_FIELDS | {
         "type": RDF.type,
@@ -268,10 +273,9 @@ class ActorContext(BaseAs2ObjectContext):
         "endpoints": AS2.endpoints,
         "moved_to": AS2.movedTo,
         "also_known_as": AS2.alsoKnownAs,
-        "source": AS2.source,
     }
 
-    EXTRA_CONTEXT = {
+    EXTRA_CONTEXT = BaseAs2ObjectContext.EXTRA_CONTEXT | {
         "manuallyApprovesFollowers": {
             "@id": "as:manuallyApprovesFollowers",
             "@type": "xsd:boolean",
@@ -296,7 +300,6 @@ class ActorContext(BaseAs2ObjectContext):
         Reference, related_name="actor_endpoints", null=True, blank=True, on_delete=models.SET_NULL
     )
 
-    source = ReferenceField()
     inbox = models.OneToOneField(
         Reference,
         related_name="inbox_owner_actor",
@@ -688,4 +691,5 @@ __all__ = (
     "RelationshipProperties",
     "LinkRelation",
     "LinkedFile",
+    "SourceContentContext",
 )

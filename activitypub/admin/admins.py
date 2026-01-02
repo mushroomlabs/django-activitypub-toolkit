@@ -168,6 +168,15 @@ class ObjectAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(models.SourceContentContext)
+class SourceContentAdmin(admin.ModelAdmin):
+    list_display = ("uri", "content")
+    search_fields = ("content",)
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(models.LinkContext)
 class LinkAdmin(admin.ModelAdmin):
     list_display = ("reference", "type", "href", "name")
@@ -234,6 +243,7 @@ class NotificationAdmin(admin.ModelAdmin):
 class FollowRequestAdmin(admin.ModelAdmin):
     list_display = ("id", "status")
     list_filter = ("status",)
+    autocomplete_fields = ("follower", "followed", "activity")
 
 
 @admin.register(models.Language)

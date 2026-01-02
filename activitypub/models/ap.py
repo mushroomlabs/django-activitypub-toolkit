@@ -493,6 +493,10 @@ class FollowRequest(StatusModel, TimeStampedModel):
     follower = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
     followed = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
     activity = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
+    objects = models.Manager()
+    accepted = QueryManager(status=STATUS.accepted)
+    pending = QueryManager(status=STATUS.submitted)
+    finalized = QueryManager(status__in=[STATUS.accepted, STATUS.blocked, STATUS.rejected])
 
     @transaction.atomic()
     def accept(self):

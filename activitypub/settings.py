@@ -69,6 +69,7 @@ class AppSettings:
             "activitypub.models.CollectionContext",
             "activitypub.models.CollectionPageContext",
             "activitypub.models.SecV1Context",
+            "activitypub.models.SourceContentContext",
         }
         extra_context_models = {}
         disabled_context_models = {}

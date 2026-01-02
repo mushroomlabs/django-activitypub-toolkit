@@ -467,12 +467,15 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
                 "https://www.w3.org/ns/activitystreams",
                 "https://w3id.org/security/v1",
                 {
+                    "Emoji": "as:Emoji",
+                    "Hashtag": "as:Hashtag",
                     "manuallyApprovesFollowers": {
                         "@id": "as:manuallyApprovesFollowers",
                         "@type": "xsd:boolean",
                     },
                     "movedTo": {"@id": "as:movedTo", "@type": "@id"},
                     "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
+                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
                 },
             ],
             "id": "http://testserver/users/alice",
@@ -485,6 +488,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             "inbox": "http://testserver/users/alice/inbox",
             "outbox": "http://testserver/users/alice/outbox",
             "manuallyApprovesFollowers": False,
+            "sensitive": False,
             "published": "2024-01-01T00:00:00+00:00",
             "publicKey": {
                 "id": "http://testserver/keys/alice-main-key",
@@ -553,12 +557,20 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
 
     def test_can_serialize_create_activity(self):
         expected = {
-            "@context": "https://www.w3.org/ns/activitystreams",
+            "@context": [
+                "https://www.w3.org/ns/activitystreams",
+                {
+                    "Emoji": "as:Emoji",
+                    "Hashtag": "as:Hashtag",
+                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+                },
+            ],
             "id": "http://testserver/activities/create-789",
             "type": "Create",
             "actor": "http://testserver/users/alice",
             "object": "http://testserver/notes/789",
             "published": "2024-11-16T14:30:00+00:00",
+            "sensitive": False,
         }
 
         account = AccountFactory(username="alice", domain=self.domain)
