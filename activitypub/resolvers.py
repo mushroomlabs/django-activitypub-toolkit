@@ -51,8 +51,15 @@ class HttpDocumentResolver(BaseDocumentResolver):
             allow_redirects=False,
         )
         if response.status_code < 300:
-            return response.json()
+            document = response.json()
+            document_id = document.get("id")
+            if uri != document_id:
+                raise ReferenceRedirect(
+                    "Document ID does not match original URI", redirect_uri=document_id
+                )
+            return document
         elif 300 <= response.status_code < 400:
-            raise ReferenceRedirect(location=response.headers.get("Location"))
+            location = response.headers.get("Location")
+            raise ReferenceRedirect(f"Redirect HTTP response", redirect_uri=location)
         else:
             raise DocumentResolutionError

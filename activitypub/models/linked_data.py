@@ -166,8 +166,10 @@ class Reference(StatusModel):
             except DocumentResolutionError:
                 logger.exception(f"failed to resolve {self.uri}")
                 self.status = self.STATUS.failed
-            except ReferenceRedirect:
+            except ReferenceRedirect as exc:
                 self.status = self.STATUS.redirected
+                if exc.redirect_uri:
+                    Reference.make(exc.redirect_uri)
             else:
                 return
             finally:
@@ -251,7 +253,8 @@ class LinkedDataDocument(models.Model):
         try:
             doc_id = data["id"]
             parsed_data = rdflib.parser.PythonInputSource(data, doc_id)
-            return rdflib.Graph().parse(parsed_data, format="json-ld")
+            g = rdflib.Graph(identifier=doc_id)
+            return g.parse(parsed_data, format="json-ld")
         except KeyError:
             raise ValueError("Failed to get graph identifier")
 

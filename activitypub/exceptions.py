@@ -15,9 +15,9 @@ class DocumentResolutionError(Exception):
 
 
 class ReferenceRedirect(Exception):
-    def __init__(self, message, location=None):
+    def __init__(self, message, redirect_uri=None):
         super().__init__(self, message)
-        self.location = location
+        self.redirect_uri = redirect_uri
 
 
 class DropMessage(Exception):
