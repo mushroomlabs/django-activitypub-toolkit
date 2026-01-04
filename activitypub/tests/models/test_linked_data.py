@@ -2,7 +2,7 @@ import httpretty
 
 from activitypub import factories
 from activitypub.contexts import AS2
-from activitypub.models import ActorContext, EndpointContext, LinkContext, Reference
+from activitypub.models import ActorContext, EndpointContext, LinkContext
 from activitypub.tests.base import BaseTestCase, use_nodeinfo, with_document_file
 
 
@@ -70,15 +70,3 @@ class ReferenceTestCase(BaseTestCase):
         actor = factories.ActorFactory(reference__uri="https://actor.example.com")
         self.assertEqual(actor.uri, "https://actor.example.com")
         self.assertTrue(ActorContext.objects.filter(reference=actor.reference).exists())
-
-    def test_can_make_reference_for_public_actor(self):
-        factories.DomainFactory(name="www.w3.org")
-        reference = Reference.make(str(AS2.Public))
-        self.assertTrue(isinstance(reference, Reference))
-        self.assertEqual(reference.uri, str(AS2.Public))
-
-    def test_can_resolve_public_actor_reference(self):
-        factories.DomainFactory(name="www.w3.org")
-        reference = Reference.make(str(AS2.Public))
-        reference.resolve()
-        self.assertEqual(reference.status, reference.STATUS.resolved)

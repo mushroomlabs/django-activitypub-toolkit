@@ -11,6 +11,9 @@ class ReferenceAdmin(admin.ModelAdmin):
     list_filter = ("status",)
     search_fields = ("uri", "domain__name")
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(models.LinkedDataDocument)
 class LinkedDataDocumentAdmin(admin.ModelAdmin):
@@ -51,7 +54,7 @@ class DomainAdmin(admin.ModelAdmin):
 
 
 @admin.register(models.Activity)
-class ActivityAdmin(admin.ModelAdmin):
+class ActivityAdmin(ContextModelAdmin):
     list_display = ("uri", "actor", "object", "target", "type")
     list_filter = ("type",)
     actions = (actions.do_activities,)
@@ -71,8 +74,8 @@ class ActivityAdmin(admin.ModelAdmin):
 
 
 @admin.register(models.SecV1Context)
-class SecV1ContextAdmin(admin.ModelAdmin):
-    list_display = ("owned_by", "key_id")
+class SecV1ContextAdmin(ContextModelAdmin):
+    list_display = ("reference", "owned_by", "key_id")
     exclude = ("private_key_pem",)
 
     def owned_by(self, obj):
@@ -241,9 +244,12 @@ class NotificationAdmin(admin.ModelAdmin):
 
 @admin.register(models.FollowRequest)
 class FollowRequestAdmin(admin.ModelAdmin):
-    list_display = ("id", "status")
+    list_display = ("id", "follower", "followed", "status")
     list_filter = ("status",)
     autocomplete_fields = ("follower", "followed", "activity")
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(models.Language)

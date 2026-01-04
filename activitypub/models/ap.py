@@ -111,6 +111,17 @@ class Activity(ActivityContext):
             defaults={"status": FollowRequest.STATUS.submitted},
         )
 
+        if self.object.is_remote and not self.object.is_resolved:
+            self.object.resolve()
+
+        followed = self.object.get_by_context(Actor)
+        target_inbox = followed and followed.inbox
+
+        if target_inbox:
+            Notification.objects.create(
+                resource=self.reference, sender=self.actor, target=target_inbox
+            )
+
     def _undo_follow(self):
         follower_ref = self.actor
         followed_ref = self.object
@@ -188,7 +199,11 @@ class Activity(ActivityContext):
         if self.object is None:
             return
 
+        if self.object.is_remote:
+            return
+
         object = self.object.get_by_context(BaseAs2ObjectContext)
+
         if object.shares is None:
             object.shares = CollectionContext.generate_reference(self.object.domain)
             object.save()
@@ -498,6 +513,9 @@ class FollowRequest(StatusModel, TimeStampedModel):
     pending = QueryManager(status=STATUS.submitted)
     finalized = QueryManager(status__in=[STATUS.accepted, STATUS.blocked, STATUS.rejected])
 
+    def __str__(self):
+        return f"{self.follower} -> {self.followed}"
+
     @transaction.atomic()
     def accept(self):
         if self.status == self.STATUS.accepted:
@@ -567,7 +585,7 @@ class FollowRequest(StatusModel, TimeStampedModel):
             )
 
     class Meta:
-        unique_together = ("follower", "followed")
+        unique_together = ("follower", "followed", "activity")
 
 
 __all__ = (

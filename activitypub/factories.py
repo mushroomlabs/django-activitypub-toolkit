@@ -30,6 +30,7 @@ class InstanceFactory(factory.django.DjangoModelFactory):
         model = models.ActivityPubServer
 
 
+@factory.django.mute_signals(post_save)
 class ReferenceFactory(factory.django.DjangoModelFactory):
     uri = factory.LazyAttribute(lambda obj: f"{obj.domain.url}{obj.path}")
     domain = factory.SubFactory(DomainFactory)

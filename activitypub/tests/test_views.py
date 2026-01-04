@@ -15,7 +15,12 @@ from activitypub.factories import (
     ObjectFactory,
     SecV1ContextFactory,
 )
-from activitypub.tests.base import BaseTestCase, use_nodeinfo, with_remote_reference
+from activitypub.tests.base import (
+    BaseTestCase,
+    use_nodeinfo,
+    with_remote_reference,
+    silence_notifications,
+)
 
 CONTENT_TYPE = "application/ld+json"
 
@@ -457,7 +462,7 @@ class InboxViewTestCase(TransactionTestCase):
 class ActivityPubObjectViewTestCase(BaseTestCase):
     def setUp(self):
         self.client = APIClient()
-        self.domain = DomainFactory(scheme="http", name="testserver", local=True)
+        self.domain = DomainFactory(scheme="http", name="testserver", local=True, port=80)
 
     def test_can_serialize_actor(self):
         """an actor is serialized in ActivityPub-compatible format"""
@@ -475,7 +480,6 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
                     },
                     "movedTo": {"@id": "as:movedTo", "@type": "@id"},
                     "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
-                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
                 },
             ],
             "id": "http://testserver/users/alice",
@@ -488,7 +492,6 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             "inbox": "http://testserver/users/alice/inbox",
             "outbox": "http://testserver/users/alice/outbox",
             "manuallyApprovesFollowers": False,
-            "sensitive": False,
             "published": "2024-01-01T00:00:00+00:00",
             "publicKey": {
                 "id": "http://testserver/keys/alice-main-key",
@@ -559,18 +562,13 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         expected = {
             "@context": [
                 "https://www.w3.org/ns/activitystreams",
-                {
-                    "Emoji": "as:Emoji",
-                    "Hashtag": "as:Hashtag",
-                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-                },
+                {"Emoji": "as:Emoji", "Hashtag": "as:Hashtag"},
             ],
             "id": "http://testserver/activities/create-789",
             "type": "Create",
             "actor": "http://testserver/users/alice",
             "object": "http://testserver/notes/789",
             "published": "2024-11-16T14:30:00+00:00",
-            "sensitive": False,
         }
 
         account = AccountFactory(username="alice", domain=self.domain)
@@ -865,24 +863,20 @@ class ActivityOutboxTestCase(TransactionTestCase):
         self.account = AccountFactory(username="bob", domain=self.domain)
         CollectionFactory(reference=self.account.actor.outbox)
 
+    @httpretty.activate
+    @silence_notifications("https://remote.example.com")
     def test_local_actor_can_post_follow_to_own_outbox(self):
-        # Create a remote actor to follow
-        remote_domain = DomainFactory(name="remote.example.com", local=False)
-        alice = ActorFactory(
-            name="Alice",
-            reference__uri="https://remote.example.com/users/alice",
-            reference__domain=remote_domain,
-        )
+        alice = "https://remote.example.com/users/alice"
 
         follow_activity = {
             "type": "Follow",
             "actor": "http://testserver/users/bob",
-            "object": str(alice.reference.uri),
+            "object": alice,
             "@context": "https://www.w3.org/ns/activitystreams",
         }
 
         response = self.client.post(
-            "/users/bob/outbox",
+            self.account.actor.outbox,
             data=json.dumps(follow_activity),
             content_type="application/ld+json",
         )
@@ -895,7 +889,7 @@ class ActivityOutboxTestCase(TransactionTestCase):
         self.assertTrue(
             models.FollowRequest.objects.filter(
                 follower=self.account.actor.reference,
-                followed=alice.reference,
+                followed__uri=alice,
             ).exists(),
             "FollowRequest should be created",
         )

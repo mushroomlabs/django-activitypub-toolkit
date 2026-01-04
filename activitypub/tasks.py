@@ -102,7 +102,13 @@ def process_incoming_notification(notification_id):
 @shared_task
 def send_notification(notification_id):
     try:
-        notification = Notification.objects.get(id=notification_id)
+        notification = Notification.objects.select_related("sender__domain", "target__domain").get(
+            id=notification_id
+        )
+
+        if notification.target.is_local:
+            logger.info(f"{notification.target.uri} is a local target. Skipping request")
+            return
 
         signing_key = SecV1Context.valid.filter(owner=notification.sender).first()
 
@@ -156,23 +162,22 @@ def process_standard_activity_flows(activity_uri):
         logger.warning(f"Activity {activity_uri} does not exist")
 
 
-# @shared_task
-# def post_activity(activity_uri):
-#     try:
-#         self.do()
-#         actor = self.actor and self.actor.get_by_context(ActorContext)
-#         assert actor is not None, f"Activity {self.uri} has no actor"
-#         assert actor.reference.is_local, f"Activity {self.uri} is not from a local actor"
-#         for inbox in actor.followers_inboxes:
-#             Notification.objects.create(
-#                 resource=self.reference, sender=actor.reference, target=inbox
-#             )
-#         # We add the posted activity to the actor outbox if Public
-#         # is part of the intended audience
-#         # if self.is_intended_audience(Actor.PUBLIC):
-#         #    actor.outbox.append(self)
-#         activity = Activity.objects.get(reference__uri=activity_uri)
-#     except AssertionError as exc:
-#         logger.warning(exc)
-#     except Activity.DoesNotExist:
-#         logger.warning(f"Activity {activity_uri} does not exist")
+@shared_task
+def post_activity(activity_uri):
+    try:
+        activity = Activity.objects.get(reference__uri=activity_uri)
+        actor = activity.actor and activity.actor.get_by_context(Actor)
+        assert actor is not None, f"Activity {activity.uri} has no actor"
+        assert actor.reference.is_local, f"Activity {activity.uri} is not from a local actor"
+        for inbox in actor.followers_inboxes:
+            Notification.objects.create(
+                resource=activity.reference, sender=actor.reference, target=inbox
+            )
+
+        outbox_collection = actor.outbox.get_by_context(CollectionContext)
+        assert outbox_collection is not None, "Actor has no outbox"
+        outbox_collection.append(activity.reference)
+    except AssertionError as exc:
+        logger.warning(exc)
+    except Activity.DoesNotExist:
+        logger.warning(f"Activity {activity_uri} does not exist")

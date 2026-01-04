@@ -64,11 +64,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     }
 
     # Extra context definitions for AS2 extensions not in the standard context
-    EXTRA_CONTEXT = {
-        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-        "Hashtag": "as:Hashtag",
-        "Emoji": "as:Emoji",
-    }
+    EXTRA_CONTEXT = {"Hashtag": "as:Hashtag", "Emoji": "as:Emoji"}
 
     name = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
@@ -78,7 +74,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.DurationField(null=True, blank=True)
-    sensitive = models.BooleanField(default=False)
+    sensitive = models.BooleanField(null=True, blank=True)
     media_type = models.CharField(max_length=64, null=True, blank=True)
     url = models.URLField(null=True, blank=True)
     url_link = ReferenceField()
@@ -225,6 +221,7 @@ class ObjectContext(BaseAs2ObjectContext):
 
 
 class EndpointContext(AbstractContextModel):
+    CONTEXT = AS2_CONTEXT
     LINKED_DATA_FIELDS = {
         "proxy_url": AS2.proxyUrl,
         "oauth_authorization_endpoint": AS2.oauthAuthorizationEndpoint,

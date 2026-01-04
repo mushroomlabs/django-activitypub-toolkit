@@ -34,9 +34,7 @@ def process_notifications(modeladmin, request, queryset):
     for notification in queryset:
         try:
             assert not notification.is_processed, f"{notification} has been processed already"
-            if notification.is_outgoing:
-                result = tasks.send_notification(notification.id)
-
+            result = tasks.send_notification(notification.id)
             ok = result.result == models.NotificationProcessResult.Types.OK
             assert ok, f"{result.get_result_display()} result for {notification.id}"
             successful += 1
@@ -54,8 +52,7 @@ def force_process_notifications(modeladmin, request, queryset):
     successful = 0
     for notification in queryset:
         try:
-            if notification.is_outgoing:
-                result = tasks.send_notification(notification.id)
+            result = tasks.send_notification(notification.id)
             ok = result.result == models.NotificationProcessResult.Types.OK
             assert ok, f"{result.get_result_display()} result for {notification.id}"
             successful += 1

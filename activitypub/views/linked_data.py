@@ -26,6 +26,10 @@ class LinkedDataModelView(APIView):
     def get_object(self):
         parsed_uri = urlparse(self.request.build_absolute_uri())
         uri = parsed_uri._replace(query=None, fragment=None).geturl()
+
+        if self.request.path == "/":
+            uri = uri.removesuffix("/")
+
         return get_object_or_404(Reference, uri=uri, domain__local=True)
 
     def get_projection_class(self, reference):

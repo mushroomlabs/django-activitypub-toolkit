@@ -80,8 +80,16 @@ class Domain(TimeStampedModel):
         if not parsed.hostname:
             raise InvalidDomainError(f"{uri} does not have a FQDN")
 
+        match (parsed.scheme, parsed.port):
+            case ("http", None):
+                port = 80
+            case ("https", None):
+                port = 443
+            case _:
+                port = parsed.port
+
         domain, _ = cls.objects.get_or_create(
-            scheme=parsed.scheme, name=parsed.hostname, port=parsed.port, defaults=kw
+            scheme=parsed.scheme, name=parsed.hostname, port=port, defaults=kw
         )
         return domain
 

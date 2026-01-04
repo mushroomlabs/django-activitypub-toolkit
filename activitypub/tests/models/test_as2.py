@@ -14,7 +14,7 @@ from activitypub.models import (
     ObjectContext,
     Reference,
 )
-from activitypub.tests.base import BaseTestCase, use_nodeinfo
+from activitypub.tests.base import BaseTestCase, use_nodeinfo, silence_notifications
 
 
 class AccountTestCase(BaseTestCase):
@@ -124,9 +124,15 @@ class ActivityTestCase(BaseTestCase):
             "did not create reference for object",
         )
 
+    @httpretty.activate
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
+    @silence_notifications("https://remote.example.com")
     def test_can_do_follow(self):
-        followed = factories.ActorFactory()
-        follower = factories.ActorFactory()
+        remote_domain = factories.DomainFactory(name="remote.example.com")
+
+        followed = factories.ActorFactory(reference__domain=remote_domain)
+        follower = factories.ActorFactory(reference__domain=remote_domain)
         follow = factories.ActivityFactory(
             type=Activity.Types.FOLLOW, actor=follower.reference, object=followed.reference
         )
@@ -142,9 +148,13 @@ class ActivityTestCase(BaseTestCase):
             ).exists()
         )
 
+    @httpretty.activate
+    @silence_notifications("https://remote.example.com")
     def test_can_do_unfollow(self):
-        followed = factories.ActorFactory()
-        follower = factories.ActorFactory()
+        remote_domain = factories.DomainFactory(name="remote.example.com")
+
+        followed = factories.ActorFactory(reference__domain=remote_domain)
+        follower = factories.ActorFactory(reference__domain=remote_domain)
         follow = factories.ActivityFactory(
             type=Activity.Types.FOLLOW, actor=follower.reference, object=followed.reference
         )
@@ -164,15 +174,20 @@ class ActivityTestCase(BaseTestCase):
             ).exists()
         )
 
+    @httpretty.activate
+    @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     def test_replies_get_added_to_collection(self):
         note = factories.ObjectFactory(
             reference__uri="https://local.example.com/objects/first-note",
+            reference__domain__name="local.example.com",
             reference__domain__local=True,
             type=ObjectContext.Types.NOTE,
             content="This is a simple note",
         )
         reply = factories.ObjectFactory(
             reference__uri="https://remote.example.com/objects/reply-to-note",
+            reference__domain__name="remote.example.com",
             reference__domain__local=False,
             type=ObjectContext.Types.NOTE,
             content="This is a reply",
@@ -184,16 +199,22 @@ class ActivityTestCase(BaseTestCase):
         replies = note.replies.get_by_context(CollectionContext)
         self.assertTrue(replies.contains(item=reply.reference))
 
+    @httpretty.activate
+    @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     def test_likes_get_added_to_likes_collection(self):
+        local_domain = factories.DomainFactory(name="local.example.com", local=True)
+        remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
+
         note = factories.ObjectFactory(
             reference__uri="https://local.example.com/objects/first-note",
-            reference__domain__local=True,
+            reference__domain=local_domain,
             type=ObjectContext.Types.NOTE,
             content="This is a simple note",
         )
         like = factories.ActivityFactory(
             reference__uri="https://remote.example.com/activity/like-note",
-            reference__domain__local=False,
+            reference__domain=remote_domain,
             type=Activity.Types.LIKE,
             object=note.reference,
         )
@@ -203,7 +224,12 @@ class ActivityTestCase(BaseTestCase):
 
         self.assertTrue(likes_collection.contains(item=like.reference))
 
+    @httpretty.activate
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
     def test_announces_get_added_to_shares_collection(self):
+        remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
+
         note = factories.ObjectFactory(
             reference__uri="http://testserver/objects/first-note",
             reference__domain=self.local_instance.domain,
@@ -212,7 +238,7 @@ class ActivityTestCase(BaseTestCase):
         )
         announce = factories.ActivityFactory(
             reference__uri="https://remote.example.com/activity/share-note",
-            reference__domain__local=False,
+            reference__domain=remote_domain,
             type=Activity.Types.ANNOUNCE,
             object=note.reference,
         )
@@ -221,9 +247,11 @@ class ActivityTestCase(BaseTestCase):
         shares_collection = CollectionContext.make(reference=note.shares)
         self.assertTrue(shares_collection.contains(announce.reference))
 
+    @httpretty.activate
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
     def test_undo_like_removes_from_collections(self):
         """Undoing a like removes it from both actor's liked and object's likes collections"""
-        # Create a remote domain first
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
 
         # Create an actor with a liked collection
@@ -289,6 +317,9 @@ class ActivityTestCase(BaseTestCase):
             "Like should be removed from object's likes collection",
         )
 
+    @httpretty.activate
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
     def test_undo_like_when_actor_has_no_liked_collection(self):
         """undoing a like works even when actor has no liked collection"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
@@ -331,6 +362,9 @@ class ActivityTestCase(BaseTestCase):
         # Verify the like was removed from object's likes collection
         self.assertFalse(likes_collection.contains(like.reference))
 
+    @httpretty.activate
+    @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
+    @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
     def test_undo_announce_removes_from_shares_collection(self):
         """undoing an announce removes it from the object's shares collection"""
         remote_domain = factories.DomainFactory(name="remote.example.com", local=False)
@@ -405,28 +439,23 @@ class ActivityTestCase(BaseTestCase):
         # Should not crash when object has no shares collection
         undo.do()  # Should complete without error
 
+    @httpretty.activate
+    @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
     def test_do_add_adds_item_to_actor_owned_collection(self):
         """Add activity adds an item to an actor-owned collection"""
         local_domain = factories.DomainFactory(name="local.example.com", local=True)
 
-        alice = factories.ActorFactory(
-            name="Alice",
-            reference__domain=local_domain,
-        )
+        alice = factories.ActorFactory(name="Alice", reference__domain=local_domain)
 
         # Create a custom collection owned by the actor (e.g., a featured collection)
         featured_ref = factories.ReferenceFactory(
-            uri=f"{alice.uri}/collections/featured",
-            domain=local_domain,
+            uri=f"{alice.uri}/collections/featured", domain=local_domain
         )
         featured_collection = CollectionContext.make(featured_ref, name="Featured")
         featured_collection.attributed_to.add(alice.reference)
 
         # Create a note to add to the collection
-        note = factories.ObjectFactory(
-            type=ObjectContext.Types.NOTE,
-            content="Featured note",
-        )
+        note = factories.ObjectFactory(type=ObjectContext.Types.NOTE, content="Featured note")
 
         # Create an Add activity
         add_activity = factories.ActivityFactory(
@@ -502,6 +531,8 @@ class ActivityTestCase(BaseTestCase):
         # Should not crash
         add_activity.do()
 
+    @httpretty.activate
+    @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
     def test_do_remove_removes_item_from_actor_owned_collection(self):
         """Remove activity removes an item from an actor-owned collection"""
         local_domain = factories.DomainFactory(name="local.example.com", local=True)

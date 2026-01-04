@@ -2,17 +2,29 @@ import logging
 
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 from . import tasks
 from .exceptions import RejectedFollowRequest
 from .models.ap import ActivityPubServer, Actor, FollowRequest
-from .models.as2 import BaseAs2ObjectContext, ObjectContext
+from .models.as2 import ActivityContext, BaseAs2ObjectContext, ObjectContext
 from .models.collections import CollectionContext
 from .models.linked_data import Domain, Notification
 from .settings import app_settings
 from .signals import notification_accepted, reference_field_changed
 
 logger = logging.getLogger(__name__)
+
+
+@receiver(pre_save, sender=Domain)
+def set_default_port_for_domain(sender, **kw):
+    instance = kw["instance"]
+
+    if instance.scheme == instance.SchemeTypes.HTTP and instance.port is None:
+        instance.port = 80
+
+    if instance.scheme == instance.SchemeTypes.HTTPS and instance.port is None:
+        instance.port = 443
 
 
 @receiver(post_save, sender=Domain)
@@ -71,7 +83,7 @@ def on_new_reply_add_to_replies_collection(sender, **kw):
 
 
 @receiver(post_save, sender=FollowRequest)
-def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
+def on_follow_request_received_check_policies(sender, **kw):
     follow_request = kw["instance"]
 
     if not kw["created"] or follow_request.status != FollowRequest.STATUS.submitted:
@@ -94,6 +106,38 @@ def on_follow_request_created_check_if_it_can_be_accepted(sender, **kw):
         follow_request.accept()
 
 
+@receiver(post_save, sender=FollowRequest)
+def on_follow_request_created_post_activity(sender, **kw):
+    follow_request = kw["instance"]
+
+    if not kw["created"]:
+        return
+
+    activity = ActivityContext.make(
+        reference=follow_request.activity,
+        type=ActivityContext.Types.FOLLOW,
+        actor=follow_request.follower,
+        object=follow_request.followed,
+        published=timezone.now(),
+    )
+    activity.to.add(follow_request.followed)
+    tasks.process_standard_activity_flows.delay(activity.reference.uri)
+    tasks.post_activity.delay(activity.reference.uri)
+
+
+@receiver(post_save, sender=Notification)
+def on_notification_created_send_to_target(sender, **kw):
+    if not kw["created"]:
+        return
+
+    instance = kw["instance"]
+
+    if instance.target.is_local:
+        return
+
+    tasks.send_notification.delay(instance.id)
+
+
 @receiver(notification_accepted, sender=Notification)
 def on_notification_accepted_process_standard_flows(sender, **kw):
     notification = kw["notification"]
@@ -104,6 +148,9 @@ def on_notification_accepted_process_standard_flows(sender, **kw):
 __all__ = (
     "on_new_remote_domain_fetch_nodeinfo",
     "on_new_local_domain_setup_nodeinfo",
-    "on_follow_request_created_check_if_it_can_be_accepted",
+    "on_follow_request_received_check_policies",
+    "on_follow_request_created_post_activity",
     "on_notification_accepted_process_standard_flows",
+    "on_notification_created_send_to_target",
+    "set_default_port_for_domain",
 )

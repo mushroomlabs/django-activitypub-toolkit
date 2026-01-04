@@ -36,7 +36,7 @@ class MessageDirectionFilter(admin.SimpleListFilter):
             return queryset
 
         filter_qs = queryset.filter if selection == "incoming" else queryset.exclude
-        return filter_qs(recipient__domain__local=True)
+        return filter_qs(target__domain__local=True)
 
 
 class MessageVerifiedFilter(admin.SimpleListFilter):

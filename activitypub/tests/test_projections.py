@@ -118,17 +118,23 @@ class ReferenceProjectionTestCase(BaseTestCase):
 
 
 class CollectionProjectionTestCase(BaseTestCase):
+    def setUp(self):
+        self.local_domain = factories.DomainFactory(
+            scheme="http", name="testserver", local=True, port=80
+        )
+
     def test_can_project_collection_page_with_items(self):
         """Test that a collection page projects with its items"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
-        collection_ref = factories.ReferenceFactory(domain=domain, path="/collections/test")
+        collection_ref = factories.ReferenceFactory(
+            domain=self.local_domain, path="/collections/test"
+        )
         collection = models.CollectionContext.make(
             reference=collection_ref,
             type=models.CollectionContext.Types.UNORDERED,
         )
         item_refs = []
         for i in range(3):
-            item_ref = factories.ReferenceFactory(domain=domain, path=f"/items/{i}")
+            item_ref = factories.ReferenceFactory(domain=self.local_domain, path=f"/items/{i}")
             collection.append(item_ref)
             item_refs.append(item_ref)
 
@@ -155,9 +161,9 @@ class CollectionProjectionTestCase(BaseTestCase):
         self.assertIn("http://testserver/items/2", item_uris)
 
     def test_collection_projection_includes_total_items(self):
-        """Test that CollectionProjection includes totalItems in expanded form"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
-        collection_ref = factories.ReferenceFactory(domain=domain, path="/collections/test")
+        collection_ref = factories.ReferenceFactory(
+            domain=self.local_domain, path="/collections/test"
+        )
         collection = models.CollectionContext.objects.create(
             reference=collection_ref,
             type=models.CollectionContext.Types.UNORDERED,
@@ -165,7 +171,7 @@ class CollectionProjectionTestCase(BaseTestCase):
 
         # Add some items
         for i in range(3):
-            item_ref = factories.ReferenceFactory(domain=domain, path=f"/items/{i}")
+            item_ref = factories.ReferenceFactory(domain=self.local_domain, path=f"/items/{i}")
             collection.append(item_ref)
 
         # Use CollectionProjection
@@ -184,9 +190,9 @@ class CollectionProjectionTestCase(BaseTestCase):
         )
 
     def test_collection_projection_includes_items(self):
-        """Test that CollectionProjection includes items via extra method"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
-        collection_ref = factories.ReferenceFactory(domain=domain, path="/collections/test")
+        collection_ref = factories.ReferenceFactory(
+            domain=self.local_domain, path="/collections/test"
+        )
         collection = models.CollectionContext.objects.create(
             reference=collection_ref,
             type=models.CollectionContext.Types.UNORDERED,
@@ -195,7 +201,7 @@ class CollectionProjectionTestCase(BaseTestCase):
         # Add some items
         item_refs = []
         for i in range(2):
-            item_ref = factories.ReferenceFactory(domain=domain, path=f"/items/{i}")
+            item_ref = factories.ReferenceFactory(domain=self.local_domain, path=f"/items/{i}")
             collection.append(item_ref)
             item_refs.append(item_ref)
 
@@ -216,9 +222,9 @@ class CollectionProjectionTestCase(BaseTestCase):
         self.assertIn("http://testserver/items/1", item_uris)
 
     def test_collection_projection_compacted(self):
-        """Test that CollectionProjection produces correct compacted output"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
-        collection_ref = factories.ReferenceFactory(domain=domain, path="/collections/test")
+        collection_ref = factories.ReferenceFactory(
+            domain=self.local_domain, path="/collections/test"
+        )
         collection = models.CollectionContext.objects.create(
             reference=collection_ref,
             type=models.CollectionContext.Types.ORDERED,
@@ -227,7 +233,7 @@ class CollectionProjectionTestCase(BaseTestCase):
 
         # Add some items
         for i in range(3):
-            item_ref = factories.ReferenceFactory(domain=domain, path=f"/items/{i}")
+            item_ref = factories.ReferenceFactory(domain=self.local_domain, path=f"/items/{i}")
             collection.append(item_ref)
 
         # Use CollectionProjection
@@ -289,7 +295,9 @@ class CollectionWithFirstPageProjectionTestCase(BaseTestCase):
     """
 
     def setUp(self):
-        self.domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
+        self.domain = factories.DomainFactory(
+            scheme="http", name="testserver", local=True, port=80
+        )
 
     def test_collection_embeds_first_page(self):
         factories.AccountFactory(username="alice", domain=self.domain)
@@ -332,7 +340,7 @@ class ActorProjectionTestCase(BaseTestCase):
 
     def test_actor_includes_public_key_expanded(self):
         """Test that ActorProjection includes embedded public key in expanded form"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
+        domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
         account = factories.AccountFactory(username="alice", domain=domain)
         actor = account.actor
 
@@ -364,7 +372,7 @@ class ActorProjectionTestCase(BaseTestCase):
 
     def test_actor_includes_public_key_compacted(self):
         """Test that ActorProjection includes compacted public key with proper context"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
+        domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
         account = factories.AccountFactory(username="alice", domain=domain)
         actor = account.actor
 
@@ -413,7 +421,7 @@ class CompactedOutputTestCase(BaseTestCase):
 
     def test_compacted_output_has_context(self):
         """Test that compacted output includes @context"""
-        domain = factories.DomainFactory(scheme="http", name="testserver", local=True)
+        domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
         account = factories.AccountFactory(username="bob", domain=domain)
         actor = account.actor
 

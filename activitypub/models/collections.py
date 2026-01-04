@@ -233,9 +233,6 @@ class CollectionPageContext(BaseCollectionContext):
     next = models.ForeignKey(
         Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    part_of = models.ForeignKey(
-        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
-    )
 
     @property
     def is_ordered(self):
@@ -252,7 +249,7 @@ class CollectionPageContext(BaseCollectionContext):
         if current_page.collection_items.count() < self.PAGE_SIZE:
             return current_page
 
-        return self.collection.get_by_context(CollectionContext).make_new_page()
+        return self.part_of.get_by_context(CollectionContext).make_new_page()
 
     @classmethod
     def generate_reference(cls, domain):

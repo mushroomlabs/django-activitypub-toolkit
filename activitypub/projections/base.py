@@ -1,10 +1,10 @@
-from activitypub.contexts import AS2, SEC_V1_CONTEXT, SECv1
+from activitypub.contexts import AS2, SEC_V1_CONTEXT, RDF, SECv1
 from activitypub.models import CollectionContext, CollectionPageContext, Reference
 
 from .core import ReferenceProjection, use_context
 
 
-class BaseCollectionProjection(ReferenceProjection):
+class BaseCollectionProjectionMixin:
     CONTEXT_MODEL = None
 
     def get_items(self):
@@ -21,34 +21,42 @@ class BaseCollectionProjection(ReferenceProjection):
             {"@value": total, "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"}
         ]
 
+
+class CollectionPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
+    CONTEXT_MODEL = CollectionPageContext
+
     class Meta:
         extra = {"get_items": AS2.items, "get_total_items": AS2.totalItems}
 
 
-class CollectionPageProjection(BaseCollectionProjection):
+class EmbeddedCollectionPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
     CONTEXT_MODEL = CollectionPageContext
 
+    class Meta:
+        fields = (RDF.type, AS2.items)
+        extra = {"get_items": AS2.items}
 
-class CollectionProjection(BaseCollectionProjection):
+
+class CollectionProjection(BaseCollectionProjectionMixin, ReferenceProjection):
     CONTEXT_MODEL = CollectionContext
+
+    class Meta:
+        extra = {"get_items": AS2.items, "get_total_items": AS2.totalItems}
 
 
 class CollectionWithTotalProjection(ReferenceProjection):
+    CONTEXT_MODEL = CollectionContext
+
     class Meta:
         fields = (AS2.totalItems,)
 
 
-class CollectionWithFirstPageProjection(ReferenceProjection):
-    def get_total_items(self):
-        obj = self.reference.get_by_context(CollectionContext)
-        total = obj and obj.total_items
-        return total and [
-            {"@value": total, "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"}
-        ]
+class CollectionWithFirstPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
+    CONTEXT_MODEL = CollectionContext
 
     class Meta:
         omit = (AS2.items, AS2.orderedItems, AS2.last)
-        overrides = {AS2.first: CollectionPageProjection}
+        overrides = {AS2.first: EmbeddedCollectionPageProjection}
         extra = {"get_total_items": AS2.totalItems}
 
 
@@ -63,6 +71,11 @@ class PublicKeyProjection(ReferenceProjection):
         )
 
 
+class EndpointProjection(ReferenceProjection):
+    class Meta:
+        omit = ()
+
+
 class ActorProjection(ReferenceProjection):
     @use_context(SEC_V1_CONTEXT.url)
     def get_public_key(self):
@@ -74,6 +87,7 @@ class ActorProjection(ReferenceProjection):
 
     class Meta:
         extra = {"get_public_key": SECv1.publicKey}
+        overrides = {AS2.endpoints: EndpointProjection}
 
 
 class QuestionProjection(ReferenceProjection):
@@ -95,6 +109,8 @@ __all__ = (
     "CollectionPageProjection",
     "CollectionWithTotalProjection",
     "CollectionWithFirstPageProjection",
+    "EmbeddedCollectionPageProjection",
+    "EndpointProjection",
     "PublicKeyProjection",
     "ActorProjection",
     "QuestionProjection",

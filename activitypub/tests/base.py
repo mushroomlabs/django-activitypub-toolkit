@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from functools import wraps
 from unittest import SkipTest
 
@@ -77,6 +78,22 @@ def use_nodeinfo(domain_url, path, base_folder=TEST_DOCUMENTS_FOLDER):
                 )
 
                 return function_at_test(*args, **kw)
+
+        return inner
+
+    return decorator
+
+
+def silence_notifications(domain_url):
+    def decorator(function_at_test):
+        @wraps(function_at_test)
+        def inner(*args, **kw):
+            pattern = re.escape(domain_url)
+            compiled = re.compile(f"{pattern}/*")
+            httpretty.register_uri(httpretty.POST, compiled)
+            httpretty.register_uri(httpretty.GET, compiled)
+
+            return function_at_test(*args, **kw)
 
         return inner
 

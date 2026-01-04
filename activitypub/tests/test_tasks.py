@@ -16,7 +16,7 @@ from activitypub.factories import (
 from activitypub.models import Activity, Actor, Notification
 from activitypub.tasks import clear_processed_messages, process_standard_activity_flows
 
-from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase, use_nodeinfo
+from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase, use_nodeinfo, silence_notifications
 
 
 class CeleryConfigurationTestCase(TestCase):
@@ -42,7 +42,7 @@ class CeleryConfigurationTestCase(TestCase):
 
 class NotificationProcessingTestCase(BaseTestCase):
     def setUp(self):
-        self.domain = DomainFactory(scheme="http", name="testserver", local=True)
+        self.domain = DomainFactory(scheme="http", name="testserver", local=True, port=80)
         self.account = AccountFactory(username="bob", domain=self.domain)
 
     @httpretty.activate
@@ -79,8 +79,10 @@ class NotificationProcessingTestCase(BaseTestCase):
 
 
 class ActivityHandlingTestCase(BaseTestCase):
+    @httpretty.activate
+    @silence_notifications("https://remote.example.com")
     def test_can_handle_undo(self):
-        actor = ActorFactory()
+        actor = ActorFactory(reference__domain__name="remote.example.com")
         follow = ActivityFactory(type=Activity.Types.FOLLOW, object=actor.reference)
         unfollow = ActivityFactory(type=Activity.Types.UNDO, object=follow.reference)
 
