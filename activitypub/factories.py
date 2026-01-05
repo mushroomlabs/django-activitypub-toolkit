@@ -57,18 +57,18 @@ class BaseActivityStreamsObjectFactory(factory.django.DjangoModelFactory):
     reference = factory.SubFactory(ReferenceFactory)
 
     @factory.post_generation
-    def in_reply_to(self, create, extracted, **kwargs):
+    def in_reply_to(obj, create, extracted, **kwargs):
         if not create or not extracted:
             return
 
-        self.in_reply_to.add(*extracted)
+        obj.in_reply_to.add(*extracted)
 
     @factory.post_generation
-    def attributed_to(self, create, extracted, **kwargs):
+    def attributed_to(obj, create, extracted, **kwargs):
         if not create or not extracted:
             return
 
-        self.attributed_to.add(*extracted)
+        obj.attributed_to.add(*extracted)
 
 
 class CollectionFactory(BaseActivityStreamsObjectFactory):
@@ -84,6 +84,13 @@ class ActorFactory(BaseActivityStreamsObjectFactory):
     outbox = factory.SubFactory(ReferenceFactory)
     followers = factory.SubFactory(ReferenceFactory)
     following = factory.SubFactory(ReferenceFactory)
+
+    @factory.post_generation
+    def outbox_collection(obj, create, extracted, **kwargs):
+        if not create or not extracted:
+            return
+
+        models.CollectionContext.make(reference=obj.outbox)
 
     class Meta:
         model = models.Actor
@@ -186,3 +193,13 @@ class SecV1ContextFactory(factory.django.DjangoModelFactory):
 
     class Meta:
         model = models.SecV1Context
+
+
+@factory.django.mute_signals(post_save)
+class FollowRequestFactory(factory.django.DjangoModelFactory):
+    follower = factory.SubFactory(ReferenceFactory)
+    followed = factory.SubFactory(ReferenceFactory)
+    activity = factory.SubFactory(ReferenceFactory)
+
+    class Meta:
+        model = models.FollowRequest
