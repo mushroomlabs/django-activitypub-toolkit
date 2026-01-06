@@ -64,7 +64,11 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     }
 
     # Extra context definitions for AS2 extensions not in the standard context
-    EXTRA_CONTEXT = {"Hashtag": "as:Hashtag", "Emoji": "as:Emoji"}
+    EXTRA_CONTEXT = {
+        "Hashtag": "as:Hashtag",
+        "Emoji": "as:Emoji",
+        "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+    }
 
     name = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)

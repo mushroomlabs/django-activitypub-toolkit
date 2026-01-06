@@ -1,6 +1,9 @@
 from activitypub.contexts import AS2, SEC_V1_CONTEXT, RDF, SECv1
 from activitypub.models import CollectionContext, CollectionPageContext, Reference
 
+from django.core.exceptions import FieldDoesNotExist
+from django.db import models
+
 from .core import ReferenceProjection, use_context
 
 
@@ -72,6 +75,19 @@ class PublicKeyProjection(ReferenceProjection):
 
 
 class EndpointProjection(ReferenceProjection):
+    def _default_serialize(self, context_obj, field_name, value):
+        try:
+            field = context_obj._meta.get_field(field_name)
+        except (AttributeError, FieldDoesNotExist):
+            return super()._default_serialize(context_obj, field_name, value)
+
+        # For URLFields in endpoints, serialize as @id
+        if isinstance(field, models.URLField):
+            return [{"@id": value}]
+
+        # Delegate to parent for other field types
+        return super()._default_serialize(context_obj, field_name, value)
+
     class Meta:
         omit = ()
 
