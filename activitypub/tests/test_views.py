@@ -480,6 +480,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
                     },
                     "movedTo": {"@id": "as:movedTo", "@type": "@id"},
                     "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
+                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
                 },
             ],
             "id": "http://testserver/users/alice",
@@ -562,7 +563,11 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         expected = {
             "@context": [
                 "https://www.w3.org/ns/activitystreams",
-                {"Emoji": "as:Emoji", "Hashtag": "as:Hashtag"},
+                {
+                    "Emoji": "as:Emoji",
+                    "Hashtag": "as:Hashtag",
+                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+                },
             ],
             "id": "http://testserver/activities/create-789",
             "type": "Create",
