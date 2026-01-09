@@ -46,8 +46,12 @@ class AccountAdmin(admin.ModelAdmin):
 
 @admin.register(models.Domain)
 class DomainAdmin(admin.ModelAdmin):
-    list_display = ("name", "local", "blocked")
-    list_filter = ("local", "blocked")
+    list_display = ("host", "port", "local", "blocked")
+    list_filter = ("local", "blocked", "scheme", "port")
+
+    @admin.display(description="Host")
+    def host(self, obj):
+        return obj.url
 
     def has_change_permission(self, request, obj=None):
         return False
