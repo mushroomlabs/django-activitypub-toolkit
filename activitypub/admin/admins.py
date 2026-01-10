@@ -3,6 +3,7 @@ from django.contrib import admin
 from .. import models
 from . import actions, filters
 from .base import ContextModelAdmin
+from ..models.collections import BaseCollectionContext
 
 
 @admin.register(models.Reference)
@@ -136,11 +137,9 @@ class CollectionItemAdmin(admin.ModelAdmin):
 
     @admin.display(description="Collection")
     def get_collection(self, obj):
-        container = obj.container
-
-        if type(container) is models.CollectionPage:
-            return container.part_of
-        return container
+        return (
+            BaseCollectionContext.objects.filter(id=obj.collection_id).select_subclasses().first()
+        )
 
     @admin.display(description="Collection Name")
     def get_collection_name(self, obj):

@@ -63,7 +63,7 @@ class ActivityTypeFilter(admin.SimpleListFilter):
     parameter_name = "activity_type"
 
     def lookups(self, request, model_admin):
-        return models.Activity.Types.choices
+        return models.ActivityContext.Types.choices
 
     def queryset(self, request, queryset):
         selection = self.value()
@@ -71,4 +71,6 @@ class ActivityTypeFilter(admin.SimpleListFilter):
         if selection is None:
             return queryset
 
-        return queryset.filter(activity__item__as_activity__type=selection)
+        references = models.ActivityContext.objects.filter(type=selection).values("reference")
+
+        return queryset.filter(resource__in=references)
