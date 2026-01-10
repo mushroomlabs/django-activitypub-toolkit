@@ -103,7 +103,7 @@ class HttpSignatureProof(NotificationIntegrityProof, KeySignatureBasedProofMixin
 
     @property
     def key_id(self) -> Reference | None:
-        return self.notification.http_message_signature.key_id
+        return self.http_message_signature.key_id
 
     def passes_verification(self, signing_key):
         return signing_key.verify_signature(

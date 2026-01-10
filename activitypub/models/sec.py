@@ -58,14 +58,17 @@ class SecV1Context(AbstractContextModel):
     @property
     def rsa_public_key(self) -> rsa.RSAPublicKey:
         return cast(
-            rsa.RSAPublicKey, serialization.load_pem_public_key(self.public_pem.encode("ascii"))
+            rsa.RSAPublicKey,
+            serialization.load_pem_public_key(self.public_key_pem.encode("ascii")),
         )
 
     @property
     def rsa_private_key(self) -> Optional[rsa.RSAPrivateKey]:
-        return self.private_pem and cast(
+        return self.private_key_pem and cast(
             rsa.RSAPrivateKey,
-            serialization.load_pem_private_key(self.private_pem.encode("ascii"), password=None),
+            serialization.load_pem_private_key(
+                self.private_key_pem.encode("ascii"), password=None
+            ),
         )
 
     @property
