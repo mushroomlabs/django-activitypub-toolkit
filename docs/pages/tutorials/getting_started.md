@@ -112,7 +112,7 @@ from activitypub.contexts import AS2, SEC, MASTODON, LEMMY
 # ActivityStreams 2.0 namespace
 note_uri = AS2.Note  # https://www.w3.org/ns/activitystreams#Note
 
-# Security namespace  
+# Security namespace
 public_key_uri = SEC.publicKey  # https://w3id.org/security#publicKey
 
 # Platform-specific namespaces
@@ -170,7 +170,7 @@ class JournalEntry(models.Model):
         EXERCISE = 'exercise', 'Exercise'
         LEARNING = 'learning', 'Learning'
         CREATIVE = 'creative', 'Creative'
-    
+
     reference = models.OneToOneField(
         Reference,
         on_delete=models.CASCADE,
@@ -182,14 +182,14 @@ class JournalEntry(models.Model):
         choices=EntryType.choices,
         default=EntryType.PERSONAL
     )
-    
+
     class Meta:
         ordering = ['-id']
         verbose_name_plural = 'journal entries'
-    
+
     def __str__(self):
         return f"{self.user.username}'s {self.entry_type} entry"
-    
+
     @property
     def as2(self):
         """Access the ActivityStreams context for this entry."""
@@ -200,30 +200,10 @@ The `reference` field links to the toolkit's `Reference` model. This reference s
 
 ## Setting Up the Domain
 
-The domain represents your server instance in the federation. Create a management command in `journal/management/commands/setup_domain.py`:
-
-```python
-from django.core.management.base import BaseCommand
-from activitypub.models import Domain
-
-class Command(BaseCommand):
-    help = 'Set up the local domain'
-    
-    def handle(self, *args, **options):
-        domain, created = Domain.objects.get_or_create(
-            domain='localhost:8000',
-            defaults={'local': True}
-        )
-        if created:
-            self.stdout.write(self.style.SUCCESS(f'Created domain: {domain}'))
-        else:
-            self.stdout.write(self.style.WARNING(f'Domain already exists: {domain}'))
-```
-
-Run this command:
+The domain represents your server instance in the federation. You can run multiple domains on the same server. There is a convenient method to register domains. Simply run this command:
 
 ```bash
-python manage.py setup_domain
+python manage.py register_local_instance -u http://localhost:8000 # (Or any URL you your development server can listen on)
 ```
 
 ## Creating Journal Entries
@@ -291,25 +271,25 @@ class JournalEntryAdmin(admin.ModelAdmin):
     list_display = ('user', 'entry_type', 'get_published', 'get_title')
     list_filter = ('entry_type', 'user')
     readonly_fields = ('reference', 'get_content', 'get_published', 'get_duration')
-    fields = ('user', 'entry_type', 'reference', 'get_content', 
+    fields = ('user', 'entry_type', 'reference', 'get_content',
               'get_published', 'get_duration')
-    
+
     def get_published(self, obj):
         return obj.as2.published if obj.as2 else None
     get_published.short_description = 'Published'
-    
+
     def get_title(self, obj):
         return obj.as2.name if obj.as2 else '(untitled)'
     get_title.short_description = 'Title'
-    
+
     def get_content(self, obj):
         return obj.as2.content if obj.as2 else None
     get_content.short_description = 'Content'
-    
+
     def get_duration(self, obj):
         return obj.as2.duration if obj.as2 else None
     get_duration.short_description = 'Duration'
-    
+
     def has_add_permission(self, request):
         # Disable add through admin - entries should be created through the form
         return False
@@ -338,7 +318,7 @@ class JournalEntryForm(forms.Form):
 @admin.register(JournalEntry)
 class JournalEntryAdmin(admin.ModelAdmin):
     # ... existing configuration ...
-    
+
     def changelist_view(self, request, extra_context=None):
         if request.method == 'POST':
             form = JournalEntryForm(request.POST)
@@ -346,7 +326,7 @@ class JournalEntryAdmin(admin.ModelAdmin):
                 duration = None
                 if form.cleaned_data['duration_minutes']:
                     duration = timedelta(minutes=form.cleaned_data['duration_minutes'])
-                
+
                 JournalEntry.create_entry(
                     user=form.cleaned_data['user'],
                     content=form.cleaned_data['content'],
@@ -355,7 +335,7 @@ class JournalEntryAdmin(admin.ModelAdmin):
                     duration=duration,
                 )
                 self.message_user(request, 'Journal entry created successfully')
-        
+
         extra_context = extra_context or {}
         extra_context['entry_form'] = JournalEntryForm()
         return super().changelist_view(request, extra_context)
@@ -404,7 +384,7 @@ from journal.models import JournalEntry
 
 class EntryDetailView(LinkedDataModelView):
     """Serve individual journal entries as ActivityPub objects."""
-    
+
     def get_object(self):
         # Extract entry ID from URL
         entry_id = self.kwargs.get('pk')
@@ -542,23 +522,23 @@ from activitypub.models import Reference, ObjectContext
 
 class Command(BaseCommand):
     help = 'Fetch and display a remote journal entry'
-    
+
     def add_arguments(self, parser):
         parser.add_argument('uri', type=str, help='URI of the entry to fetch')
-    
+
     def handle(self, *args, **options):
         uri = options['uri']
-        
+
         # Create or get reference
         reference = Reference.make(uri)
-        
+
         # Resolve if not already cached
         if not reference.is_resolved:
             self.stdout.write(f"Fetching {uri}...")
             reference.resolve()
         else:
             self.stdout.write(f"Using cached data for {uri}")
-        
+
         # Access the ActivityStreams context
         obj = reference.get_by_context(ObjectContext)
         if obj:
