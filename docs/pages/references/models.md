@@ -20,6 +20,10 @@ These models manage the fundamental entities for ActivityPub federation.
     options:
       heading_level: 4
 
+::: activitypub.models.ActivityPubServer
+    options:
+      heading_level: 4
+
 ### Field Types
 
 ::: activitypub.models.ReferenceField
@@ -32,11 +36,7 @@ These models manage the fundamental entities for ActivityPub federation.
 
 ### Accounts and Actors
 
-::: activitypub.models.Account
-    options:
-      heading_level: 4
-
-::: activitypub.models.ActivityPubServer
+::: activitypub.models.ActorAccount
     options:
       heading_level: 4
 
