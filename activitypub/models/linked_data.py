@@ -17,7 +17,7 @@ from pyld import jsonld
 
 from ..exceptions import DocumentResolutionError, InvalidDomainError, ReferenceRedirect
 from ..settings import app_settings
-from ..signals import document_loaded
+from ..signals import document_loaded, reference_loaded
 from .base import generate_ulid
 from .fields import ReferenceField
 
@@ -250,6 +250,10 @@ class LinkedDataDocument(models.Model):
                 ]
                 for context_model in context_models:
                     context_model.load_from_graph(g=g, reference=reference)
+
+                reference_loaded.send_robust(
+                    document=self, reference=reference, graph=g, sender=self.__class__
+                )
 
             document_loaded.send_robust(document=self, sender=self.__class__)
 

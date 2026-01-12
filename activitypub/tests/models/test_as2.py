@@ -14,14 +14,7 @@ from activitypub.models import (
     ObjectContext,
     Reference,
 )
-from activitypub.tests.base import BaseTestCase, use_nodeinfo, silence_notifications
-
-
-class AccountTestCase(BaseTestCase):
-    def test_can_get_subject_name(self):
-        domain = factories.DomainFactory(name="example.com")
-        person = factories.AccountFactory(username="test", domain=domain)
-        self.assertEqual(person.subject_name, "@test@example.com")
+from activitypub.tests.base import BaseTestCase, silence_notifications, use_nodeinfo
 
 
 class ActorTestCase(BaseTestCase):

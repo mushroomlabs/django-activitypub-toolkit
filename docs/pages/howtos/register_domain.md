@@ -116,4 +116,4 @@ The server record tracks software family, version, and other metadata useful for
 
 ## Integration with Actors
 
-Domains link to actors through the `Account` model. When you register an account, you specify which domain it belongs to. See [Register an Account](register_account.md) for details.
+Domains link to actors through the reference system. Each actor's `Reference` object stores the domain information, which is used for WebFinger discovery and federation routing. The `ActorAccount` model provides authentication capabilities and links directly to an `ActorContext`, with the domain information accessible through the actor's reference.

@@ -1,9 +1,9 @@
 from django.contrib import admin
 
 from .. import models
+from ..models.collections import BaseCollectionContext
 from . import actions, filters
 from .base import ContextModelAdmin
-from ..models.collections import BaseCollectionContext
 
 
 @admin.register(models.Reference)
@@ -21,6 +21,9 @@ class LinkedDataDocumentAdmin(admin.ModelAdmin):
     list_display = ("reference",)
     search_fields = ("reference__uri",)
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(models.ActorContext)
 class ActorAdmin(admin.ModelAdmin):
@@ -34,12 +37,15 @@ class ActorAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(models.Account)
-class AccountAdmin(admin.ModelAdmin):
-    list_display = ("actor", "username", "domain")
-    list_select_related = ("actor", "domain")
-    list_filter = (filters.AccountDomainFilter,)
-    search_fields = ("username", "domain__name")
+@admin.register(models.ActorAccount)
+class ActorAccountAdmin(admin.ModelAdmin):
+    list_display = ("actor", "username")
+    list_select_related = ("actor", "actor__reference__domain")
+    search_fields = ("actor__preferred_username", "actor__reference__domain__name")
+
+    @admin.display(description="Username")
+    def username(self, obj):
+        return obj.get_username()
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -273,7 +279,6 @@ __all__ = [
     "ActivityPubServerAdmin",
     "SecV1ContextAdmin",
     "DomainAdmin",
-    "AccountAdmin",
     "ActorAdmin",
     "ActivityAdmin",
     "FollowRequestAdmin",

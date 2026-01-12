@@ -16,7 +16,7 @@ from activitypub.factories import (
 from activitypub.models import Activity, Actor, Notification
 from activitypub.tasks import clear_processed_messages, process_standard_activity_flows
 
-from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase, use_nodeinfo, silence_notifications
+from .base import TEST_DOCUMENTS_FOLDER, BaseTestCase, silence_notifications, use_nodeinfo
 
 
 class CeleryConfigurationTestCase(TestCase):
@@ -43,7 +43,7 @@ class CeleryConfigurationTestCase(TestCase):
 class NotificationProcessingTestCase(BaseTestCase):
     def setUp(self):
         self.domain = DomainFactory(scheme="http", name="testserver", local=True, port=80)
-        self.account = AccountFactory(username="bob", domain=self.domain)
+        self.actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
 
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
@@ -61,7 +61,7 @@ class NotificationProcessingTestCase(BaseTestCase):
         )
         message = NotificationFactory(
             sender__uri="https://remote.example.com/users/alice",
-            target=self.account.actor.inbox,
+            target=self.actor.inbox,
             resource=document.reference,
         )
 

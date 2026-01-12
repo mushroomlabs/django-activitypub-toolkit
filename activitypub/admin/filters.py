@@ -3,7 +3,7 @@ from django.contrib import admin
 from .. import models
 
 
-class AccountDomainFilter(admin.SimpleListFilter):
+class DomainFilter(admin.SimpleListFilter):
     title = "Local"
 
     parameter_name = "local"

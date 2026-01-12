@@ -1,8 +1,8 @@
-from activitypub.contexts import AS2, SEC_V1_CONTEXT, RDF, SECv1
-from activitypub.models import CollectionContext, CollectionPageContext, Reference
-
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
+
+from activitypub.contexts import AS2, RDF, SEC_V1_CONTEXT, SECv1
+from activitypub.models import CollectionContext, CollectionPageContext, Reference
 
 from .core import ReferenceProjection, use_context
 

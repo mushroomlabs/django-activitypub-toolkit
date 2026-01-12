@@ -219,4 +219,4 @@ With existing content federated, you can:
 
 - [Handle incoming activities](handle_incoming_activities.md) from other servers
 - [Send activities](send_activities.md) to publish new content
-- Set up [WebFinger discovery](register_account.md#integration-with-webfinger) for user lookup
+- Review the [integration tutorial](../tutorials/integration_with_existing_project.md#webfinger-discovery) for WebFinger discovery setup

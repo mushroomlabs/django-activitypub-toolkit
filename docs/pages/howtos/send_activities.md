@@ -477,4 +477,4 @@ With activity publishing working, you can:
 
 - [Handle incoming activities](handle_incoming_activities.md) from other servers
 - [Block spam](block_spam.md) from malicious servers
-- Set up [WebFinger discovery](register_account.md) for user lookup
+- Review the [integration tutorial](../tutorials/integration_with_existing_project.md#webfinger-discovery) for WebFinger discovery setup

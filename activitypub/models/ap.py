@@ -6,7 +6,6 @@ from typing import Optional
 import requests
 from django.db import models, transaction
 from django.db.models import Case, F, Q, Value, When
-from django.db.models.functions import Concat
 from model_utils.choices import Choices
 from model_utils.managers import QueryManager
 from model_utils.models import StatusModel, TimeStampedModel
@@ -20,20 +19,6 @@ from .collections import CollectionContext, CollectionPageContext
 from .linked_data import Domain, Notification, Reference
 
 logger = logging.getLogger(__name__)
-
-
-class AccountManager(models.Manager):
-    def get_queryset(self) -> models.QuerySet:
-        qs = super().get_queryset()
-        return qs.annotate(
-            _subject_name=Concat(Value("@"), "username", Value("@"), "domain__name"),
-            local=F("domain__local"),
-        )
-
-    def get_by_subject_name(self, subject_name):
-        username, domain = subject_name.split("@", 1)
-        qs = super().get_queryset()
-        return qs.filter(username=username, domain__name=domain).get()
 
 
 class Actor(ActorContext):
@@ -484,25 +469,6 @@ class ActivityPubServer(models.Model):
         return self.domain.url
 
 
-class Account(models.Model):
-    actor = models.OneToOneField(Actor, related_name="account", on_delete=models.CASCADE)
-    domain = models.ForeignKey(Domain, related_name="accounts", on_delete=models.CASCADE)
-    username = models.CharField(max_length=200, db_index=True)
-
-    objects = AccountManager()
-    local = QueryManager(domain__local=True)
-
-    @property
-    def subject_name(self):
-        return getattr(self, "_subject_name", f"@{self.username}@{self.domain.netloc}")
-
-    def __str__(self):
-        return self.subject_name
-
-    class Meta:
-        unique_together = ("domain", "username")
-
-
 class FollowRequest(StatusModel, TimeStampedModel):
     STATUS = Choices("submitted", "blocked", "accepted", "rejected")
     follower = models.ForeignKey(Reference, related_name="+", on_delete=models.CASCADE)
@@ -588,10 +554,4 @@ class FollowRequest(StatusModel, TimeStampedModel):
         unique_together = ("follower", "followed", "activity")
 
 
-__all__ = (
-    "Account",
-    "Actor",
-    "Activity",
-    "ActivityPubServer",
-    "FollowRequest",
-)
+__all__ = ("Actor", "Activity", "ActivityPubServer", "FollowRequest")

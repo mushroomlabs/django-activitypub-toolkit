@@ -160,7 +160,7 @@ class CollectionContext(BaseCollectionContext):
     @transaction.atomic
     def make_page(self):
         reference = CollectionPageContext.generate_reference(domain=self.reference.domain)
-        new_page = CollectionPageContext(reference=reference, part_of=self.reference)
+        new_page = CollectionPageContext.make(reference=reference, part_of=self.reference)
 
         if self.first is None:
             self.first = reference
@@ -169,7 +169,7 @@ class CollectionContext(BaseCollectionContext):
         if self.last is not None:
             last_page = CollectionPageContext.objects.filter(reference=self.last).first()
             last_page.next = reference
-            new_page.previous = last_page
+            new_page.previous = last_page.reference
             last_page.save()
         else:
             self.last = reference
@@ -249,7 +249,7 @@ class CollectionPageContext(BaseCollectionContext):
         if current_page.collection_items.count() < self.PAGE_SIZE:
             return current_page
 
-        return self.part_of.get_by_context(CollectionContext).make_new_page()
+        return self.part_of.get_by_context(CollectionContext).make_page()
 
     @classmethod
     def generate_reference(cls, domain):

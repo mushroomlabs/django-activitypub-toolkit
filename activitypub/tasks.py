@@ -7,9 +7,7 @@ from django.db import transaction
 from .contexts import AS2
 from .exceptions import DropMessage, UnprocessableJsonLd
 from .models import (
-    Account,
     Activity,
-    ActorContext,
     CollectionContext,
     LinkedDataDocument,
     Notification,
@@ -48,13 +46,7 @@ def webfinger_lookup(subject_name: str):
                 uri = link.get("href")
                 with transaction.atomic():
                     reference = Reference.make(uri)
-                    reference.resolve()
-
-                    actor = reference.get_by_context(ActorContext)
-                    if actor:
-                        Account.objects.get_or_create(
-                            actor=actor, domain=reference.domain, defaults={"username": username}
-                        )
+                    reference.resolve(force=True)
 
     except (requests.RequestException, ValueError, KeyError) as e:
         logger.warning(f"Webfinger lookup failed for {subject_name}: {e}")

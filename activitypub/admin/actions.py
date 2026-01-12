@@ -34,7 +34,15 @@ def process_notifications(modeladmin, request, queryset):
     for notification in queryset:
         try:
             assert not notification.is_processed, f"{notification} has been processed already"
-            result = tasks.send_notification(notification.id)
+            action = (
+                tasks.send_notification
+                if notification.sender.is_local
+                else tasks.process_incoming_notification
+            )
+
+            result = action(notification.id)
+            assert result is not None, "Notification {notification} was skipped"
+
             ok = result.result == models.NotificationProcessResult.Types.OK
             assert ok, f"{result.get_result_display()} result for {notification.id}"
             successful += 1

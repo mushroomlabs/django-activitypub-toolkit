@@ -1,4 +1,5 @@
 from django.contrib import admin
+
 from activitypub.models.fields import ReferenceField
 
 

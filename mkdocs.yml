@@ -47,7 +47,6 @@ nav:
       - Handle Incoming Activities: howtos/handle_incoming_activities.md
       - Send Activities: howtos/send_activities.md
       - Register Domain: howtos/register_domain.md
-      - Register account: howtos/register_account.md
       - Block Spam and Moderate: howtos/block_spam.md
   - FAQ: faq.md
 

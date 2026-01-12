@@ -80,6 +80,11 @@ class CollectionFactory(BaseActivityStreamsObjectFactory):
 
 class ActorFactory(BaseActivityStreamsObjectFactory):
     type = models.Actor.Types.PERSON
+    preferred_username = factory.Sequence(lambda n: f"test-user-{n:03}")
+    reference = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(lambda o: f"/users/{o.factory_parent.preferred_username}"),
+    )
     inbox = factory.SubFactory(ReferenceFactory)
     outbox = factory.SubFactory(ReferenceFactory)
     followers = factory.SubFactory(ReferenceFactory)
@@ -96,37 +101,55 @@ class ActorFactory(BaseActivityStreamsObjectFactory):
         model = models.Actor
 
 
-class AccountFactory(factory.django.DjangoModelFactory):
+class ActorAccountFactory(factory.django.DjangoModelFactory):
+    password = "!"
     actor = factory.SubFactory(
         ActorFactory,
-        preferred_username=factory.SelfAttribute("..username"),
-        reference__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.preferred_username}"
-        ),
-        reference__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
-        inbox__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.preferred_username}/inbox"
-        ),
-        inbox__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
-        outbox__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.preferred_username}/outbox"
-        ),
-        outbox__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
-        followers__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.preferred_username}/followers"
-        ),
-        followers__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
-        following__path=factory.LazyAttribute(
-            lambda o: f"/users/{o.factory_parent.preferred_username}/following"
-        ),
-        following__domain=factory.LazyAttribute(lambda o: o.factory_parent.factory_parent.domain),
+        reference__domain=factory.SubFactory(DomainFactory, local=True),
     )
 
-    username = factory.Sequence(lambda n: f"test-user-{n:03}")
-    domain = factory.SubFactory(DomainFactory, local=True)
+    class Meta:
+        model = models.ActorAccount
+
+
+class AccountFactory(factory.django.DjangoModelFactory):
+    type = models.ActorContext.Types.PERSON
+    reference = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(lambda o: f"/users/{o.factory_parent.preferred_username}"),
+    )
+    preferred_username = factory.Sequence(lambda n: f"test-user-{n:03}")
+    inbox = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/inbox"
+        ),
+        domain=factory.LazyAttribute(lambda o: o.factory_parent.reference.domain),
+    )
+    outbox = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/outbox"
+        ),
+        domain=factory.LazyAttribute(lambda o: o.factory_parent.reference.domain),
+    )
+    followers = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/followers"
+        ),
+        domain=factory.LazyAttribute(lambda o: o.factory_parent.reference.domain),
+    )
+    following = factory.SubFactory(
+        ReferenceFactory,
+        path=factory.LazyAttribute(
+            lambda o: f"/users/{o.factory_parent.preferred_username}/following"
+        ),
+        domain=factory.LazyAttribute(lambda o: o.factory_parent.reference.domain),
+    )
 
     class Meta:
-        model = models.Account
+        model = models.ActorContext
 
 
 class ObjectFactory(BaseActivityStreamsObjectFactory):

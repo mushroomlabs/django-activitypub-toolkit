@@ -40,9 +40,6 @@ to the Fediverse through your actor's outbox.
 **[Register a Domain](register_domain.md)** - Create and configure
 domain records for local or remote federation endpoints.
 
-**[Register an Account](register_account.md)** - Set up ActivityPub
-accounts and link them to actors for federation.
-
 **[Block Spam and Moderate](block_spam.md)** - Manage spam prevention,
 domain blocking, and content moderation tools.
 

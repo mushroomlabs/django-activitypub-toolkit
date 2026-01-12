@@ -143,22 +143,24 @@ The nullable reference field allows existing posts to coexist without requiring 
 
 ## Linking Users to Actors
 
-Users who create content need ActivityPub actor representations. Create a signal to generate actors automatically for new users:
+Users who create content need ActivityPub actor representations. The toolkit provides `ActorAccount`, which extends Django's `AbstractBaseUser` and directly links to an `ActorContext`. This eliminates the need for a separate Account model while providing authentication capabilities.
+
+Create a signal to generate actors automatically for new users:
 
 ```python
 # blog/signals.py
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from activitypub.models import Account, ActorContext, CollectionContext, Domain, Reference
+from activitypub.models import ActorAccount, ActorContext, CollectionContext, Domain, Reference
 
 @receiver(post_save, sender=User)
 def create_user_actor(sender, instance, created, **kwargs):
     if not created:
         return
     
-    # Check if user already has an account
-    if hasattr(instance, 'activitypub_account'):
+    # Check if user already has an actor account
+    if ActorAccount.objects.filter(actor__preferred_username=instance.username).exists():
         return
     
     domain = Domain.objects.get(local=True)
@@ -210,12 +212,8 @@ def create_user_actor(sender, instance, created, **kwargs):
     actor.following = following_ref
     actor.save()
     
-    # Create Account record linking actor to domain
-    Account.objects.create(
-        actor=actor,
-        domain=domain,
-        username=username
-    )
+    # Create ActorAccount for authentication and WebFinger discovery
+    ActorAccount.objects.create(actor=actor)
 ```
 
 Register the signal in your app configuration:
@@ -232,7 +230,7 @@ class BlogConfig(AppConfig):
         from . import signals
 ```
 
-New users automatically receive ActivityPub actors. The Account model links the actor to your domain and username for WebFinger discovery.
+New users automatically receive ActivityPub actors. The `ActorAccount` model provides authentication capabilities and enables WebFinger discovery through the actor's `preferred_username` and domain information stored in the reference.
 
 ## Backfilling Actors for Existing Users
 
@@ -242,14 +240,18 @@ Create a management command to create actors for existing users:
 # blog/management/commands/backfill_actors.py
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from activitypub.models import Account
+from activitypub.models import ActorAccount
 
 class Command(BaseCommand):
     help = 'Create ActivityPub actors for existing users'
 
     def handle(self, *args, **options):
+        # Find users without actor accounts
+        existing_usernames = ActorAccount.objects.values_list(
+            'actor__preferred_username', flat=True
+        )
         users_without_accounts = User.objects.exclude(
-            id__in=Account.objects.values_list('actor__reference__user_profile__user_id', flat=True)
+            username__in=existing_usernames
         )
         
         count = 0
@@ -276,7 +278,7 @@ When creating new posts, generate a reference and attach ActivityPub context:
 
 ```python
 from django.utils import timezone
-from activitypub.models import ObjectContext, Reference, Domain
+from activitypub.models import ObjectContext, Reference, Domain, ActorAccount
 
 def create_post(user, title, content):
     # Get the local domain
@@ -293,8 +295,8 @@ def create_post(user, title, content):
         reference=post_ref
     )
     
-    # Get the user's actor
-    account = Account.objects.get(username=user.username, domain__local=True)
+    # Get the user's actor account
+    actor_account = ActorAccount.objects.get(actor__preferred_username=user.username)
     
     # Create ActivityPub context for the post
     obj_context = ObjectContext.make(
@@ -303,7 +305,7 @@ def create_post(user, title, content):
         name=title,
         content=content,
         published=post.published_at,
-        attributed_to=account.actor.reference
+        attributed_to=actor_account.actor.reference
     )
     
     return post
@@ -318,7 +320,7 @@ Create a management command to generate references for existing posts:
 ```python
 # blog/management/commands/backfill_post_references.py
 from django.core.management.base import BaseCommand
-from activitypub.models import ObjectContext, Reference, Domain, Account
+from activitypub.models import ObjectContext, Reference, Domain, ActorAccount
 from blog.models import Post
 
 class Command(BaseCommand):
@@ -333,15 +335,14 @@ class Command(BaseCommand):
             # Generate reference
             post_ref = ObjectContext.generate_reference(domain)
             
-            # Get author's account
+            # Get author's actor account
             try:
-                account = Account.objects.get(
-                    username=post.author.username,
-                    domain__local=True
+                actor_account = ActorAccount.objects.get(
+                    actor__preferred_username=post.author.username
                 )
-            except Account.DoesNotExist:
+            except ActorAccount.DoesNotExist:
                 self.stdout.write(
-                    self.style.WARNING(f'No account for user {post.author.username}')
+                    self.style.WARNING(f'No actor account for user {post.author.username}')
                 )
                 continue
             
@@ -352,7 +353,7 @@ class Command(BaseCommand):
                 name=post.title,
                 content=post.content,
                 published=post.published_at,
-                attributed_to=account.actor.reference
+                attributed_to=actor_account.actor.reference
             )
             
             # Link to post
@@ -378,12 +379,12 @@ All posts now have federated representations accessible via the catch-all view.
 When creating new posts, publish Create activities to followers' inboxes:
 
 ```python
-from activitypub.models import ActivityContext, Notification
+from activitypub.models import ActivityContext, Notification, ActorAccount, Domain
 
 def publish_post_to_followers(post):
-    # Get the author's actor
-    account = Account.objects.get(username=post.author.username, domain__local=True)
-    actor = account.actor
+    # Get the author's actor account
+    actor_account = ActorAccount.objects.get(actor__preferred_username=post.author.username)
+    actor = actor_account.actor
     
     # Generate activity reference
     domain = Domain.objects.get(local=True)
@@ -393,7 +394,7 @@ def publish_post_to_followers(post):
     activity = ActivityContext.make(
         reference=activity_ref,
         type=ActivityContext.Types.CREATE,
-        actor=account.actor.reference,
+        actor=actor.reference,
         object=post.reference,
         published=timezone.now()
     )
@@ -402,7 +403,7 @@ def publish_post_to_followers(post):
     for inbox_ref in actor.followers_inboxes:
         Notification.objects.create(
             resource=activity.reference,
-            sender=account.actor.reference,
+            sender=actor.reference,
             target=inbox_ref
         )
 ```
@@ -487,7 +488,7 @@ The handler runs after the toolkit has already added the reply to the parent pos
 
 ## WebFinger Discovery
 
-The WebFinger view enables account discovery across the Fediverse. With the discovery URLs configured earlier and Account records created for your users, accounts are automatically discoverable at `@username@yourblog.com`.
+The WebFinger view enables account discovery across the Fediverse. With the discovery URLs configured earlier and `ActorAccount` records created for your users, actors are automatically discoverable at `@username@yourblog.com`. The toolkit resolves the username and domain from the actor's `preferred_username` field and the reference's domain.
 
 You can customize the WebFinger response by subclassing the view:
 
@@ -495,9 +496,9 @@ You can customize the WebFinger response by subclassing the view:
 from activitypub.views import Webfinger
 
 class CustomWebfinger(Webfinger):
-    def get_profile_page_url(self, request, account):
+    def get_profile_page_url(self, request, actor_account):
         """Add a link to the user's HTML profile page."""
-        return f"https://yourblog.com/@{account.username}"
+        return f"https://yourblog.com/@{actor_account.actor.preferred_username}"
 ```
 
 Update your URLs:

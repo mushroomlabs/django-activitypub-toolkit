@@ -521,10 +521,10 @@ from activitypub.models import ActorContext
 
 
 class GenericWebfinger(Webfinger):
-    """WebFinger for generic server without Account model."""
+    """WebFinger for generic server without ActorAccount model."""
     
     def resolve_account(self, request, subject_name):
-        """Resolve actor by username instead of Account."""
+        """Resolve actor by username instead of ActorAccount."""
         try:
             username, domain = subject_name.split('@')
         except ValueError:

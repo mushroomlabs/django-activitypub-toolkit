@@ -80,7 +80,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     duration = models.DurationField(null=True, blank=True)
     sensitive = models.BooleanField(null=True, blank=True)
     media_type = models.CharField(max_length=64, null=True, blank=True)
-    url = models.URLField(null=True, blank=True)
+    url = models.URLField(max_length=2083, null=True, blank=True)
     url_link = ReferenceField()
 
     context = ReferenceField()

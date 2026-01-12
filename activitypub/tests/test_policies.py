@@ -3,7 +3,7 @@ from django.test import TestCase, override_settings
 
 from activitypub import models
 from activitypub.exceptions import RejectedFollowRequest
-from activitypub.factories import ActorFactory, ReferenceFactory, DomainFactory
+from activitypub.factories import ActorFactory, DomainFactory, ReferenceFactory
 from activitypub.tests.base import silence_notifications, use_nodeinfo, with_remote_reference
 
 

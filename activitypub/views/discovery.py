@@ -1,7 +1,7 @@
 from django.http import Http404, HttpResponse, JsonResponse
 from django.views.generic import View
 
-from ..models import Account, Domain
+from ..models import ActorAccount, Domain
 from ..settings import app_settings
 
 
@@ -37,7 +37,9 @@ class NodeInfo20(View):
     def get_usage(self, request):
         default_domain = Domain.get_default()
         host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
-        return {"users": {"total": Account.objects.filter(domain__name=host).count()}}
+        return {
+            "users": {"total": ActorAccount.objects.filter(reference__domain__name=host).count()}
+        }
 
     def get(self, request):
         return JsonResponse(
@@ -63,7 +65,9 @@ class NodeInfo21(View):
     def get_usage(self, request):
         default_domain = Domain.get_default()
         host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
-        return {"users": {"total": Account.objects.filter(domain__name=host).count()}}
+        return {
+            "users": {"total": ActorAccount.objects.filter(reference__domain__name=host).count()}
+        }
 
     def get(self, request):
         return JsonResponse(
@@ -85,8 +89,8 @@ class NodeInfo21(View):
 class Webfinger(View):
     def resolve_account(self, request, subject_name):
         try:
-            return Account.objects.get_by_subject_name(subject_name)
-        except Account.DoesNotExist:
+            return ActorAccount.objects.get_by_subject_name(subject_name)
+        except ActorAccount.DoesNotExist:
             raise Http404
 
     def get_profile_page_url(self, request, account):

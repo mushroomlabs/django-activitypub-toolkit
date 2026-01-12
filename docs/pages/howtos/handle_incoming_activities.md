@@ -330,4 +330,4 @@ With custom activity handlers implemented, you can:
 
 - [Send activities](send_activities.md) to publish your content
 - [Block spam](block_spam.md) from malicious servers
-- Set up [WebFinger discovery](register_account.md) for user lookup
+- Review the [integration tutorial](../tutorials/integration_with_existing_project.md#webfinger-discovery) for WebFinger discovery setup

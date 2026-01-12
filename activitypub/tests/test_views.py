@@ -17,9 +17,9 @@ from activitypub.factories import (
 )
 from activitypub.tests.base import (
     BaseTestCase,
+    silence_notifications,
     use_nodeinfo,
     with_remote_reference,
-    silence_notifications,
 )
 
 CONTENT_TYPE = "application/ld+json"
@@ -37,10 +37,12 @@ class InboxViewTestCase(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
         self.domain = DomainFactory(scheme="http", name="testserver", local=True)
-        self.account = AccountFactory(
-            username="bob", domain=self.domain, actor__manually_approves_followers=True
+        self.actor = AccountFactory(
+            preferred_username="bob",
+            reference__domain=self.domain,
+            manually_approves_followers=True,
         )
-        CollectionFactory(reference=self.account.actor.inbox)
+        CollectionFactory(reference=self.actor.inbox)
 
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
@@ -97,7 +99,7 @@ class InboxViewTestCase(TransactionTestCase):
         follow_activity = ActivityFactory(
             type=models.Activity.Types.FOLLOW,
             actor=remote_actor.reference,
-            object=self.account.actor.reference,
+            object=self.actor.reference,
         )
         follow_request = models.FollowRequest.objects.create(
             follower=follow_activity.actor,
@@ -124,11 +126,11 @@ class InboxViewTestCase(TransactionTestCase):
         self.assertEqual(follow_request.status, models.FollowRequest.STATUS.accepted)
 
         # Verify collections were updated
-        followers_collection = models.CollectionContext.make(self.account.actor.followers)
+        followers_collection = models.CollectionContext.make(self.actor.followers)
         following_collection = models.CollectionContext.make(remote_actor.following)
 
         self.assertTrue(followers_collection.contains(remote_actor.reference))
-        self.assertTrue(following_collection.contains(self.account.actor.reference))
+        self.assertTrue(following_collection.contains(self.actor.reference))
 
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
@@ -203,20 +205,20 @@ class InboxViewTestCase(TransactionTestCase):
         follow_activity = ActivityFactory(
             type=models.Activity.Types.FOLLOW,
             actor=remote_actor.reference,
-            object=self.account.actor.reference,
+            object=self.actor.reference,
         )
         follow_activity.do()
 
         # Accept the follow
         accept_activity = ActivityFactory(
             type=models.Activity.Types.ACCEPT,
-            actor=self.account.actor.reference,
+            actor=self.actor.reference,
             object=follow_activity.reference,
         )
         accept_activity.do()
 
         # Verify follow was established
-        followers_collection = models.CollectionContext.make(self.account.actor.followers)
+        followers_collection = models.CollectionContext.make(self.actor.followers)
         self.assertTrue(followers_collection.contains(remote_actor.reference))
 
         # Now undo the follow
@@ -234,7 +236,7 @@ class InboxViewTestCase(TransactionTestCase):
         self.assertEqual(response.status_code, 202)
 
         # Verify follow was undone
-        followers_collection = models.CollectionContext.make(self.account.actor.followers)
+        followers_collection = models.CollectionContext.make(self.actor.followers)
         self.assertFalse(followers_collection.contains(remote_actor.reference))
 
         # Verify follow request was deleted
@@ -501,14 +503,14 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             },
         }
 
-        account = AccountFactory(username="alice", domain=self.domain)
-        actor = account.actor
-        actor.name = "Alice Activitypub"
-        actor.summary = "Just a simple test actor"
-        actor.preferred_username = "alice"
-        actor.published = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        actor.save()
-
+        actor = AccountFactory(
+            preferred_username="alice",
+            reference__path="/users/alice",
+            reference__domain=self.domain,
+            name="Alice Activitypub",
+            summary="Just a simple test actor",
+            published=datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
         key_ref = models.Reference.make("http://testserver/keys/alice-main-key")
         key = SecV1ContextFactory(reference=key_ref, public_key_pem="ALICE_KEY_PEM")
         key.owner.add(actor.reference)
@@ -521,8 +523,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertEqual(response.json(), expected)
 
     def test_can_serialize_note_object(self):
-        account = AccountFactory(username="bob", domain=self.domain)
-        actor = account.actor
+        actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
 
         note = models.ObjectContext.objects.create(
             reference=models.Reference.make("http://testserver/notes/123"),
@@ -576,8 +577,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             "published": "2024-11-16T14:30:00+00:00",
         }
 
-        account = AccountFactory(username="alice", domain=self.domain)
-        actor = account.actor
+        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
 
         note = models.ObjectContext.objects.create(
             reference=models.Reference.make("http://testserver/notes/789"),
@@ -635,8 +635,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         """
         a Question object is serialized with oneOf choices and embedded replies collection
         """
-        account = AccountFactory(username="alice", domain=self.domain)
-        actor = account.actor
+        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
 
         # Create the Question object
         question = models.ObjectContext.objects.create(
@@ -695,8 +694,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         Test Question with choices that have replies collections.
         Each choice should embed its replies collection showing id and totalItems.
         """
-        account = AccountFactory(username="alice", domain=self.domain)
-        actor = account.actor
+        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
 
         # Create the Question
         question = models.ObjectContext.objects.create(
@@ -780,8 +778,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
          a Note object shows replies as reference, but accessing
         the collection URL directly returns it with embedded first page.
         """
-        account = AccountFactory(username="bob", domain=self.domain)
-        actor = account.actor
+        actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
 
         # Create a Note
         note = models.ObjectContext.objects.create(
@@ -865,8 +862,8 @@ class ActivityOutboxTestCase(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
         self.domain = DomainFactory(scheme="http", name="testserver", local=True)
-        self.account = AccountFactory(username="bob", domain=self.domain)
-        CollectionFactory(reference=self.account.actor.outbox)
+        self.actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
+        CollectionFactory(reference=self.actor.outbox)
 
     @httpretty.activate
     @silence_notifications("https://remote.example.com")
@@ -881,7 +878,7 @@ class ActivityOutboxTestCase(TransactionTestCase):
         }
 
         response = self.client.post(
-            self.account.actor.outbox,
+            self.actor.outbox,
             data=json.dumps(follow_activity),
             content_type="application/ld+json",
         )
@@ -893,7 +890,7 @@ class ActivityOutboxTestCase(TransactionTestCase):
         # Note: The activity ID will be assigned by the server
         self.assertTrue(
             models.FollowRequest.objects.filter(
-                follower=self.account.actor.reference,
+                follower=self.actor.reference,
                 followed__uri=alice,
             ).exists(),
             "FollowRequest should be created",
