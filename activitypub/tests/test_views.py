@@ -7,7 +7,6 @@ from rest_framework.test import APIClient
 
 from activitypub import models
 from activitypub.factories import (
-    AccountFactory,
     ActivityFactory,
     ActorFactory,
     CollectionFactory,
@@ -37,7 +36,7 @@ class InboxViewTestCase(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
         self.domain = DomainFactory(scheme="http", name="testserver", local=True)
-        self.actor = AccountFactory(
+        self.actor = ActorFactory(
             preferred_username="bob",
             reference__domain=self.domain,
             manually_approves_followers=True,
@@ -503,7 +502,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             },
         }
 
-        actor = AccountFactory(
+        actor = ActorFactory(
             preferred_username="alice",
             reference__path="/users/alice",
             reference__domain=self.domain,
@@ -523,7 +522,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertEqual(response.json(), expected)
 
     def test_can_serialize_note_object(self):
-        actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
+        actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
 
         note = models.ObjectContext.objects.create(
             reference=models.Reference.make("http://testserver/notes/123"),
@@ -577,7 +576,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
             "published": "2024-11-16T14:30:00+00:00",
         }
 
-        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
+        actor = ActorFactory(preferred_username="alice", reference__domain=self.domain)
 
         note = models.ObjectContext.objects.create(
             reference=models.Reference.make("http://testserver/notes/789"),
@@ -635,7 +634,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         """
         a Question object is serialized with oneOf choices and embedded replies collection
         """
-        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
+        actor = ActorFactory(preferred_username="alice", reference__domain=self.domain)
 
         # Create the Question object
         question = models.ObjectContext.objects.create(
@@ -694,7 +693,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         Test Question with choices that have replies collections.
         Each choice should embed its replies collection showing id and totalItems.
         """
-        actor = AccountFactory(preferred_username="alice", reference__domain=self.domain)
+        actor = ActorFactory(preferred_username="alice", reference__domain=self.domain)
 
         # Create the Question
         question = models.ObjectContext.objects.create(
@@ -778,7 +777,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
          a Note object shows replies as reference, but accessing
         the collection URL directly returns it with embedded first page.
         """
-        actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
+        actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
 
         # Create a Note
         note = models.ObjectContext.objects.create(
@@ -862,7 +861,7 @@ class ActivityOutboxTestCase(TransactionTestCase):
     def setUp(self):
         self.client = APIClient()
         self.domain = DomainFactory(scheme="http", name="testserver", local=True)
-        self.actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
+        self.actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
         CollectionFactory(reference=self.actor.outbox)
 
     @httpretty.activate

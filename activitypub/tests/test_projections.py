@@ -300,7 +300,7 @@ class CollectionWithFirstPageProjectionTestCase(BaseTestCase):
         )
 
     def test_collection_embeds_first_page(self):
-        factories.AccountFactory(preferred_username="alice", reference__domain=self.domain)
+        factories.ActorFactory(preferred_username="alice", reference__domain=self.domain)
 
         # Create a collection with items
         collection_ref = models.Reference.make("http://testserver/collections/test")
@@ -341,7 +341,7 @@ class ActorProjectionTestCase(BaseTestCase):
     def test_actor_includes_public_key_expanded(self):
         """Test that ActorProjection includes embedded public key in expanded form"""
         domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
-        actor = factories.AccountFactory(preferred_username="alice", reference__domain=domain)
+        actor = factories.ActorFactory(preferred_username="alice", reference__domain=domain)
 
         # Create a public key for the actor
         keypair_ref = models.Reference.make("http://testserver/keys/alice-main-key")
@@ -372,7 +372,7 @@ class ActorProjectionTestCase(BaseTestCase):
     def test_actor_includes_public_key_compacted(self):
         """Test that ActorProjection includes compacted public key with proper context"""
         domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
-        actor = factories.AccountFactory(preferred_username="alice", reference__domain=domain)
+        actor = factories.ActorFactory(preferred_username="alice", reference__domain=domain)
 
         # Create a public key for the actor
         keypair_ref = models.Reference.make("http://testserver/keys/alice-main-key")
@@ -420,7 +420,7 @@ class CompactedOutputTestCase(BaseTestCase):
     def test_compacted_output_has_context(self):
         """Test that compacted output includes @context"""
         domain = factories.DomainFactory(scheme="http", name="testserver", local=True, port=80)
-        actor = factories.AccountFactory(preferred_username="bob", reference__domain=domain)
+        actor = factories.ActorFactory(preferred_username="bob", reference__domain=domain)
 
         note = models.ObjectContext.objects.create(
             reference=models.Reference.make("http://testserver/notes/456"),

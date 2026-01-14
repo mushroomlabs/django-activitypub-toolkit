@@ -37,15 +37,16 @@ class ActorAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(models.ActorAccount)
-class ActorAccountAdmin(admin.ModelAdmin):
-    list_display = ("actor", "username")
+@admin.register(models.Identity)
+class IdentityAdmin(admin.ModelAdmin):
+    list_display = ("user", "actor", "handle", "is_primary")
+    list_filter = ("is_primary",)
     list_select_related = ("actor", "actor__reference__domain")
     search_fields = ("actor__preferred_username", "actor__reference__domain__name")
 
-    @admin.display(description="Username")
-    def username(self, obj):
-        return obj.get_username()
+    @admin.display(description="Subject Name")
+    def handle(self, obj):
+        return obj.actor.subject_name
 
     def has_change_permission(self, request, obj=None):
         return False

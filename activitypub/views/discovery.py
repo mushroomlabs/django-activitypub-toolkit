@@ -1,13 +1,13 @@
 from django.http import Http404, HttpResponse, JsonResponse
 from django.views.generic import View
 
-from ..models import ActorAccount, Domain
+from ..models import ActorContext, Domain
 from ..settings import app_settings
 
 
 class NodeInfo(View):
     """
-    Returns the well-known nodeinfo response, pointing to the 2.0 one
+    Returns the well-known nodeinfo response with links to the versions support
     """
 
     def get(self, request):
@@ -31,20 +31,21 @@ class NodeInfo(View):
 
 
 class NodeInfo20(View):
+    VERSION = "2.0"
+
     def get_metadata(self, request):
         return {}
 
     def get_usage(self, request):
         default_domain = Domain.get_default()
         host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
-        return {
-            "users": {"total": ActorAccount.objects.filter(reference__domain__name=host).count()}
-        }
+        actors = ActorContext.objects.filter(reference__domain__name=host)
+        return {"users": {"total": actors.exclude(user_account__isnull=True).count()}}
 
     def get(self, request):
         return JsonResponse(
             {
-                "version": "2.0",
+                "version": self.VERSION,
                 "software": {
                     "name": app_settings.NodeInfo.software_name,
                     "version": app_settings.NodeInfo.software_version,
@@ -58,47 +59,24 @@ class NodeInfo20(View):
         )
 
 
-class NodeInfo21(View):
-    def get_metadata(self, request):
-        return {}
-
-    def get_usage(self, request):
-        default_domain = Domain.get_default()
-        host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
-        return {
-            "users": {"total": ActorAccount.objects.filter(reference__domain__name=host).count()}
-        }
-
-    def get(self, request):
-        return JsonResponse(
-            {
-                "version": "2.1",
-                "software": {
-                    "name": app_settings.NodeInfo.software_name,
-                    "version": app_settings.NodeInfo.software_version,
-                },
-                "protocols": ["activitypub"],
-                "services": {"outbound": [], "inbound": []},
-                "openRegistrations": app_settings.Instance.open_registrations,
-                "metadata": self.get_metadata(request),
-                "usage": self.get_usage(request),
-            }
-        )
+class NodeInfo21(NodeInfo20):
+    # TODO: investigate this. Are there really no differences between the two versions?
+    VERSION = "2.1"
 
 
 class Webfinger(View):
-    def resolve_account(self, request, subject_name):
+    def resolve_actor(self, request, subject_name):
         try:
-            return ActorAccount.objects.get_by_subject_name(subject_name)
-        except ActorAccount.DoesNotExist:
+            return ActorContext.objects.get_by_subject_name(subject_name)
+        except ActorContext.DoesNotExist:
             raise Http404
 
-    def get_profile_page_url(self, request, account):
+    def get_profile_page_url(self, request, actor):
         return None
 
-    def related_links(self, request, account):
+    def related_links(self, request, actor):
         links = []
-        profile_page = self.get_profile_page_url(request, account)
+        profile_page = self.get_profile_page_url(request, actor)
         if profile_page:
             links.append(
                 {
@@ -111,7 +89,7 @@ class Webfinger(View):
             {
                 "rel": "self",
                 "type": "application/activity+json",
-                "href": account.actor.uri,
+                "href": actor.uri,
             }
         )
         return links
@@ -130,7 +108,7 @@ class Webfinger(View):
         subject_name = resource[5:]
 
         try:
-            account = self.resolve_account(request, subject_name)
+            actor = self.resolve_actor(request, subject_name)
         except Http404:
             return JsonResponse(
                 {"error": "account not found"}, content_type="application/jrd+json", status=404
@@ -139,9 +117,9 @@ class Webfinger(View):
         account_data = {
             "subject": f"acct:{subject_name}",
             "aliases": [
-                account.actor.uri,
+                actor.reference.uri,
             ],
-            "links": self.related_links(request, account),
+            "links": self.related_links(request, actor),
         }
 
         return JsonResponse(account_data, content_type="application/jrd+json")

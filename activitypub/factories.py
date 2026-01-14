@@ -1,9 +1,20 @@
 import factory
+from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save
 from django.utils import timezone
 from factory import fuzzy
 
 from . import models
+
+
+User = get_user_model()
+
+
+class UserFactory(factory.django.DjangoModelFactory):
+    username = factory.Sequence(lambda n: f"test-user-{n:02d}")
+
+    class Meta:
+        model = User
 
 
 class ContextModelSubFactory(factory.SubFactory):
@@ -85,40 +96,6 @@ class ActorFactory(BaseActivityStreamsObjectFactory):
         ReferenceFactory,
         path=factory.LazyAttribute(lambda o: f"/users/{o.factory_parent.preferred_username}"),
     )
-    inbox = factory.SubFactory(ReferenceFactory)
-    outbox = factory.SubFactory(ReferenceFactory)
-    followers = factory.SubFactory(ReferenceFactory)
-    following = factory.SubFactory(ReferenceFactory)
-
-    @factory.post_generation
-    def outbox_collection(obj, create, extracted, **kwargs):
-        if not create or not extracted:
-            return
-
-        models.CollectionContext.make(reference=obj.outbox)
-
-    class Meta:
-        model = models.Actor
-
-
-class ActorAccountFactory(factory.django.DjangoModelFactory):
-    password = "!"
-    actor = factory.SubFactory(
-        ActorFactory,
-        reference__domain=factory.SubFactory(DomainFactory, local=True),
-    )
-
-    class Meta:
-        model = models.ActorAccount
-
-
-class AccountFactory(factory.django.DjangoModelFactory):
-    type = models.ActorContext.Types.PERSON
-    reference = factory.SubFactory(
-        ReferenceFactory,
-        path=factory.LazyAttribute(lambda o: f"/users/{o.factory_parent.preferred_username}"),
-    )
-    preferred_username = factory.Sequence(lambda n: f"test-user-{n:03}")
     inbox = factory.SubFactory(
         ReferenceFactory,
         path=factory.LazyAttribute(
@@ -148,8 +125,15 @@ class AccountFactory(factory.django.DjangoModelFactory):
         domain=factory.LazyAttribute(lambda o: o.factory_parent.reference.domain),
     )
 
+    @factory.post_generation
+    def outbox_collection(obj, create, extracted, **kwargs):
+        if not create or not extracted:
+            return
+
+        models.CollectionContext.make(reference=obj.outbox)
+
     class Meta:
-        model = models.ActorContext
+        model = models.Actor
 
 
 class ObjectFactory(BaseActivityStreamsObjectFactory):
@@ -226,3 +210,15 @@ class FollowRequestFactory(factory.django.DjangoModelFactory):
 
     class Meta:
         model = models.FollowRequest
+
+
+class IdentityFactory(factory.django.DjangoModelFactory):
+    user = factory.SubFactory(UserFactory)
+    actor = factory.SubFactory(
+        ActorFactory,
+        preferred_username=factory.LazyAttribute(lambda o: o.factory_parent.user.username),
+    )
+    is_primary = True
+
+    class Meta:
+        model = models.Identity

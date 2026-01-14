@@ -51,8 +51,8 @@ def is_outbox_owner(actor_reference: Reference, uri):
     return Actor.objects.filter(reference=actor_reference, outbox__uri=uri).exists()
 
 
-@method_decorator(calculate_digest(), name="dispatch")
-@method_decorator(collect_signature(), name="dispatch")
+@method_decorator(calculate_digest, name="dispatch")
+@method_decorator(collect_signature, name="dispatch")
 class ActivityPubObjectDetailView(LinkedDataModelView):
     def get_projection_class(self, reference):
         if is_an_outbox(reference.uri):

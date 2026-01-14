@@ -2,6 +2,8 @@ import logging
 
 import rdflib
 from django.db import models
+from django.db.models import F, Value
+from django.db.models.functions import Concat
 from model_utils.managers import InheritanceManager
 from rdflib import RDF, Namespace
 
@@ -16,6 +18,25 @@ logger = logging.getLogger(__name__)
 AS2 = AS2_CONTEXT.namespace
 LDP = Namespace("http://www.w3.org/ns/ldp#")
 PURL_RELATIONSHIP = Namespace("http://purl.org/vocab/relationship#")
+
+
+class ActorManager(models.Manager):
+    def get_queryset(self) -> models.QuerySet:
+        qs = super().get_queryset()
+        return qs.annotate(
+            _subject_name=Concat(
+                Value("@"),
+                "preferred_username",
+                Value("@"),
+                "reference__domain__name",
+            ),
+            local=F("reference__domain__local"),
+        )
+
+    def get_by_subject_name(self, subject_name):
+        username, domain = subject_name.split("@", 1)
+        qs = super().get_queryset()
+        return qs.get(preferred_username=username, reference__domain__name=domain)
 
 
 class AbstractAs2ObjectContext(AbstractContextModel):
@@ -336,6 +357,14 @@ class ActorContext(BaseAs2ObjectContext):
         blank=True,
         on_delete=models.SET_NULL,
     )
+    objects = ActorManager()
+
+    @property
+    def subject_name(self):
+        try:
+            return self._subject_name
+        except AttributeError:
+            return f"@{self.preferred_username}@{self.reference.domain.name}"
 
     @property
     def followed_by(self):

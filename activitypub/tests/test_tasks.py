@@ -5,7 +5,6 @@ import httpretty
 from django.test import TestCase
 
 from activitypub.factories import (
-    AccountFactory,
     ActivityFactory,
     ActorFactory,
     DomainFactory,
@@ -43,7 +42,7 @@ class CeleryConfigurationTestCase(TestCase):
 class NotificationProcessingTestCase(BaseTestCase):
     def setUp(self):
         self.domain = DomainFactory(scheme="http", name="testserver", local=True, port=80)
-        self.actor = AccountFactory(preferred_username="bob", reference__domain=self.domain)
+        self.actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
 
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")

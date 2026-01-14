@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "django-activitypub-toolkit"
 version = "0.1.5"
-requires-python = ">= 3.10,<4"
+requires-python = ">= 3.10"
 description = "Django pluggable application to ActivityPub servers"
 authors = [{name = "Raphael Lullis", email = "raphael@mushroomlabs.com"}]
 keywords = ["django", "activitypub"]
