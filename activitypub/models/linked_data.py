@@ -133,6 +133,10 @@ class Reference(StatusModel):
         return not self.uri.startswith(self.SKOLEM_BASE_URI)
 
     @property
+    def is_blank_node(self):
+        return self.uri.startswith(self.SKOLEM_BASE_URI)
+
+    @property
     def as_rdf(self):
         return rdflib.URIRef(self.uri)
 
@@ -144,7 +148,7 @@ class Reference(StatusModel):
 
     @transaction.atomic()
     def resolve(self, force=False):
-        if self.is_local:
+        if self.is_blank_node or self.is_local:
             self.status = self.STATUS.resolved
             self.save()
             return
@@ -210,13 +214,21 @@ class LinkedDataDocument(models.Model):
     reference = models.OneToOneField(Reference, related_name="document", on_delete=models.CASCADE)
     data = models.JSONField()
 
+    def has_authority_over_reference(self, reference: Reference) -> bool:
+        if self.reference.domain is None:
+            return False
+
+        if reference.is_local:
+            return self.reference == reference
+
+        return self.reference.domain == reference.domain
+
     def load(self):
         # Generates a RDF graph out of the JSON-LD document,
         # skolemizes it (generates stable names for unnamed nodes),
         # creates Reference entries for every subject in the graph and
-        # then calls ContextModelClass.process(self.reference, graph)
-        # for every subclass of AbstractContextModel that passes the
-        # `can_process(self.reference, graph)` check.
+        # then calls ContextModelClass.load_from_graph(self.reference, graph)
+        # for every reference that is has a trusted domain (ini relation to the document)
 
         try:
             assert self.data is not None
@@ -241,18 +253,21 @@ class LinkedDataDocument(models.Model):
                 g.add(triple)
 
             references = [Reference.make(uri=str(uri)) for uri in set(g.subjects())]
+            authorized_references = [
+                r for r in references if self.has_authority_over_reference(r) or r.is_blank_node
+            ]
 
-            for reference in references:
+            for ref in authorized_references:
                 context_models = [
                     ctx
                     for ctx in app_settings.CONTEXT_MODELS
-                    if ctx.should_handle_reference(g=g, reference=reference)
+                    if ctx.should_handle_reference(g=g, reference=ref)
                 ]
                 for context_model in context_models:
-                    context_model.load_from_graph(g=g, reference=reference)
+                    context_model.load_from_graph(g=g, reference=ref)
 
                 reference_loaded.send_robust(
-                    document=self, reference=reference, graph=g, sender=self.__class__
+                    document=self, reference=ref, graph=g, sender=self.__class__
                 )
 
             document_loaded.send_robust(document=self, sender=self.__class__)

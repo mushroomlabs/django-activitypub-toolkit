@@ -153,6 +153,8 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+            # FIXME: This is a lazy approach to process the document.
+            # We should not create documents for data we control.
             notification = Notification.objects.create(
                 sender=actor_reference, target=reference, resource=activity_reference
             )
