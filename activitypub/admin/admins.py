@@ -27,10 +27,10 @@ class LinkedDataDocumentAdmin(admin.ModelAdmin):
 
 @admin.register(models.ActorContext)
 class ActorAdmin(admin.ModelAdmin):
-    list_display = ("uri", "type", "inbox_url", "outbox_url", "following_url", "followers_url")
+    list_display = ("uri", "type", "subject_name")
     list_filter = ("type",)
-    list_select_related = ("account", "account__domain")
-    search_fields = ("account__username", "account__domain__name")
+    list_select_related = ("identity", "identity__user", "reference", "reference__domain")
+    search_fields = ("preferred_username", "reference__domain__name")
     actions = (actions.fetch_actor,)
 
     def has_change_permission(self, request, obj=None):
