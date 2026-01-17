@@ -618,6 +618,7 @@ LEMMY_CONTEXT = Context(
                 "litepub": "http://litepub.social/ns#",
                 "pt": "https://joinpeertube.org/ns#",
                 "sc": "http://schema.org/",
+                "mastodon": "http://joinmastodon.org/ns#",
                 "ChatMessage": "litepub:ChatMessage",
                 "commentsEnabled": "pt:commentsEnabled",
                 "sensitive": "as:sensitive",
@@ -631,6 +632,7 @@ LEMMY_CONTEXT = Context(
                 "language": "sc:inLanguage",
                 "identifier": "sc:identifier",
                 "Hashtag": "as:Hashtag",
+                "featured": {"@type": "@id", "@id": "mastodon:featured"},
             },
         ]
     },
