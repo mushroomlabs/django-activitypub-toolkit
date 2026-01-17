@@ -1,6 +1,6 @@
 import logging
 
-from django.http import Http404
+from django.shortcuts import get_object_or_404, redirect
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.response import Response
@@ -9,7 +9,6 @@ from ..contexts import AS2
 from ..decorators import calculate_digest, collect_signature
 from ..models import (
     ActivityContext,
-    Actor,
     ActorContext,
     CollectionContext,
     CollectionPageContext,
@@ -30,6 +29,7 @@ from ..projections import (
 )
 from ..tasks import process_incoming_notification
 from .linked_data import LinkedDataModelView
+from .discovery import get_domain
 
 logger = logging.getLogger(__name__)
 
@@ -38,17 +38,17 @@ def is_an_inbox(uri):
     return any(
         [
             Domain.objects.filter(local=True, instance__actor__inbox__uri=uri).exists(),
-            Actor.objects.filter(reference__domain__local=True, inbox__uri=uri).exists(),
+            ActorContext.objects.filter(reference__domain__local=True, inbox__uri=uri).exists(),
         ]
     )
 
 
 def is_an_outbox(uri):
-    return Actor.objects.filter(reference__domain__local=True, outbox__uri=uri).exists()
+    return ActorContext.objects.filter(reference__domain__local=True, outbox__uri=uri).exists()
 
 
 def is_outbox_owner(actor_reference: Reference, uri):
-    return Actor.objects.filter(reference=actor_reference, outbox__uri=uri).exists()
+    return ActorContext.objects.filter(reference=actor_reference, outbox__uri=uri).exists()
 
 
 @method_decorator(calculate_digest, name="dispatch")
@@ -185,29 +185,22 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
         return Response("Not a valid inbox or outbox", status=status.HTTP_400_BAD_REQUEST)
 
 
-class ActorDetailView(LinkedDataModelView):
-    def _get_actor(self):
-        try:
-            if "subject_name" in self.kwargs:
-                return self._get_by_subject_name()
-            return self._get_by_username()
-        except Actor.DoesNotExist:
-            raise Http404
+def redirect_to_actor(request, subject_name: str):
+    if "@" in subject_name:
+        username, domain = subject_name.split("@")
 
-    def _get_by_subject_name(self):
-        username, domain = self.kwargs["subject_name"].split("@")
-        return Actor.objects.get(account__username=username, account__domain__name=domain)
+    else:
+        username = subject_name
+        domain = get_domain(request)
 
-    def _get_by_username(self):
-        domain = self.request.META.get("HTTP_HOST", Domain.get_default())
-        return Actor.objects.get(
-            account__username=self.kwargs["username"],
-            account__domain__name=domain,
-            account__domain__local=True,
-        )
+    actor = get_object_or_404(
+        ActorContext,
+        preferred_username=username,
+        reference__domain__local=True,
+        reference__domain=domain,
+    )
 
-    def get_object(self, *args, **kw):
-        return self._get_actor()
+    return redirect(actor.reference.uri)
 
 
-__all__ = ("ActivityPubObjectDetailView", "ActorDetailView")
+__all__ = ("ActivityPubObjectDetailView", "redirect_to_actor")

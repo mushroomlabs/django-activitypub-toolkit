@@ -5,25 +5,38 @@ from ..models import ActorContext, Domain
 from ..settings import app_settings
 
 
+def get_domain(request):
+    scheme = Domain.SchemeTypes.HTTPS if request.is_secure() else Domain.SchemeTypes.HTTP
+    host = request.META.get("HTTP_HOST") or ""
+    if ":" in host:
+        domain_name, port = host.rsplit(":", 1)
+    else:
+        domain_name, port = host, None
+
+    domains = Domain.objects.filter(scheme=scheme, name=domain_name)
+    if port is not None:
+        domains = domains.filter(port=port)
+
+    return domains.first() or Domain.get_default()
+
+
 class NodeInfo(View):
     """
     Returns the well-known nodeinfo response with links to the versions support
     """
 
     def get(self, request):
-        default_domain = Domain.get_default()
-        host = request.META.get("HTTP_HOST", default_domain)
-        scheme = "http://" if not request.is_secure() else "https://"
+        domain = get_domain(request)
         return JsonResponse(
             {
                 "links": [
                     {
                         "rel": "http://nodeinfo.diaspora.software/ns/schema/2.0",
-                        "href": f"{scheme}{host}/nodeinfo/2.0",
+                        "href": f"{domain.url}/nodeinfo/2.0",
                     },
                     {
                         "rel": "http://nodeinfo.diaspora.software/ns/schema/2.1",
-                        "href": f"{scheme}{host}/nodeinfo/2.1",
+                        "href": f"{domain.url}/nodeinfo/2.1",
                     },
                 ]
             }
@@ -33,28 +46,33 @@ class NodeInfo(View):
 class NodeInfo20(View):
     VERSION = "2.0"
 
-    def get_metadata(self, request):
+    def get_metadata(self, domain: Domain):
         return {}
 
-    def get_usage(self, request):
-        default_domain = Domain.get_default()
-        host = request.META.get("HTTP_HOST", default_domain.name).split(":", 1)[0]
-        actors = ActorContext.objects.filter(reference__domain__name=host)
-        return {"users": {"total": actors.exclude(user_account__isnull=True).count()}}
+    def get_usage(self, domain: Domain):
+        actors = ActorContext.objects.filter(reference__domain=domain)
+        return {"users": {"total": actors.exclude(identity__isnull=True).count()}}
 
     def get(self, request):
+        domain = get_domain(request)
+
+        try:
+            instance = domain.instance
+            software_name = instance.software
+            version = instance.version
+        except Domain.instance.RelatedObjectDoesNotExist:
+            software_name = app_settings.NodeInfo.software_name
+            version = app_settings.NodeInfo.software_version
+
         return JsonResponse(
             {
                 "version": self.VERSION,
-                "software": {
-                    "name": app_settings.NodeInfo.software_name,
-                    "version": app_settings.NodeInfo.software_version,
-                },
+                "software": {"name": software_name, "version": version},
                 "protocols": ["activitypub"],
                 "services": {"outbound": [], "inbound": []},
                 "openRegistrations": app_settings.Instance.open_registrations,
-                "metadata": self.get_metadata(request),
-                "usage": self.get_usage(request),
+                "metadata": self.get_metadata(domain),
+                "usage": self.get_usage(domain),
             }
         )
 
@@ -128,13 +146,12 @@ class Webfinger(View):
 class HostMeta(View):
     def get(self, request):
         CONTENT_TYPE = "application/xrd+xml"
-        host = request.META.get("HTTP_HOST", Domain.get_default().name)
-        scheme = "http://" if not request.is_secure() else "https://"
+        domain = get_domain(request)
         xml = """
         <?xml version="1.0" encoding="UTF-8"?>
         <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
-        <Link rel="lrdd" template="{0}{1}/.well-known/webfinger?resource={{uri}}"/>
-        </XRD>""".format(scheme, host)
+        <Link rel="lrdd" template="{0}/.well-known/webfinger?resource={{uri}}"/>
+        </XRD>""".format(domain.url)
         return HttpResponse(xml.strip().replace(8 * " ", ""), content_type=CONTENT_TYPE)
 
 
