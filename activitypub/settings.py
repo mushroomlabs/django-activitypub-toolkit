@@ -48,6 +48,7 @@ class AppSettings:
             "activitypub.contexts.W3C_DATAINTEGRITY_V1_CONTEXT",
             "activitypub.contexts.MULTIKEY_V1_CONTEXT",
             "activitypub.contexts.MASTODON_CONTEXT",
+            "activitypub.contexts.MBIN_CONTEXT",
             "activitypub.contexts.LEMMY_CONTEXT",
             "activitypub.contexts.FUNKWHALE_CONTEXT",
         }

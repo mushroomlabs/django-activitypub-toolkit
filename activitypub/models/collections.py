@@ -216,10 +216,11 @@ class CollectionPageContext(BaseCollectionContext):
     LINKED_DATA_FIELDS = AbstractAs2ObjectContext.LINKED_DATA_FIELDS | {
         "type": RDF.type,
         "total_items": AS2.totalItems,
+        "part_of": AS2.partOf,
         "next": AS2.next,
         "previous": AS2.prev,
         "items": AS2.items,
-        "orderedItems": AS2.orderedItems,
+        "ordered_items": AS2.orderedItems,
     }
 
     type = models.CharField(max_length=64, choices=Types.choices, default=Types.ORDERED)

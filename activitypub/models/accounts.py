@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
-from activitypub.models import Reference
+from activitypub.models import Domain, Reference
 
 from .as2 import ActorContext
 
@@ -40,4 +40,25 @@ class Identity(models.Model):
         ]
 
 
-__all__ = ("Identity",)
+class UserDomain(models.Model):
+    domain = models.OneToOneField(Domain, related_name="user_domain", on_delete=models.CASCADE)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="domains",
+        on_delete=models.CASCADE,
+        help_text="Domains controlled by the user, hosted at this server",
+    )
+
+    def clean(self):
+        if not self.domain.local:
+            raise ValidationError("Only local domains can be assigned to users")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"domain: {self.domain.url} "
+
+
+__all__ = ("Identity", "UserDomain")

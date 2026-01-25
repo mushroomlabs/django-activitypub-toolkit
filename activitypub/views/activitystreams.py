@@ -1,4 +1,5 @@
 import logging
+import rdflib
 
 from django.shortcuts import get_object_or_404, redirect
 from django.utils.decorators import method_decorator
@@ -116,6 +117,9 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
             process_incoming_notification.delay_on_commit(notification_id=str(notification.id))
 
             return Response(status=status.HTTP_202_ACCEPTED)
+        except rdflib.plugins.shared.jsonld.errors.JSONLDException as exc:
+            logger.warning(f"Failed to parse request. data: {self.request.data}")
+            return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
         except (KeyError, AssertionError) as exc:
             return Response(str(exc), status=status.HTTP_400_BAD_REQUEST)
 

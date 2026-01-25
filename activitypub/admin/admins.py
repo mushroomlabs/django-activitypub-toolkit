@@ -56,6 +56,7 @@ class IdentityAdmin(admin.ModelAdmin):
 class DomainAdmin(admin.ModelAdmin):
     list_display = ("host", "port", "local", "blocked")
     list_filter = ("local", "blocked", "scheme", "port")
+    search_fields = ("name",)
 
     @admin.display(description="Host")
     def host(self, obj):
@@ -274,6 +275,24 @@ class ActivityPubServerAdmin(admin.ModelAdmin):
     list_display = ("domain", "software_family", "version")
     list_filter = ("software_family",)
     search_fields = ("domain__name",)
+
+
+# Admin is provided but not registered because Django OAuth Toolkit machinery
+# does admin registration via settings
+class OidcIdentityTokenAdmin(admin.ModelAdmin):
+    list_display = ("id", "get_identity_username", "get_user", "jti")
+    list_filter = ("created",)
+    search_fields = ("identity__actor__preferred_username", "jti", "user__username")
+    raw_id_fields = ("identity", "user", "application")
+    readonly_fields = ("created", "updated", "jti")
+
+    @admin.display(description="Identity")
+    def get_identity_username(self, obj):
+        return obj.identity and obj.identity.actor.subject_name
+
+    @admin.display(description="User")
+    def get_user(self, obj):
+        return obj.user and obj.user.username
 
 
 __all__ = [

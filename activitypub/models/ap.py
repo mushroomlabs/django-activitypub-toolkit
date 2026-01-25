@@ -379,6 +379,7 @@ class ActivityPubServer(models.Model):
     actor = models.OneToOneField(
         Actor, null=True, blank=True, on_delete=models.SET_NULL, related_name="domain_actor"
     )
+    open_registrations = models.BooleanField(null=True, blank=True)
 
     @property
     def full_software_identifier(self):

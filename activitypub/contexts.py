@@ -1,14 +1,25 @@
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 from rdflib import RDF, Namespace
 
 
 @dataclass
 class Context:
-    url: str
-    document: dict
+    url: str | None = None
+    url_regex: re.Pattern | None = None
+    document: dict = field(default_factory=dict)
+
     namespace: Namespace | None = None
     content_type: str = "application/ld+json"
+
+    def matches(self, url: str) -> bool:
+        if self.url and self.url == url:
+            return True
+
+        if self.url_regex and self.url_regex.match(url):
+            return True
+        return False
 
     @property
     def as_pyld(self):
@@ -606,6 +617,35 @@ MULTIKEY_V1_CONTEXT = Context(
 )
 
 
+MBIN_CONTEXT = Context(
+    url_regex=re.compile(r"^https://[^/]+/contexts$"),
+    document={
+        "@context": [
+            "https://w3id.org/security/v1",
+            {
+                "ostatus": "http://ostatus.org#",
+                "schema": "http://schema.org#",
+                "toot": "http://joinmastodon.org/ns#",
+                "pt": "https://joinpeertube.org/ns#",
+                "lemmy": "https://join-lemmy.org/ns#",
+                "Hashtag": "as:Hashtag",
+                "PropertyValue": "schema:PropertyValue",
+                "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+                "sensitive": "as:sensitive",
+                "value": "schema:value",
+                "blurhash": "toot:blurhash",
+                "focalPoint": "toot:focalPoint",
+                "votersCount": "toot:votersCount",
+                "featured": "toot:featured",
+                "commentsEnabled": "pt:commentsEnabled",
+                "postingRestrictedToMods": "lemmy:postingRestrictedToMods",
+                "stickied": "lemmy:stickied",
+            },
+        ]
+    },
+)
+
+
 LEMMY_CONTEXT = Context(
     url="https://join-lemmy.org/context.json",
     namespace=LEMMY,
@@ -708,6 +748,7 @@ __all__ = (
     "W3C_DATAINTEGRITY_V1_CONTEXT",
     "MULTIKEY_V1_CONTEXT",
     "MASTODON_CONTEXT",
+    "MBIN_CONTEXT",
     "LEMMY_CONTEXT",
     "FUNKWHALE_CONTEXT",
 )

@@ -15,14 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def builtin_document_loader(url: str, options={}):
-    try:
-        context_map = {c.url: c for c in app_settings.PRESET_CONTEXTS}
+    for ctx in app_settings.PRESET_CONTEXTS:
+        if ctx.matches(url):
+            logger.info(f"Using builtin context for {url!r}")
+            return ctx.as_pyld
 
-        context = context_map[url]
-        return context.as_pyld
-    except KeyError:
-        logger.info(f"Fetching remote context: {url!r}")
-        return jsonld.requests_document_loader(url, options)
+    logger.info(f"Fetching remote context: {url!r}")
+    return jsonld.requests_document_loader(url, options)
 
 
 class LocalDocumentHandler(HTTPHandler, HTTPSHandler):
@@ -61,14 +60,12 @@ class LocalDocumentHandler(HTTPHandler, HTTPSHandler):
         )
 
     def _fetch_local(self, req):
-        context_map = {c.url: c for c in app_settings.PRESET_CONTEXTS}
         url = req.get_full_url()
-        context = context_map.get(url)
 
-        if context is None:
-            return None
-
-        return self._response_from_local_document(req, context.document)
+        for ctx in app_settings.PRESET_CONTEXTS:
+            if ctx.matches(url):
+                return self._response_from_local_document(req, ctx.document)
+        return None
 
     def http_open(self, req: Request) -> http.client.HTTPResponse:
         cached = self._fetch_local(req)

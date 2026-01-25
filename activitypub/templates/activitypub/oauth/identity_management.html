@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Identity Management</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .section {
+            margin: 30px 0;
+        }
+        .identity-list {
+            list-style: none;
+            padding: 0;
+        }
+        .identity-item {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .identity-info {
+            flex-grow: 1;
+        }
+        .actor-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .actor-username {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .primary-badge {
+            background-color: #0066cc;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+        .create-form {
+            background-color: #f5f9ff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1em;
+        }
+        .btn {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #0052a3;
+        }
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .info-box {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .message {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .message-success {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .message-error {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .field-error, .error-box {
+            color: #dc3545;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .error-box {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .help-text {
+            color: #666;
+            font-size: 0.85em;
+            display: block;
+            margin-top: 5px;
+        }
+        .path-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .domain-prefix {
+            color: #666;
+            font-family: monospace;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Identity Management</h1>
+
+    <div class="section">
+        <h2>Your Identities</h2>
+        {% if identities %}
+            <ul class="identity-list">
+                {% for identity in identities %}
+                <li class="identity-item">
+                    <div class="identity-info">
+                        <div class="actor-name">
+                            {{ identity.actor.name }}
+                            {% if identity.is_primary %}
+                            <span class="primary-badge">PRIMARY</span>
+                            {% endif %}
+                        </div>
+                        <div class="actor-username">{{ identity.actor.subject_name }}</div>
+                        <div class="actor-username">Domain: {{ identity.actor.reference.domain.netloc }}</div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="info-box">
+                <p>You don't have any identities yet. Create one below to get started.</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>Create New Identity</h2>
+
+        {% if messages %}
+            {% for message in messages %}
+            <div class="message message-{{ message.tags }}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        {% endif %}
+
+        {% if form.domain.field.queryset %}
+            <form method="post" action="{% url 'create_identity' %}" class="create-form" id="identity-form">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="error-box">
+                    {{ form.non_field_errors }}
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label for="{{ form.domain.id_for_label }}">{{ form.domain.label }}:</label>
+                    {{ form.domain }}
+                    {% if form.domain.help_text %}
+                    <small class="help-text">{{ form.domain.help_text }}</small>
+                    {% endif %}
+                    {% if form.domain.errors %}
+                    <div class="field-error">{{ form.domain.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.preferred_username.id_for_label }}">{{ form.preferred_username.label }}:</label>
+                    {{ form.preferred_username }}
+                    {% if form.preferred_username.help_text %}
+                    <small class="help-text">{{ form.preferred_username.help_text }}</small>
+                    {% endif %}
+                    {% if form.preferred_username.errors %}
+                    <div class="field-error">{{ form.preferred_username.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.actor_path.id_for_label }}">{{ form.actor_path.label }}:</label>
+                    <div class="path-input-wrapper">
+                        <span class="domain-prefix" id="domain-prefix"></span>
+                        {{ form.actor_path }}
+                    </div>
+                    {% if form.actor_path.help_text %}
+                    <small class="help-text">{{ form.actor_path.help_text }}</small>
+                    {% endif %}
+                    {% if form.actor_path.errors %}
+                    <div class="field-error">{{ form.actor_path.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.display_name.id_for_label }}">{{ form.display_name.label }}:</label>
+                    {{ form.display_name }}
+                    {% if form.display_name.help_text %}
+                    <small class="help-text">{{ form.display_name.help_text }}</small>
+                    {% endif %}
+                    {% if form.display_name.errors %}
+                    <div class="field-error">{{ form.display_name.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="{{ form.actor_type.id_for_label }}">{{ form.actor_type.label }}:</label>
+                    {{ form.actor_type }}
+                    {% if form.actor_type.help_text %}
+                    <small class="help-text">{{ form.actor_type.help_text }}</small>
+                    {% endif %}
+                    {% if form.actor_type.errors %}
+                    <div class="field-error">{{ form.actor_type.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="btn">Create Identity</button>
+            </form>
+
+            <script>
+                // Update actor_path when username changes
+                const usernameInput = document.getElementById('{{ form.preferred_username.id_for_label }}');
+                const actorPathInput = document.getElementById('{{ form.actor_path.id_for_label }}');
+                const domainSelect = document.getElementById('{{ form.domain.id_for_label }}');
+                const domainPrefix = document.getElementById('domain-prefix');
+
+                function updateDomainPrefix() {
+                    const selectedOption = domainSelect.options[domainSelect.selectedIndex];
+                    if (selectedOption && selectedOption.value) {
+                        domainPrefix.textContent = selectedOption.text + '/';
+                    } else {
+                        domainPrefix.textContent = '';
+                    }
+                }
+
+                if (usernameInput && actorPathInput) {
+                    usernameInput.addEventListener('input', function() {
+                        const username = this.value.toLowerCase().trim();
+                        if (username && !actorPathInput.dataset.userModified) {
+                            actorPathInput.value = 'actors/' + username;
+                        }
+                    });
+
+                    actorPathInput.addEventListener('input', function() {
+                        this.dataset.userModified = 'true';
+                    });
+                }
+
+                if (domainSelect) {
+                    domainSelect.addEventListener('change', updateDomainPrefix);
+                    updateDomainPrefix();
+                }
+            </script>
+        {% else %}
+            <div class="info-box">
+                <p><strong>No domains available for registration.</strong></p>
+                <p>Please contact your administrator to set up a domain with open registrations.</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

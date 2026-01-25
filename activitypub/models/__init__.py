@@ -5,5 +5,6 @@ from .collections import *  # noqa
 from .fields import *  # noqa
 from .integrity_proofs import *  # noqa
 from .languages import *  # noqa
+from .oauth import *  # noqa
 from .sec import *  # noqa
 from .ap import *  # noqa

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Identity - Authorization</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .identity-card {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .identity-card:hover {
+            border-color: #0066cc;
+            background-color: #f5f9ff;
+        }
+        .identity-card input[type="radio"] {
+            margin-right: 10px;
+        }
+        .actor-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .actor-username {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .btn {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .btn:hover {
+            background-color: #0052a3;
+        }
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .info-box {
+            background-color: #f0f7ff;
+            border-left: 4px solid #0066cc;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Select Identity for Authorization</h1>
+
+    <div class="info-box">
+        <p><strong>Client:</strong> {{ client_id }}</p>
+        <p><strong>Requested Scopes:</strong> {{ scope }}</p>
+        <p>Please select which identity you want to authorize for this application.</p>
+    </div>
+
+    <form method="get" id="identity-form">
+        <input type="hidden" name="client_id" value="{{ client_id }}">
+        <input type="hidden" name="scope" value="{{ scope }}">
+        <input type="hidden" name="state" value="{{ state }}">
+        <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+        <input type="hidden" name="response_type" value="{{ response_type }}">
+        {% if code_challenge %}
+        <input type="hidden" name="code_challenge" value="{{ code_challenge }}">
+        <input type="hidden" name="code_challenge_method" value="{{ code_challenge_method }}">
+        {% endif %}
+
+        <div id="identities">
+            {% for identity in identities %}
+            <label class="identity-card">
+                <input type="radio" name="identity_id" value="{{ identity.id }}" required>
+                <span class="actor-name">{{ identity.actor.name }}</span>
+                <span class="actor-username">{{ identity.actor.subject_name }}</span>
+            </label>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn">Continue with Selected Identity</button>
+    </form>
+</body>
+</html>
