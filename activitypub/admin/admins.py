@@ -8,9 +8,18 @@ from .base import ContextModelAdmin
 
 @admin.register(models.Reference)
 class ReferenceAdmin(admin.ModelAdmin):
-    list_display = ("uri", "domain", "status")
-    list_filter = ("status",)
+    list_display = ("uri", "status", "local", "dereferenceable")
+    list_filter = ("status", "domain__local", filters.ResolvableReferenceFilter)
+    select_related = ("domain",)
     search_fields = ("uri", "domain__name")
+
+    @admin.display(description="Dereferenceable", boolean=True)
+    def dereferenceable(self, obj):
+        return obj.is_dereferenceable
+
+    @admin.display(description="local", boolean=True)
+    def local(self, obj):
+        return obj.domain and obj.domain.local
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -18,7 +27,8 @@ class ReferenceAdmin(admin.ModelAdmin):
 
 @admin.register(models.LinkedDataDocument)
 class LinkedDataDocumentAdmin(admin.ModelAdmin):
-    list_display = ("reference",)
+    list_display = ("reference", "resolvable")
+    list_filter = ("resolvable",)
     search_fields = ("reference__uri",)
 
     def has_change_permission(self, request, obj=None):
@@ -277,14 +287,108 @@ class ActivityPubServerAdmin(admin.ModelAdmin):
     search_fields = ("domain__name",)
 
 
-# Admin is provided but not registered because Django OAuth Toolkit machinery
-# does admin registration via settings
+# OAuth Admin classes - registered via Django OAuth Toolkit settings machinery
+class OAuthClientApplicationAdmin(admin.ModelAdmin):
+    """Admin for OAuth Client Applications with RFC 7591 metadata."""
+
+    list_display = (
+        "client_id",
+        "name",
+        "get_registered_by",
+        "client_type",
+        "authorization_grant_type",
+        "created",
+    )
+    list_filter = (
+        "client_type",
+        "authorization_grant_type",
+        "skip_authorization",
+        filters.HasUserFilter,
+    )
+    search_fields = ("name", "client_id", "client_uri", "user__username")
+    raw_id_fields = ("user",)
+    readonly_fields = ("client_id", "client_secret", "created", "updated")
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {"fields": ("name", "user", "client_type", "authorization_grant_type")},
+        ),
+        (
+            "OAuth Configuration",
+            {
+                "fields": (
+                    "client_id",
+                    "client_secret",
+                    "redirect_uris",
+                    "post_logout_redirect_uris",
+                    "algorithm",
+                )
+            },
+        ),
+        (
+            "RFC 7591 Metadata",
+            {
+                "fields": (
+                    "client_uri",
+                    "logo_uri",
+                    "policy_uri",
+                    "tos_uri",
+                    "software_id",
+                    "software_version",
+                )
+            },
+        ),
+        ("Settings", {"fields": ("skip_authorization", "created", "updated")}),
+    )
+
+    @admin.display(description="Registered By")
+    def get_registered_by(self, obj):
+        return obj.user and obj.user.username
+
+
+class OAuthAccessTokenAdmin(admin.ModelAdmin):
+    list_display = ("truncated_token", "user", "get_identity", "application", "expires", "created")
+    list_select_related = ("application", "user", "identity", "identity__actor")
+    list_filter = ("application", "created", "expires")
+    search_fields = ("token", "user__username", "identity__actor__preferred_username")
+    readonly_fields = ("token", "created", "updated", "token_checksum")
+
+    @admin.display(description="Token")
+    def truncated_token(self, obj):
+        return f"{obj.token[:10]}...{obj.token[-10:]}" if obj.token else ""
+
+    @admin.display(description="Identity")
+    def get_identity(self, obj):
+        return obj.identity and obj.identity.actor.subject_name
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+class OAuthRefreshTokenAdmin(admin.ModelAdmin):
+    list_display = ("truncated_token", "user", "get_identity", "application", "created", "revoked")
+    list_select_related = ("application", "user", "identity", "identity__actor")
+    list_filter = ("application", "revoked", "created")
+    search_fields = ("token", "user__username", "identity__actor__preferred_username")
+
+    @admin.display(description="Token")
+    def truncated_token(self, obj):
+        return f"{obj.token[:10]}...{obj.token[-10:]}" if obj.token else ""
+
+    @admin.display(description="Identity")
+    def get_identity(self, obj):
+        return obj.identity and obj.identity.actor.subject_name
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 class OidcIdentityTokenAdmin(admin.ModelAdmin):
-    list_display = ("id", "get_identity_username", "get_user", "jti")
-    list_filter = ("created",)
+    list_display = ("id", "get_identity_username", "get_user", "jti", "expires")
+    list_filter = ("created", "expires")
+    list_select_related = ("identity", "identity__actor", "user", "application")
     search_fields = ("identity__actor__preferred_username", "jti", "user__username")
-    raw_id_fields = ("identity", "user", "application")
-    readonly_fields = ("created", "updated", "jti")
 
     @admin.display(description="Identity")
     def get_identity_username(self, obj):
@@ -293,6 +397,9 @@ class OidcIdentityTokenAdmin(admin.ModelAdmin):
     @admin.display(description="User")
     def get_user(self, obj):
         return obj.user and obj.user.username
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 __all__ = [
@@ -303,4 +410,8 @@ __all__ = [
     "ActivityAdmin",
     "FollowRequestAdmin",
     "LanguageAdmin",
+    "OAuthClientApplicationAdmin",
+    "OAuthAccessTokenAdmin",
+    "OAuthRefreshTokenAdmin",
+    "OidcIdentityTokenAdmin",
 ]

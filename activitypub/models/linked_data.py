@@ -7,7 +7,7 @@ import rdflib
 from cryptography.hazmat.primitives import hashes
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models, transaction
-from django.db.models import Exists, OuterRef
+from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, When
 from django.urls import reverse
 from model_utils.choices import Choices
 from model_utils.fields import MonitorField
@@ -36,6 +36,30 @@ class NotificationManager(models.Manager):
             ],
         )
         return qs.annotate(verified=Exists(verified_sqs), processed=Exists(processed_sqs))
+
+
+class ReferenceManager(models.Manager):
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        has_fragment = (Q(uri__startswith="http://") | Q(uri__startswith="https://")) & Q(
+            uri__contains="#"
+        )
+        return qs.annotate(
+            dereferenceable=Case(
+                # Local or skolemized references are not dereferenceable
+                When(
+                    Q(domain__local=True) | Q(uri__startswith=self.model.SKOLEM_BASE_URI),
+                    then=Value(False),
+                ),
+                # HTTP(S) URIs with fragments are not dereferenceable
+                When(has_fragment, then=Value(False)),
+                # Document marked as non-resolvable makes reference non-dereferenceable
+                When(Q(document__resolvable=False), then=Value(False)),
+                default=Value(True),
+                output_field=BooleanField(),
+            )
+        )
 
 
 class Domain(TimeStampedModel):
@@ -100,7 +124,7 @@ class Domain(TimeStampedModel):
         unique_together = ("scheme", "name", "port")
 
 
-class Reference(StatusModel):
+class Reference(TimeStampedModel, StatusModel):
     """
     The Reference is the base class for any JSON-LD context.
     """
@@ -115,6 +139,7 @@ class Reference(StatusModel):
     )
     resolved_at = MonitorField(monitor="status", when=["resolved", "redirected"])
     failed_at = MonitorField(monitor="status", when=["failed"])
+    objects = ReferenceManager()
 
     @property
     def is_local(self):
@@ -127,6 +152,21 @@ class Reference(StatusModel):
     @property
     def is_resolved(self):
         return self.status == self.STATUS.resolved
+
+    @property
+    def is_dereferenceable(self):
+        # check if model is coming from queryset and has annotated 'dereferenceable' field
+        if not hasattr(self, "dereferenceable"):
+            parsed = urlparse(self.uri)
+            has_fragment = parsed.scheme in ("http", "https") and parsed.fragment
+
+            resolvable_document = True
+            if hasattr(self, "document"):
+                resolvable_document = self.document.resolvable
+            self.dereferenceable = not any(
+                [self.is_local, self.is_blank_node, has_fragment, not resolvable_document]
+            )
+        return self.dereferenceable
 
     @property
     def is_named_node(self):
@@ -212,14 +252,18 @@ class LinkedDataDocument(models.Model):
     """
 
     reference = models.OneToOneField(Reference, related_name="document", on_delete=models.CASCADE)
+    resolvable = models.BooleanField(default=True)
     data = models.JSONField()
 
     def has_authority_over_reference(self, reference: Reference) -> bool:
+        if self.reference == reference:
+            return True
+
         if self.reference.domain is None:
             return False
 
-        if reference.is_local:
-            return self.reference == reference
+        if self.reference.domain.local:
+            return False
 
         return self.reference.domain == reference.domain
 

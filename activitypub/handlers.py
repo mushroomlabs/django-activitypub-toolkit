@@ -9,9 +9,9 @@ from .exceptions import RejectedFollowRequest
 from .models.ap import ActivityPubServer, Actor, FollowRequest
 from .models.as2 import ActivityContext, BaseAs2ObjectContext, ObjectContext
 from .models.collections import CollectionContext
-from .models.linked_data import Domain, Notification
+from .models.linked_data import Domain, LinkedDataDocument, Notification
 from .settings import app_settings
-from .signals import notification_accepted, reference_field_changed
+from .signals import notification_accepted, reference_field_changed, document_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +145,28 @@ def on_notification_accepted_process_standard_flows(sender, **kw):
     tasks.process_standard_activity_flows(activity_uri=notification.resource.uri)
 
 
+@receiver(document_loaded, sender=LinkedDataDocument)
+def on_lemmy_activity_document_loaded_mark_unresolvable(sender, **kw):
+    try:
+        ld_doc = kw.get("document")
+        if not isinstance(ld_doc, LinkedDataDocument):
+            return
+        # Use ActivityContext to determine if this document represents an Activity
+        if ld_doc.reference.get_by_context(ActivityContext) is None:
+            return
+        domain = ld_doc.reference.domain
+        if not domain:
+            return
+        server = getattr(domain, "instance", None)
+        if not server:
+            return
+        if server.software_family == ActivityPubServer.Software.LEMMY:
+            ld_doc.resolvable = False
+            ld_doc.save(update_fields=["resolvable"])
+    except Exception as exc:
+        logger.warning(f"Failed to check lemmy activity in document: {exc}")
+
+
 __all__ = (
     "on_new_remote_domain_fetch_nodeinfo",
     "on_new_local_domain_setup_nodeinfo",
@@ -152,5 +174,6 @@ __all__ = (
     "on_follow_request_created_post_activity",
     "on_notification_accepted_process_standard_flows",
     "on_notification_created_send_to_target",
+    "on_lemmy_activity_document_loaded_mark_unresolvable",
     "set_default_port_for_domain",
 )

@@ -1,4 +1,5 @@
 import logging
+from enum import StrEnum, auto
 from datetime import timedelta
 
 from django.conf import settings
@@ -38,6 +39,14 @@ class AppSettings:
 
     class Policies:
         follow_request_rejection_policies = []
+
+    class OAuth:
+        class DynamicClientRegistration(StrEnum):
+            DISABLED = auto()
+            AUTHENTICATION_REQUIRED = auto()
+            OPEN = auto()
+
+        dynamic_client_registration = DynamicClientRegistration.OPEN
 
     class LinkedData:
         default_contexts = {
@@ -133,6 +142,7 @@ class AppSettings:
                 self.Policies,
                 "follow_request_rejection_policies",
             ),
+            "OAUTH_DYNAMIC_CLIENT_REGISTRATION": (self.OAuth, "dynamic_client_registration"),
         }
         user_settings = getattr(settings, "FEDERATION", {})
 
@@ -144,6 +154,16 @@ class AppSettings:
 
             setting_class, attr = ATTRS[setting]
             setattr(setting_class, attr, value)
+
+        # Validate OAuth settings
+        dcr_mode = self.OAuth.dynamic_client_registration
+        valid_modes = {"disabled", "authentication_required", "open"}
+        if dcr_mode not in valid_modes:
+            logger.warning(
+                f"Invalid OAUTH_DYNAMIC_CLIENT_REGISTRATION value: '{dcr_mode}'. "
+                f"Must be one of {valid_modes}. Defaulting to 'open'."
+            )
+            self.OAuth.dynamic_client_registration = "open"
 
 
 app_settings = AppSettings()

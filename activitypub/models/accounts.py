@@ -31,6 +31,7 @@ class Identity(models.Model):
         return self.actor.subject_name
 
     class Meta:
+        verbose_name_plural = "Identities"
         constraints = [
             models.UniqueConstraint(
                 fields=("user",),

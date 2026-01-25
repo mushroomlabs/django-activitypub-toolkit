@@ -74,3 +74,41 @@ class ActivityTypeFilter(admin.SimpleListFilter):
         references = models.ActivityContext.objects.filter(type=selection).values("reference")
 
         return queryset.filter(resource__in=references)
+
+
+class HasUserFilter(admin.SimpleListFilter):
+    """Filter applications by whether they have an associated user."""
+
+    title = "registration type"
+    parameter_name = "has_user"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", "Registered by user"),
+            ("no", "Anonymous registration"),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.exclude(user__isnull=True)
+        if self.value() == "no":
+            return queryset.filter(user__isnull=True)
+        return queryset
+
+
+class ResolvableReferenceFilter(admin.SimpleListFilter):
+    title = "dereferenceable"
+    parameter_name = "dereferenceable"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", "Yes"),
+            ("no", "No"),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(dereferenceable=True)
+        if self.value() == "no":
+            return queryset.filter(dereferenceable=False)
+        return queryset
