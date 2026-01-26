@@ -222,3 +222,14 @@ class IdentityFactory(factory.django.DjangoModelFactory):
 
     class Meta:
         model = models.Identity
+
+
+class SourceContentContextFactory(factory.django.DjangoModelFactory):
+    reference = factory.SubFactory(
+        ReferenceFactory,
+        uri=factory.LazyFunction(lambda: str(models.Reference.generate_skolem())),
+        domain=None,
+    )
+
+    class Meta:
+        model = models.SourceContentContext

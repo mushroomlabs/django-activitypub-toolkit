@@ -1,8 +1,10 @@
 import base64
 import logging
+import random
 import uuid
 from urllib.parse import urlparse
 
+import mmh3
 import rdflib
 from cryptography.hazmat.primitives import hashes
 from django.core.exceptions import FieldDoesNotExist
@@ -18,7 +20,6 @@ from pyld import jsonld
 from ..exceptions import DocumentResolutionError, InvalidDomainError, ReferenceRedirect
 from ..settings import app_settings
 from ..signals import document_loaded, reference_loaded
-from .base import generate_ulid
 from .fields import ReferenceField
 
 logger = logging.getLogger(__name__)
@@ -28,14 +29,23 @@ class NotificationManager(models.Manager):
     def get_queryset(self) -> models.QuerySet:
         qs = super().get_queryset()
         verified_sqs = NotificationProofVerification.objects.filter(notification=OuterRef("pk"))
+        dropped_sqs = NotificationProcessResult.objects.filter(
+            notification=OuterRef("pk"),
+            result__in=[
+                NotificationProcessResult.Types.DROPPED,
+            ],
+        )
         processed_sqs = NotificationProcessResult.objects.filter(
             notification=OuterRef("pk"),
             result__in=[
                 NotificationProcessResult.Types.OK,
-                NotificationProcessResult.Types.DROPPED,
             ],
         )
-        return qs.annotate(verified=Exists(verified_sqs), processed=Exists(processed_sqs))
+        return qs.annotate(
+            verified=Exists(verified_sqs),
+            processed=Exists(processed_sqs),
+            dropped=Exists(dropped_sqs),
+        )
 
 
 class ReferenceManager(models.Manager):
@@ -230,10 +240,6 @@ class Reference(TimeStampedModel, StatusModel):
     def __str__(self):
         return self.uri
 
-    @staticmethod
-    def generate_skolem():
-        return rdflib.URIRef(f"{Reference.SKOLEM_BASE_URI}{generate_ulid()}")
-
     @classmethod
     def make(cls, uri: str):
         ref = cls.objects.filter(uri=uri).first()
@@ -244,6 +250,16 @@ class Reference(TimeStampedModel, StatusModel):
                 domain = None
             ref = cls.objects.create(uri=uri, domain=domain)
         return ref
+
+    @classmethod
+    def generate_skolem(cls, identifier=None):
+        if identifier is None:
+            identifier = random.getrandbits(128)
+
+        as_bytes = identifier.to_bytes(16, byteorder="big")
+        encoded = base64.b32encode(as_bytes).decode("ascii").rstrip("=").lower()
+
+        return rdflib.URIRef(f"{Reference.SKOLEM_BASE_URI}{encoded}")
 
 
 class LinkedDataDocument(models.Model):
@@ -274,6 +290,16 @@ class LinkedDataDocument(models.Model):
         # then calls ContextModelClass.load_from_graph(self.reference, graph)
         # for every reference that is has a trusted domain (ini relation to the document)
 
+        def skolemize(blank_node):
+            # We would like to have a deterministic identifier for blank nodes,
+            # this function calculates murmurhash3(node_id + document uri), then passes that for
+            # Reference.generate_skolem
+
+            node_uid = f"{blank_node}:{self.reference.uri}"
+            hashed = mmh3.hash128(node_uid.encode())
+
+            return Reference.generate_skolem(hashed)
+
         try:
             assert self.data is not None
             g = LinkedDataDocument.get_graph(self.data)
@@ -283,11 +309,11 @@ class LinkedDataDocument(models.Model):
             for s, p, o in list(g):
                 if isinstance(s, rdflib.BNode):
                     if s not in blank_node_map:
-                        blank_node_map[s] = Reference.generate_skolem()
+                        blank_node_map[s] = skolemize(s)
                     s = blank_node_map[s]
                 if isinstance(o, rdflib.BNode):
                     if o not in blank_node_map:
-                        blank_node_map[o] = Reference.generate_skolem()
+                        blank_node_map[o] = skolemize(o)
 
                     o = blank_node_map[o]
                 new_triples.append((s, p, o))
@@ -430,7 +456,14 @@ class AbstractContextModel(models.Model):
         if not attrs and not reference_fields:
             return None
 
-        obj, _ = cls.objects.update_or_create(reference=reference, defaults=attrs)
+        # FIXME: Using "update_or_create" with the attrs is
+        # occasionally returning `django.db.utils.NotSupportedError`
+        # "FOR UPDATE cannot be applied to the nullable side of an
+        # outer join". So let's first create the object, then update the values.
+
+        obj = cls.make(reference=reference)
+        cls.objects.filter(reference=reference).update(**attrs)
+        obj.refresh_from_db()
 
         # Handle reference FKs after save
 
@@ -481,12 +514,11 @@ class Notification(models.Model):
 
     @property
     def is_processed(self):
-        return self.results.filter(
-            result__in=[
-                NotificationProcessResult.Types.OK,
-                NotificationProcessResult.Types.DROPPED,
-            ]
-        ).exists()
+        return self.results.filter(result=NotificationProcessResult.Types.OK).exists()
+
+    @property
+    def is_dropped(self):
+        return self.results.filter(result=NotificationProcessResult.Types.DROPPED).exists()
 
     @property
     def is_authorized(self):
