@@ -21,7 +21,7 @@ class DomainFilter(admin.SimpleListFilter):
         return filter_qs(domain__local=True)
 
 
-class MessageDirectionFilter(admin.SimpleListFilter):
+class NotificationDirectionFilter(admin.SimpleListFilter):
     title = "Direction"
 
     parameter_name = "local"
@@ -39,7 +39,7 @@ class MessageDirectionFilter(admin.SimpleListFilter):
         return filter_qs(target__domain__local=True)
 
 
-class MessageVerifiedFilter(admin.SimpleListFilter):
+class NotificationVerifiedFilter(admin.SimpleListFilter):
     title = "Verified"
 
     parameter_name = "verified"
@@ -55,6 +55,42 @@ class MessageVerifiedFilter(admin.SimpleListFilter):
 
         filter_qs = queryset.filter if selection == "yes" else queryset.exclude
         return filter_qs(verified=True)
+
+
+class NotificationProcessedFilter(admin.SimpleListFilter):
+    title = "Processed"
+
+    parameter_name = "processed"
+
+    def lookups(self, request, model_admin):
+        return {("yes", "Yes"), ("no", "No")}
+
+    def queryset(self, request, queryset):
+        selection = self.value()
+
+        if selection is None:
+            return queryset
+
+        filter_qs = queryset.filter if selection == "yes" else queryset.exclude
+        return filter_qs(processed=True)
+
+
+class NotificationDroppedFilter(admin.SimpleListFilter):
+    title = "Dropped"
+
+    parameter_name = "dropped"
+
+    def lookups(self, request, model_admin):
+        return {("yes", "Yes"), ("no", "No")}
+
+    def queryset(self, request, queryset):
+        selection = self.value()
+
+        if selection is None:
+            return queryset
+
+        filter_qs = queryset.filter if selection == "yes" else queryset.exclude
+        return filter_qs(dropped=True)
 
 
 class ActivityTypeFilter(admin.SimpleListFilter):
@@ -76,24 +112,21 @@ class ActivityTypeFilter(admin.SimpleListFilter):
         return queryset.filter(resource__in=references)
 
 
-class HasUserFilter(admin.SimpleListFilter):
-    """Filter applications by whether they have an associated user."""
-
-    title = "registration type"
-    parameter_name = "has_user"
+class AuthenticatedFilter(admin.SimpleListFilter):
+    title = "authenticated"
+    parameter_name = "authenticated"
 
     def lookups(self, request, model_admin):
-        return (
-            ("yes", "Registered by user"),
-            ("no", "Anonymous registration"),
-        )
+        return (("yes", "Yes"), ("no", "No"))
 
     def queryset(self, request, queryset):
-        if self.value() == "yes":
-            return queryset.exclude(user__isnull=True)
-        if self.value() == "no":
-            return queryset.filter(user__isnull=True)
-        return queryset
+        selection = self.value()
+
+        if selection is None:
+            return queryset
+
+        filter_qs = queryset.filter if selection == "yes" else queryset.exclude
+        return filter_qs(user__isnull=False)
 
 
 class ResolvableReferenceFilter(admin.SimpleListFilter):
@@ -101,14 +134,13 @@ class ResolvableReferenceFilter(admin.SimpleListFilter):
     parameter_name = "dereferenceable"
 
     def lookups(self, request, model_admin):
-        return (
-            ("yes", "Yes"),
-            ("no", "No"),
-        )
+        return (("yes", "Yes"), ("no", "No"))
 
     def queryset(self, request, queryset):
-        if self.value() == "yes":
-            return queryset.filter(dereferenceable=True)
-        if self.value() == "no":
-            return queryset.filter(dereferenceable=False)
-        return queryset
+        selection = self.value()
+
+        if selection is None:
+            return queryset
+
+        filter_qs = queryset.filter if selection == "yes" else queryset.exclude
+        return filter_qs(dereferenceable=True)

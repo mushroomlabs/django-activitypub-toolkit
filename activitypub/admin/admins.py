@@ -219,15 +219,18 @@ class NotificationAdmin(admin.ModelAdmin):
         "get_target",
         "get_activity_type",
         "get_processed",
+        "get_dropped",
         "get_verified",
     )
     list_select_related = ("sender", "target", "resource")
     list_filter = (
-        filters.MessageDirectionFilter,
-        filters.MessageVerifiedFilter,
+        filters.NotificationDirectionFilter,
+        filters.NotificationVerifiedFilter,
+        filters.NotificationProcessedFilter,
+        filters.NotificationDroppedFilter,
         filters.ActivityTypeFilter,
     )
-
+    search_fields = ("resource__uri",)
     actions = (
         actions.verify_message_integrity,
         actions.process_notifications,
@@ -249,6 +252,10 @@ class NotificationAdmin(admin.ModelAdmin):
     @admin.display(boolean=True, description="Processed?")
     def get_processed(self, obj):
         return obj.is_processed
+
+    @admin.display(boolean=True, description="Dropped?")
+    def get_dropped(self, obj):
+        return obj.is_dropped
 
     @admin.display(boolean=True, description="Verified Integrity Proof?")
     def get_verified(self, obj):
@@ -303,7 +310,7 @@ class OAuthClientApplicationAdmin(admin.ModelAdmin):
         "client_type",
         "authorization_grant_type",
         "skip_authorization",
-        filters.HasUserFilter,
+        filters.AuthenticatedFilter,
     )
     search_fields = ("name", "client_id", "client_uri", "user__username")
     raw_id_fields = ("user",)
