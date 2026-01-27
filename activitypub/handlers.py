@@ -148,23 +148,22 @@ def on_notification_accepted_process_standard_flows(sender, **kw):
 @receiver(document_loaded, sender=LinkedDataDocument)
 def on_lemmy_activity_document_loaded_mark_unresolvable(sender, **kw):
     try:
-        ld_doc = kw.get("document")
-        if not isinstance(ld_doc, LinkedDataDocument):
+        doc = kw["document"]
+        if doc.reference.domain.instance.software_family != ActivityPubServer.Software.LEMMY:
+            # Not a Lemmy server
             return
-        # Use ActivityContext to determine if this document represents an Activity
-        if ld_doc.reference.get_by_context(ActivityContext) is None:
-            return
-        domain = ld_doc.reference.domain
-        if not domain:
-            return
-        server = getattr(domain, "instance", None)
-        if not server:
-            return
-        if server.software_family == ActivityPubServer.Software.LEMMY:
-            ld_doc.resolvable = False
-            ld_doc.save(update_fields=["resolvable"])
+
+        if doc.reference.get_by_context(ActivityContext) is None:
+            raise AssertionError("Not a Activity")
+
+        doc.resolvable = False
+        doc.save(update_fields=["resolvable"])
+    except AssertionError as exc:
+        logger.debug(exc)
+    except (AttributeError, KeyError) as exc:
+        logger.debug(f"Could not get reference or ActivityPubServer data: {exc}")
     except Exception as exc:
-        logger.warning(f"Failed to check lemmy activity in document: {exc}")
+        logger.warning(f"Failed to mark Lemmy activity as unresolvable: {exc}")
 
 
 __all__ = (
