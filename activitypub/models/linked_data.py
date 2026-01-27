@@ -139,7 +139,7 @@ class Reference(TimeStampedModel, StatusModel):
     The Reference is the base class for any JSON-LD context.
     """
 
-    SKOLEM_BASE_URI = "urn:ulid:"
+    SKOLEM_BASE_URI = "urn:uuid:"
 
     STATUS = Choices("unknown", "resolved", "redirected", "failed")
 
@@ -147,8 +147,17 @@ class Reference(TimeStampedModel, StatusModel):
     domain = models.ForeignKey(
         Domain, related_name="references", null=True, blank=True, on_delete=models.SET_NULL
     )
-    resolved_at = MonitorField(monitor="status", when=["resolved", "redirected"])
-    failed_at = MonitorField(monitor="status", when=["failed"])
+    redirects_to = models.ForeignKey(
+        "Reference",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="redirects_from",
+    )
+
+    redirected_at = MonitorField(monitor="status", null=True, when=["redirected"])
+    resolved_at = MonitorField(monitor="status", null=True, when=["resolved"])
+    failed_at = MonitorField(monitor="status", null=True, when=["failed"])
     objects = ReferenceManager()
 
     @property
@@ -231,7 +240,8 @@ class Reference(TimeStampedModel, StatusModel):
             except ReferenceRedirect as exc:
                 self.status = self.STATUS.redirected
                 if exc.redirect_uri:
-                    Reference.make(exc.redirect_uri)
+                    self.redirects_to = Reference.make(exc.redirect_uri)
+                    self.redirects_to.resolve()
             else:
                 return
             finally:

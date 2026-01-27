@@ -2,7 +2,7 @@ import logging
 
 import rdflib
 from django.db import models
-from django.db.models import F, Value
+from django.db.models import Case, F, Value, When
 from django.db.models.functions import Concat
 from model_utils.managers import InheritanceManager
 from rdflib import RDF, Namespace
@@ -24,11 +24,18 @@ class ActorManager(models.Manager):
     def get_queryset(self) -> models.QuerySet:
         qs = super().get_queryset()
         return qs.annotate(
-            _subject_name=Concat(
-                Value("@"),
-                "preferred_username",
-                Value("@"),
-                "reference__domain__name",
+            _subject_name=Case(
+                When(
+                    preferred_username__isnull=False,
+                    then=Concat(
+                        Value("@"),
+                        "preferred_username",
+                        Value("@"),
+                        "reference__domain__name",
+                    ),
+                ),
+                default=Value(None),
+                output_field=models.CharField(null=True),
             ),
             local=F("reference__domain__local"),
         )
