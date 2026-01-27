@@ -293,6 +293,9 @@ class ActivityPubServerAdmin(admin.ModelAdmin):
     list_filter = ("software_family",)
     search_fields = ("domain__name",)
 
+    def has_change_permission(self, request, obj=None):
+        return obj and obj.domain.local
+
 
 # OAuth Admin classes - registered via Django OAuth Toolkit settings machinery
 class OAuthClientApplicationAdmin(admin.ModelAdmin):
