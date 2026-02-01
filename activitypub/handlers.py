@@ -11,7 +11,7 @@ from .models.as2 import ActivityContext, BaseAs2ObjectContext, ObjectContext
 from .models.collections import CollectionContext
 from .models.linked_data import Domain, LinkedDataDocument, Notification
 from .settings import app_settings
-from .signals import notification_accepted, reference_field_changed, document_loaded
+from .signals import document_loaded, notification_accepted, reference_field_changed
 
 logger = logging.getLogger(__name__)
 

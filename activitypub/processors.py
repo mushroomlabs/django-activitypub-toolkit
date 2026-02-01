@@ -67,6 +67,30 @@ class CompactJsonLdDocumentProcessor(DocumentProcessor):
             return
 
         self._strip_prefixes(document)
+        self._wrap_list_fields(document)
+        self._expand_public(document)
+
+    def _wrap_list_fields(self, data):
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key in ["to", "cc", "bcc"] and type(value) is str:
+                    data[key] = [value]
+                self._wrap_list_fields(value)
+
+    def _expand_public(self, data):
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if value == "as:Public":
+                    data[key] = "https://www.w3.org/ns/activitystreams#Public"
+                else:
+                    self._expand_public(value)
+
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                if item == "as:Public":
+                    data[i] = "https://www.w3.org/ns/activitystreams#Public"
+                else:
+                    self._expand_public(item)
 
     def _strip_prefixes(self, data):
         """

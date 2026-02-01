@@ -1,12 +1,22 @@
+import re
 import unicodedata
 
 from django import forms
-from django.http import Http404
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from django.http import Http404
 from django.urls import resolve
+from oauth2_provider.forms import AllowForm
 
-from .models import ActorContext, Domain, Reference
+from .models import ActorContext, Domain, Identity, Reference
+
+
+class IdentityAuthorizationForm(AllowForm):
+    identity = forms.ModelChoiceField(queryset=Identity.objects.none())
+
+    def __init__(self, user, *args, **kw):
+        super().__init__(*args, **kw)
+        self.fields["identity"].queryset = Identity.objects.filter(user=user)
 
 
 class CreateIdentityForm(forms.Form):
@@ -98,9 +108,6 @@ class CreateIdentityForm(forms.Form):
         if not actor_path:
             raise ValidationError("Actor path cannot be empty")
 
-        # Check for invalid characters
-        import re
-
         if not re.match(r"^[a-zA-Z0-9_\-/]+$", actor_path):
             raise ValidationError(
                 "Actor path can only contain letters, numbers, underscores, hyphens, and slashes"
@@ -126,19 +133,13 @@ class CreateIdentityForm(forms.Form):
         ).exists()
 
         if username_taken:
-            raise ValidationError(
-                {
-                    "preferred_username": f"Username '{username}' is already taken on {domain.netloc}"
-                }
-            )
+            msg = f"Username '{username}' is already taken on {domain.netloc}"
+            raise ValidationError({"preferred_username": msg})
 
         # Check 2: The URI must not already exist as a Reference
         if Reference.objects.filter(uri=actor_uri).exists():
-            raise ValidationError(
-                {
-                    "actor_path": f"The URL {actor_uri} already exists. Please choose a different path."
-                }
-            )
+            msg = f"The URL {actor_uri} already exists. Please choose a different path."
+            raise ValidationError({"actor_path": msg})
 
         # Check 3: The path should not resolve to an existing route
         # This is a bit tricky - the catch-all route will probably match anything,
@@ -166,10 +167,7 @@ class CreateIdentityForm(forms.Form):
         except Http404:
             pass
         else:
-            raise ValidationError(
-                {
-                    "actor_path": f"The path '{actor_path}' is already in use. Please choose another."
-                }
-            )
+            msg = f"The path '{actor_path}' is already in use. Please choose another."
+            raise ValidationError({"actor_path": msg})
 
         return cleaned_data

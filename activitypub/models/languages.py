@@ -3,6 +3,8 @@ from enum import Enum
 import rdflib
 from django.db import models
 
+from activitypub.contexts import AS2, SCHEMA
+
 from .linked_data import AbstractContextModel, Reference
 
 
@@ -118,6 +120,7 @@ class Language(AbstractContextModel):
     URIs are opaque identifiers, not dereferenceable URLs.
     """
 
+    LINKED_DATA_FIELDS = {"iso_639_3": SCHEMA.identifier, "name": AS2.name}
     URI_PREFIX = "urn:bcp47:"
 
     code = models.CharField(

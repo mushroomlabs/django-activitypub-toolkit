@@ -376,6 +376,11 @@ class OAuthAccessTokenAdmin(admin.ModelAdmin):
         return False
 
 
+class OAuthAuthorizationCodeAdmin(admin.ModelAdmin):
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 class OAuthRefreshTokenAdmin(admin.ModelAdmin):
     list_display = ("truncated_token", "user", "get_identity", "application", "created", "revoked")
     list_select_related = ("application", "user", "identity", "identity__actor")

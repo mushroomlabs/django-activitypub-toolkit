@@ -63,10 +63,11 @@ OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "activitypub.OAuthAccessToken"
 OAUTH2_PROVIDER_APPLICATION_MODEL = "activitypub.OAuthClientApplication"
 OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "activitypub.OAuthRefreshToken"
 OAUTH2_PROVIDER_ID_TOKEN_MODEL = "activitypub.OidcIdentityToken"
-ID_TOKEN_ADMIN_CLASS = "activitypub.admin.OAuthIdentityTokenAdmin"
+OAUTH2_PROVIDER_GRANT_MODEL = "activitypub.OAuthAuthorizationCode"
 
 
 OAUTH2_PROVIDER = {
+    "OAUTH2_BACKEND_CLASS": "activitypub.views.oauth.ActivityPubOAuthServer",
     "OAUTH2_VALIDATOR_CLASS": "activitypub.views.oauth.ActivityPubIdentityOAuth2Validator",
     "ALLOWED_REDIRECT_URI_SCHEMES": ["https", "http"],
     "SCOPES": "read write",

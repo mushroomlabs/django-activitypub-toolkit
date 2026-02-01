@@ -1,5 +1,6 @@
+from urllib.parse import urljoin, urlparse
+
 import requests
-from urllib.parse import urlparse, urljoin
 
 from activitypub.exceptions import DocumentResolutionError, ReferenceRedirect
 from activitypub.models import ActivityPubServer, Domain, SecV1Context
@@ -16,7 +17,7 @@ def is_context_or_namespace_url(uri):
 
 class BaseDocumentResolver:
     def can_resolve(self, uri):
-        return NotImplementedError
+        raise NotImplementedError
 
     def resolve(self, uri):
         raise NotImplementedError

@@ -128,10 +128,8 @@ class ReferenceProjection(metaclass=ProjectionMeta):
 
         data = {"@id": self.reference.uri}
 
-        # Collect all context models with data
         context_models = self._get_context_models_with_data()
 
-        # If Meta.fields is set, only include those fields
         if self._meta_fields:
             data.update(self._build_with_fields_filter(context_models))
         else:
@@ -445,4 +443,11 @@ class ReferenceProjection(metaclass=ProjectionMeta):
         return result
 
 
-__all__ = ("ReferenceProjection", "use_context")
+class EmbeddedDocumentProjection(ReferenceProjection):
+    def get_compacted(self):
+        data = super().get_compacted()
+        data.pop("id", None)
+        return data
+
+
+__all__ = ("ReferenceProjection", "EmbeddedDocumentProjection", "use_context")

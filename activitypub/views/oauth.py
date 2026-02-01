@@ -1,24 +1,32 @@
+import json
 import logging
+import uuid
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import ObjectDoesNotExist, PermissionDenied
+from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views import View
+from django.views.decorators.csrf import csrf_exempt
 from django.views.generic.edit import FormView
+from oauth2_provider.oauth2_backends import OAuthLibCore
 from oauth2_provider.oauth2_validators import OAuth2Validator
-from oauth2_provider.views.base import AuthorizationView as BaseAuthorizationView
+from oauth2_provider.settings import oauth2_settings
+from oauth2_provider.views.base import AuthorizationView
 from oauth_dcr.views import DynamicClientRegistrationView
 
-from activitypub.forms import CreateIdentityForm
+from activitypub.forms import CreateIdentityForm, IdentityAuthorizationForm
 from activitypub.models import (
     ActorContext,
     Identity,
     OAuthAccessToken,
+    OAuthAuthorizationCode,
     OAuthClientApplication,
     OAuthRefreshToken,
     Reference,
@@ -26,6 +34,15 @@ from activitypub.models import (
 from activitypub.settings import app_settings
 
 logger = logging.getLogger(__name__)
+
+
+class ActivityPubOAuthServer(OAuthLibCore):
+    def create_authorization_response(self, request, scopes, credentials, allow):
+        selected_identity = getattr(request, "selected_identity", None)
+        if selected_identity:
+            credentials["identity"] = selected_identity
+
+        return super().create_authorization_response(request, scopes, credentials, allow)
 
 
 class ActivityPubIdentityOAuth2Validator(OAuth2Validator):
@@ -43,68 +60,76 @@ class ActivityPubIdentityOAuth2Validator(OAuth2Validator):
         }
     )
 
-    def save_bearer_token(self, token, request, *args, **kwargs):
-        """
-        Persist identity selection across OAuth flows.
+    def _create_authorization_code(self, request, code, expires=None):
+        if not expires:
+            expires = timezone.now() + timedelta(
+                seconds=oauth2_settings.AUTHORIZATION_CODE_EXPIRE_SECONDS
+            )
 
-        Without this, token refresh would lose the user's identity selection,
-        forcing re-selection on every refresh. RefreshToken preserves identity
-        across multiple access token generations.
-        """
-        super().save_bearer_token(token, request, *args, **kwargs)
-
-        selected_identity_id = request.session.get("selected_identity_id")
-
-        if not selected_identity_id:
-            logger.error("Token issuance without identity", extra={"user_id": request.user.id})
-            raise PermissionDenied("Identity required for request authorization")
-
-        try:
-            identity = request.user.identities.select_related("actor").get(id=selected_identity_id)
-            try:
-                refresh_token = OAuthRefreshToken.objects.get(
-                    token=token["refresh_token"], user=request.user
-                )
-                refresh_token.identity = identity
-                refresh_token.save(update_fields=["identity"])
-                logger.info(
-                    "Linked identity to OAuth Refresh Token",
-                    extra={
-                        "user_id": request.user.id,
-                        "identity_id": selected_identity_id,
-                        "token_id": refresh_token.id,
-                    },
-                )
-            except (KeyError, OAuthRefreshToken.DoesNotExist):
-                pass
-
-            try:
-                access_token = OAuthAccessToken.objects.get(
-                    token=token["access_token"], user=request.user
-                )
-                access_token.identity = identity
-                access_token.save(update_fields=["identity"])
-                logger.info(
-                    "Linked identity to OAuth Access Token",
-                    extra={
-                        "user_id": request.user.id,
-                        "identity_id": selected_identity_id,
-                        "token_id": access_token.id,
-                    },
-                )
-            except (KeyError, OAuthAccessToken.DoesNotExist):
-                pass
-
-            del request.session["selected_identity_id"]
-
-        except Identity.DoesNotExist:
+        identity = getattr(request, "identity", None)
+        if not identity:
             logger.error(
-                "Invalid identity for token issuance",
-                extra={"user_id": request.user.id, "identity_id": selected_identity_id},
+                "Authorization code creation without identity", extra={"user_id": request.user.id}
             )
-            raise PermissionDenied(
-                f"Invalid identity {selected_identity_id} for user {request.user.id}"
-            )
+            raise PermissionDenied("Identity required for authorization code creation")
+
+        return OAuthAuthorizationCode.objects.create(
+            application=request.client,
+            user=request.user,
+            code=code["code"],
+            expires=expires,
+            redirect_uri=request.redirect_uri,
+            scope=" ".join(request.scopes),
+            code_challenge=request.code_challenge or "",
+            code_challenge_method=request.code_challenge_method or "",
+            nonce=request.nonce or "",
+            claims=json.dumps(request.claims or {}),
+            identity=identity,
+        )
+
+    def _create_access_token(self, expires, request, token, source_refresh_token=None):
+        if source_refresh_token:
+            # Refresh flow - copy from existing token
+            identity = source_refresh_token.identity
+        else:
+            # Initial authorization code exchange
+            grant = OAuthAuthorizationCode.objects.get(code=request.code)
+            identity = grant.identity
+
+        id_token = token.get("id_token", None)
+        if id_token:
+            id_token = self._load_id_token(id_token)
+
+        return OAuthAccessToken.objects.create(
+            user=request.user,
+            scope=token["scope"],
+            expires=expires,
+            token=token["access_token"],
+            id_token=id_token,
+            application=request.client,
+            source_refresh_token=source_refresh_token,
+            identity=identity,
+        )
+
+    def _create_refresh_token(
+        self, request, refresh_token_code, access_token, previous_refresh_token
+    ):
+        if previous_refresh_token:
+            identity = previous_refresh_token.identity
+            token_family = previous_refresh_token.token_family
+        else:
+            grant = OAuthAuthorizationCode.objects.get(code=request.code)
+            identity = grant.identity
+            token_family = uuid.uuid4()
+
+        return OAuthRefreshToken.objects.create(
+            user=request.user,
+            token=refresh_token_code,
+            application=request.client,
+            access_token=access_token,
+            token_family=token_family,
+            identity=identity,
+        )
 
     def get_userinfo_claims(self, request):
         claims = super().get_userinfo_claims(request)
@@ -147,13 +172,6 @@ class ActivityPubIdentityOAuth2Validator(OAuth2Validator):
             if identity:
                 return identity
 
-        if hasattr(request, "access_token") and request.access_token:
-            refresh_token = getattr(request.access_token, "source_refresh_token", None)
-            if refresh_token:
-                identity = getattr(refresh_token, "identity", None)
-                if identity:
-                    return identity
-
         if hasattr(request, "id_token") and request.id_token:
             identity = getattr(request.id_token, "identity", None)
             if identity:
@@ -176,6 +194,7 @@ class ActivityPubDynamicClientRegistrationView(DynamicClientRegistrationView):
     - 'open': Anyone can register (RFC 7591 open mode, default)
     """
 
+    @csrf_exempt
     def dispatch(self, request, *args, **kwargs):
         """Check registration mode before processing request."""
         mode = app_settings.OAuth.dynamic_client_registration
@@ -220,10 +239,11 @@ class ActivityPubDynamicClientRegistrationView(DynamicClientRegistrationView):
 
         return OAuthClientApplication.objects.create(
             name=metadata.get("name", ""),
-            user_id=user,
+            user=user,
             client_type=metadata["client_type"],
             authorization_grant_type=metadata["authorization_grant_type"],
             redirect_uris=metadata.get("redirect_uris", ""),
+            algorithm=metadata.get("algorithm", ""),
             # RFC 7591 metadata fields
             client_uri=metadata.get("client_uri"),
             logo_uri=metadata.get("logo_uri"),
@@ -234,8 +254,9 @@ class ActivityPubDynamicClientRegistrationView(DynamicClientRegistrationView):
         )
 
 
-class IdentitySelectionAuthorizationView(BaseAuthorizationView):
+class IdentitySelectionAuthorizationView(AuthorizationView):
     template_name = "activitypub/oauth/authorize_identity.html"
+    form_class = IdentityAuthorizationForm
 
     def get(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
@@ -252,29 +273,21 @@ class IdentitySelectionAuthorizationView(BaseAuthorizationView):
                     "redirect_uri": request.GET.get("redirect_uri"),
                 },
             )
-
-        if "identity_id" not in request.GET:
-            context_data = {
-                "identities": identities,
-                "client_id": request.GET.get("client_id"),
-                "scope": request.GET.get("scope"),
-                "state": request.GET.get("state"),
-                "redirect_uri": request.GET.get("redirect_uri"),
-                "response_type": request.GET.get("response_type"),
-                "code_challenge": request.GET.get("code_challenge"),
-                "code_challenge_method": request.GET.get("code_challenge_method"),
-            }
-            return render(request, self.template_name, context_data)
-
-        identity_id = request.GET.get("identity_id")
-        try:
-            identity = identities.get(id=identity_id)
-        except ObjectDoesNotExist:
-            raise PermissionDenied("Selected identity does not belong to the current user")
-
-        request.session["selected_identity_id"] = identity.id
-
         return super().get(request, *args, **kwargs)
+
+    def get_form(self, *args, **kw):
+        initial = self.get_initial()
+        return self.form_class(self.request.user, self.request.POST or None, initial=initial)
+
+    def form_valid(self, form):
+        identity = form.cleaned_data["identity"]
+        self.request.selected_identity = identity
+        return super().form_valid(form)
+
+    def form_invalid(self, form):
+        logger.error(f"Form invalid: {form.errors}")
+        logger.error(f"Form data: {form.data}")
+        return super().form_invalid(form)
 
 
 @method_decorator(login_required, name="dispatch")

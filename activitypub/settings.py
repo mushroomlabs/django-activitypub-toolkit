@@ -1,6 +1,6 @@
 import logging
-from enum import StrEnum, auto
 from datetime import timedelta
+from enum import StrEnum, auto
 
 from django.conf import settings
 from django.test.signals import setting_changed
@@ -60,6 +60,7 @@ class AppSettings:
             "activitypub.contexts.MBIN_CONTEXT",
             "activitypub.contexts.LEMMY_CONTEXT",
             "activitypub.contexts.FUNKWHALE_CONTEXT",
+            "activitypub.contexts.SCHEMA_LANGUAGE_CONTEXT",
         }
         extra_contexts = {}
 
@@ -83,6 +84,7 @@ class AppSettings:
         }
         extra_context_models = {}
         disabled_context_models = {}
+        projection_selector = "activitypub.projections.default_projection_selector"
 
     @property
     def PRESET_CONTEXTS(self):
@@ -110,6 +112,10 @@ class AppSettings:
         return [import_string(s) for s in default.union(extra).difference(disabled)]
 
     @property
+    def PROJECTION_SELECTOR(self):
+        return import_string(self.LinkedData.projection_selector)
+
+    @property
     def REJECT_FOLLOW_REQUEST_POLICIES(self):
         return [import_string(s) for s in self.Policies.follow_request_rejection_policies]
 
@@ -134,6 +140,7 @@ class AppSettings:
             "SOFTWARE_VERSION": (self.NodeInfo, "software_version"),
             "RATE_LIMIT_REMOTE_FETCH": (self.RateLimit, "remote_object_fetching"),
             "DOCUMENT_PROCESSORS": (self.Middleware, "document_processors"),
+            "PROJECTION_SELECTOR": (self.LinkedData, "projection_selector"),
             "EXTRA_DOCUMENT_RESOLVERS": (self.LinkedData, "extra_document_resolvers"),
             "EXTRA_CONTEXT_MODELS": (self.LinkedData, "extra_context_models"),
             "EXTRA_CONTEXTS": (self.LinkedData, "extra_contexts"),

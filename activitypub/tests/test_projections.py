@@ -254,9 +254,9 @@ class CollectionProjectionTestCase(BaseTestCase):
         self.assertEqual(compacted["totalItems"], 3)
 
         # Should have items
-        self.assertIn("items", compacted)
-        self.assertIsInstance(compacted["items"], list)
-        self.assertEqual(len(compacted["items"]), 3)
+        self.assertIn("orderedItems", compacted)
+        self.assertIsInstance(compacted["orderedItems"], list)
+        self.assertEqual(len(compacted["orderedItems"]), 3)
 
 
 class SecV1ProjectionTestCase(BaseTestCase):
@@ -332,7 +332,7 @@ class CollectionWithFirstPageProjectionTestCase(BaseTestCase):
         first_page = first_data[0]
         self.assertIn("@type", first_page)
         # The first page should have items
-        self.assertTrue(str(AS2.items) in first_page or str(AS2.orderedItems) in first_page)
+        self.assertTrue(str(AS2.items) in first_page)
 
 
 class ActorProjectionTestCase(BaseTestCase):

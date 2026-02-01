@@ -1,4 +1,4 @@
-from activitypub.models import Identity, Domain
+from activitypub.models import Domain, Identity
 
 
 class ActorUsernameAuthenticationBackend:

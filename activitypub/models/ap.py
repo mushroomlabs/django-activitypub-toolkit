@@ -11,11 +11,9 @@ from model_utils.managers import QueryManager
 from model_utils.models import StatusModel, TimeStampedModel
 
 from ..serializers import NodeInfoSerializer
-from ..settings import app_settings
 from ..signals import activity_done
 from .as2 import ActivityContext, ActorContext, BaseAs2ObjectContext
-from .base import generate_ulid
-from .collections import CollectionContext, CollectionPageContext
+from .collections import CollectionContext
 from .linked_data import Domain, Notification, Reference
 
 logger = logging.getLogger(__name__)
@@ -432,40 +430,6 @@ class ActivityPubServer(models.Model):
         ):
             logger.warning(f"Failed to get nodeinfo from {self.domain}")
 
-    def build_collection_page(self, collection, **kw):
-        current_page = collection.first and collection.first.get_by_context(CollectionPageContext)
-
-        while (current_page and current_page.next) is not None:
-            current_page = current_page.next.get_by_context(CollectionPageContext)
-
-        ulid = str(generate_ulid())
-        if app_settings.Instance.collection_page_view_name:
-            uri = self.reverse_view(app_settings.Instance.collection_page_view_name, pk=ulid)
-        else:
-            uri = f"{self.domain.url}/pages/{ulid}"
-        reference = Reference.make(uri)
-
-        page_types = CollectionPageContext.Types
-
-        page = CollectionPageContext.objects.create(
-            reference=reference,
-            part_of=collection.reference,
-            previous=current_page and current_page.reference,
-            type=page_types.ORDERED if collection.is_ordered else page_types.UNORDERED,
-            **kw,
-        )
-
-        if current_page is None:
-            collection.first = page.reference
-        else:
-            current_page.next = page.reference
-            current_page.save()
-
-        collection.last = page.reference
-        collection.save()
-
-        return page
-
     def __str__(self):
         return self.domain.url
 
@@ -519,7 +483,7 @@ class FollowRequest(StatusModel, TimeStampedModel):
         )
 
         Notification.objects.create(
-            resource=accept_reference, sender=self.followed, target=self.follower
+            resource=accept_reference, sender=self.followed, target=follower_actor.inbox
         )
 
     @transaction.atomic()

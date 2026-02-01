@@ -1,66 +1,87 @@
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 
-from activitypub.contexts import AS2, RDF, SEC_V1_CONTEXT, SECv1
+from activitypub.contexts import AS2, RDF, SCHEMA, SEC_V1_CONTEXT, SECv1
 from activitypub.models import CollectionContext, CollectionPageContext, Reference
 
-from .core import ReferenceProjection, use_context
+from .core import EmbeddedDocumentProjection, ReferenceProjection, use_context
 
 
-class BaseCollectionProjectionMixin:
+class SourceProjection(ReferenceProjection):
+    class Meta:
+        fields = (AS2.content, AS2.mediaType)
+
+
+class BaseCollectionProjection(ReferenceProjection):
     CONTEXT_MODEL = None
 
-    def get_items(self):
-        obj = self.reference.get_by_context(self.CONTEXT_MODEL)
-        if obj and obj.items:
-            return [{"@id": ci.item.uri} for ci in obj.items]
+    def _get_items(self, container):
+        return [{"@id": ci.item.uri} for ci in container.items]
 
+    def get_unordered_items(self):
+        obj = self.reference.get_by_context(self.CONTEXT_MODEL)
+        if obj and obj.items and not obj.is_ordered:
+            return self._get_items(obj)
+        return None
+
+    def get_ordered_items(self):
+        obj = self.reference.get_by_context(self.CONTEXT_MODEL)
+        if obj and obj.items and obj.is_ordered:
+            return self._get_items(obj)
         return None
 
     def get_total_items(self):
         obj = self.reference.get_by_context(self.CONTEXT_MODEL)
-        total = obj and obj.total_items
-        return total and [
-            {"@value": total, "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger"}
+
+        if obj is None:
+            return None
+
+        return [
+            {
+                "@value": obj.total_items,
+                "@type": "http://www.w3.org/2001/XMLSchema#nonNegativeInteger",
+            }
         ]
 
+    class Meta:
+        extra = {
+            "get_unordered_items": AS2.items,
+            "get_ordered_items": AS2.orderedItems,
+            "get_total_items": AS2.totalItems,
+        }
 
-class CollectionPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
+
+class CollectionPageProjection(BaseCollectionProjection):
+    CONTEXT_MODEL = CollectionPageContext
+
+
+class EmbeddedCollectionPageProjection(BaseCollectionProjection):
     CONTEXT_MODEL = CollectionPageContext
 
     class Meta:
-        extra = {"get_items": AS2.items, "get_total_items": AS2.totalItems}
+        fields = (RDF.type, AS2.items, AS2.orderedItems, AS2.totalItems)
 
 
-class EmbeddedCollectionPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
-    CONTEXT_MODEL = CollectionPageContext
-
-    class Meta:
-        fields = (RDF.type, AS2.items)
-        extra = {"get_items": AS2.items}
+class CollectionProjection(BaseCollectionProjection):
+    CONTEXT_MODEL = CollectionContext
 
 
-class CollectionProjection(BaseCollectionProjectionMixin, ReferenceProjection):
+class CollectionWithTotalProjection(BaseCollectionProjection):
     CONTEXT_MODEL = CollectionContext
 
     class Meta:
-        extra = {"get_items": AS2.items, "get_total_items": AS2.totalItems}
+        fields = (AS2.totalItems, RDF.type)
 
 
-class CollectionWithTotalProjection(ReferenceProjection):
+class CollectionWithFirstPageProjection(BaseCollectionProjection):
     CONTEXT_MODEL = CollectionContext
 
-    class Meta:
-        fields = (AS2.totalItems,)
-
-
-class CollectionWithFirstPageProjection(BaseCollectionProjectionMixin, ReferenceProjection):
-    CONTEXT_MODEL = CollectionContext
+    def _get_items(self, container):
+        return None
 
     class Meta:
         omit = (AS2.items, AS2.orderedItems, AS2.last)
         overrides = {AS2.first: EmbeddedCollectionPageProjection}
-        extra = {"get_total_items": AS2.totalItems}
 
 
 class PublicKeyProjection(ReferenceProjection):
@@ -72,6 +93,11 @@ class PublicKeyProjection(ReferenceProjection):
             SECv1.signatureValue,
             SECv1.signatureAlgorithm,
         )
+
+
+class LanguageProjection(EmbeddedDocumentProjection):
+    class Meta:
+        fields = (SCHEMA.identifier, AS2.name)
 
 
 class EndpointProjection(ReferenceProjection):
@@ -103,32 +129,51 @@ class ActorProjection(ReferenceProjection):
 
     class Meta:
         extra = {"get_public_key": SECv1.publicKey}
-        overrides = {AS2.endpoints: EndpointProjection}
+        overrides = {AS2.endpoints: EndpointProjection, AS2.source: SourceProjection}
 
 
-class QuestionProjection(ReferenceProjection):
-    class Meta:
-        embed = (AS2.oneOf, AS2.anyOf)
-
-
-class NoteProjection(ReferenceProjection):
+class ObjectProjection(ReferenceProjection):
     class Meta:
         overrides = {
+            AS2.source: SourceProjection,
             AS2.replies: CollectionWithFirstPageProjection,
             AS2.likes: CollectionWithTotalProjection,
             AS2.shares: CollectionWithTotalProjection,
         }
+        embed = (AS2.oneOf, AS2.anyOf)
+
+
+class QuestionProjection(ObjectProjection):
+    pass
+
+
+class NoteProjection(ObjectProjection):
+    pass
+
+
+class PageProjection(ObjectProjection):
+    pass
+
+
+class ActivityProjection(ReferenceProjection):
+    class Meta:
+        overrides = {AS2.object: ObjectProjection}
 
 
 __all__ = (
+    "ActivityProjection",
+    "ActorProjection",
     "CollectionProjection",
     "CollectionPageProjection",
     "CollectionWithTotalProjection",
     "CollectionWithFirstPageProjection",
     "EmbeddedCollectionPageProjection",
     "EndpointProjection",
-    "PublicKeyProjection",
-    "ActorProjection",
-    "QuestionProjection",
+    "LanguageProjection",
     "NoteProjection",
+    "ObjectProjection",
+    "PageProjection",
+    "PublicKeyProjection",
+    "QuestionProjection",
+    "SourceProjection",
 )

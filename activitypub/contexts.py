@@ -134,7 +134,7 @@ AS2_CONTEXT = Context(
             "inReplyTo": {"@id": "as:inReplyTo", "@type": "@id"},
             "items": {"@id": "as:items", "@type": "@id"},
             "instrument": {"@id": "as:instrument", "@type": "@id"},
-            "orderedItems": {"@id": "as:items", "@type": "@id", "@container": "@list"},
+            "orderedItems": {"@id": "as:orderedItems", "@type": "@id"},
             "last": {"@id": "as:last", "@type": "@id"},
             "location": {"@id": "as:location", "@type": "@id"},
             "next": {"@id": "as:next", "@type": "@id"},
@@ -673,6 +673,8 @@ LEMMY_CONTEXT = Context(
                 "identifier": "sc:identifier",
                 "Hashtag": "as:Hashtag",
                 "featured": {"@type": "@id", "@id": "mastodon:featured"},
+                "lemmy:postingRestrictedToMods": {"@type": "xsd:boolean"},
+                "pt:commentsEnabled": {"@type": "xsd:boolean"},
             },
         ]
     },
@@ -728,6 +730,20 @@ FUNKWHALE_CONTEXT = Context(
 )
 
 
+SCHEMA_LANGUAGE_CONTEXT = Context(
+    namespace=SCHEMA,
+    document={
+        "@context": {
+            "identifier": {"@id": "http://schema.org/identifier", "@type": "@id"},
+            "name": {
+                "@id": "http://schema.org/name",
+                "@type": "http://www.w3.org/2001/XMLSchema#string",
+            },
+        }
+    },
+)
+
+
 __all__ = (
     # Namespace constants
     "AS2",
@@ -751,4 +767,5 @@ __all__ = (
     "MBIN_CONTEXT",
     "LEMMY_CONTEXT",
     "FUNKWHALE_CONTEXT",
+    "SCHEMA_LANGUAGE_CONTEXT",
 )

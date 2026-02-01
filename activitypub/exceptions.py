@@ -10,6 +10,14 @@ class InvalidDomainError(Exception):
     pass
 
 
+class UnauthenticatedPublisher(Exception):
+    pass
+
+
+class DocumentPublishingError(Exception):
+    pass
+
+
 class DocumentResolutionError(Exception):
     pass
 

@@ -8,8 +8,8 @@ from rest_framework.views import APIView
 
 from ..models import Reference
 from ..parsers import ActivityStreamsJsonParser, JsonLdParser
-from ..projections import ReferenceProjection
 from ..renderers import ActivityJsonRenderer, BrowsableLinkedDataRenderer, JsonLdRenderer
+from ..settings import app_settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,11 @@ class LinkedDataModelView(APIView):
         return get_object_or_404(Reference, uri=uri, domain__local=True)
 
     def get_projection_class(self, reference):
-        return ReferenceProjection
+        return app_settings.PROJECTION_SELECTOR(reference=reference)
 
     def get(self, *args, **kw):
         """
-        Render the linked data resource as compacted JSON-LD.
-
-        Serializes to expanded JSON-LD, then compacts using @context.
+        Render the linked data resource as compacted JSON-LD, as defined by the projection class
         """
 
         reference = self.get_object()
@@ -53,4 +51,8 @@ class LinkedDataModelView(APIView):
 
         projection.build()
 
-        return Response(projection.get_compacted())
+        document = projection.get_compacted()
+        for processor in app_settings.DOCUMENT_PROCESSORS:
+            processor.process_outgoing(document)
+
+        return Response(document)

@@ -5,7 +5,12 @@ from celery import shared_task
 from django.db import transaction
 
 from .contexts import AS2
-from .exceptions import DropMessage, UnprocessableJsonLd
+from .exceptions import (
+    DocumentPublishingError,
+    DropMessage,
+    UnauthenticatedPublisher,
+    UnprocessableJsonLd,
+)
 from .models import (
     Activity,
     CollectionContext,
@@ -15,8 +20,7 @@ from .models import (
     Reference,
 )
 from .models.ap import ActivityPubServer, Actor
-from .models.sec import SecV1Context
-from .projections import ReferenceProjection
+from .publishers import publish
 from .settings import app_settings
 from .signals import notification_accepted
 
@@ -53,7 +57,7 @@ def webfinger_lookup(subject_name: str):
 
 
 @shared_task
-def resolve_reference(uri, force=False):
+def resolve_reference(uri, force=True):
     try:
         reference = Reference.objects.get(uri=uri)
         with transaction.atomic():
@@ -102,37 +106,22 @@ def send_notification(notification_id):
             logger.info(f"{notification.target.uri} is a local target. Skipping request")
             return
 
-        signing_key = SecV1Context.valid.filter(owner=notification.sender).first()
-
-        assert signing_key is not None, "Could not find valid key pair for sender"
-
         inbox_owner = Actor.objects.filter(inbox=notification.target).first()
 
-        viewer = inbox_owner and inbox_owner.reference or Reference.make(str(AS2.Public))
+        viewer = inbox_owner and inbox_owner.reference or Reference(uri=str(AS2.Public))
 
+        # Select projection class
+        projection_class = app_settings.PROJECTION_SELECTOR(reference=notification.resource)
         # Serialize to JSON-LD using projection
-        projection = ReferenceProjection(reference=notification.resource, scope={"viewer": viewer})
+        projection = projection_class(reference=notification.resource, scope={"viewer": viewer})
         projection.build()
         compacted_document = projection.get_compacted()
 
-        # Apply document processors
-        for adapter in app_settings.DOCUMENT_PROCESSORS:
-            adapter.process_outgoing(compacted_document)
-
-        logger.info(f"Sending message to {notification.target.uri}")
-        headers = {"Content-Type": "application/activity+json"}
-        response = requests.post(
-            notification.target.uri,
-            json=compacted_document,
-            headers=headers,
-            auth=signing_key.signed_request_auth,
-        )
-        assert response.status_code != 401
-        response.raise_for_status()
+        publish(data=compacted_document, target=notification.target, sender=notification.sender)
         return notification.results.create(result=NotificationProcessResult.Types.OK)
-    except AssertionError:
+    except UnauthenticatedPublisher:
         return notification.results.create(result=NotificationProcessResult.Types.UNAUTHENTICATED)
-    except requests.HTTPError:
+    except DocumentPublishingError:
         return notification.results.create(result=NotificationProcessResult.Types.BAD_REQUEST)
 
 

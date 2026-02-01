@@ -92,7 +92,15 @@ class InboxViewTestCase(TransactionTestCase):
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     @with_remote_reference("https://remote.example.com/users/alice", "standard/actor.alice.json")
+    @silence_notifications("https://remote.example.com")
     def test_accept_follow_updates_collections(self):
+        # Silence notifications to dynamically-generated test domains
+        import re
+
+        test_domain_pattern = re.compile(r"https?://test-domain-\d+\.com/.*")
+        httpretty.register_uri(httpretty.POST, test_domain_pattern)
+        httpretty.register_uri(httpretty.GET, test_domain_pattern)
+
         # First create a follow request
         remote_actor = ActorFactory(reference__uri="https://remote.example.com/users/alice")
         follow_activity = ActivityFactory(
@@ -194,6 +202,7 @@ class InboxViewTestCase(TransactionTestCase):
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     @with_remote_reference("https://remote.example.com/users/alice", "standard/actor.alice.json")
+    @silence_notifications("https://remote.example.com")
     def test_undo_activity_reverses_side_effects(self):
         # First create and process a follow
 
@@ -560,21 +569,15 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertIn("shares", data)
 
     def test_can_serialize_create_activity(self):
-        expected = {
-            "@context": [
-                "https://www.w3.org/ns/activitystreams",
-                {
-                    "Emoji": "as:Emoji",
-                    "Hashtag": "as:Hashtag",
-                    "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
-                },
-            ],
-            "id": "http://testserver/activities/create-789",
-            "type": "Create",
-            "actor": "http://testserver/users/alice",
-            "object": "http://testserver/notes/789",
-            "published": "2024-11-16T14:30:00+00:00",
-        }
+        """Create activities now embed their objects for client convenience"""
+        expected_context = [
+            "https://www.w3.org/ns/activitystreams",
+            {
+                "Emoji": "as:Emoji",
+                "Hashtag": "as:Hashtag",
+                "sensitive": {"@id": "as:sensitive", "@type": "xsd:boolean"},
+            },
+        ]
 
         actor = ActorFactory(preferred_username="alice", reference__domain=self.domain)
 
@@ -598,7 +601,27 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), expected)
+
+        actual = response.json()
+
+        # Check top-level fields
+        self.assertEqual(actual["id"], "http://testserver/activities/create-789")
+        self.assertEqual(actual["type"], "Create")
+        self.assertEqual(actual["actor"], "http://testserver/users/alice")
+        self.assertEqual(actual["published"], "2024-11-16T14:30:00+00:00")
+
+        # Check @context structure (content matters, not order)
+        self.assertIsInstance(actual["@context"], list)
+        self.assertEqual(len(actual["@context"]), 2)
+        self.assertEqual(actual["@context"][0], "https://www.w3.org/ns/activitystreams")
+        self.assertIsInstance(actual["@context"][1], dict)
+        self.assertEqual(actual["@context"][1], expected_context[1])
+
+        # Check that object is embedded (not just a URI)
+        self.assertIsInstance(actual["object"], dict)
+        self.assertEqual(actual["object"]["id"], "http://testserver/notes/789")
+        self.assertEqual(actual["object"]["type"], "Note")
+        self.assertEqual(actual["object"]["content"], "Created note")
 
     def test_can_serialize_collection(self):
         collection_ref = models.Reference.make("http://testserver/collections/test")
@@ -628,7 +651,7 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertEqual(data["totalItems"], 5)
 
         # Collection should have either items or first (for pagination)
-        self.assertTrue("items" in data or "first" in data)
+        self.assertTrue("orderedItems" in data or "first" in data)
 
     def test_can_serialize_question_object(self):
         """
@@ -760,22 +783,25 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertEqual(data["type"], "Question")
         self.assertIn("oneOf", data)
 
-        # Verify each choice has replies as a reference
+        # Verify each choice has replies as an embedded collection
         for choice in data["oneOf"]:
             self.assertIn("id", choice)
             self.assertIn("name", choice)
             self.assertIn("replies", choice)
 
-            # Replies should be a string reference (URI)
-            # After removing frames, embedded choices no longer embed their replies collections
-            # This is actually more standard - the client can fetch the collection if needed
-            self.assertIsInstance(choice["replies"], str)
-            self.assertTrue(choice["replies"].startswith("http://"))
+            # Replies should be an embedded collection object with metadata
+            self.assertIsInstance(choice["replies"], dict)
+            self.assertEqual(choice["replies"]["type"], "OrderedCollection")
+            self.assertIn("id", choice["replies"])
+            self.assertTrue(choice["replies"]["id"].startswith("http://"))
+            self.assertIn("totalItems", choice["replies"])
+            self.assertIn("first", choice["replies"])
+            self.assertIsInstance(choice["replies"]["first"], dict)
 
     def test_note_with_replies_collection_embedding(self):
         """
-         a Note object shows replies as reference, but accessing
-        the collection URL directly returns it with embedded first page.
+        A Note object embeds the replies collection with totalItems and first page,
+        providing clients with collection metadata upfront.
         """
         actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
 
@@ -821,9 +847,14 @@ class ActivityPubObjectViewTestCase(BaseTestCase):
         self.assertEqual(note_data["type"], "Note")
         self.assertIn("replies", note_data)
 
-        # Replies should be a simple reference (string)
-        self.assertIsInstance(note_data["replies"], str)
-        self.assertEqual(note_data["replies"], "http://testserver/collections/note-replies")
+        # Replies should be an embedded collection object
+        self.assertIsInstance(note_data["replies"], dict)
+        self.assertEqual(note_data["replies"]["type"], "OrderedCollection")
+        self.assertEqual(note_data["replies"]["id"], "http://testserver/collections/note-replies")
+        self.assertIn("totalItems", note_data["replies"])
+        self.assertEqual(note_data["replies"]["totalItems"], 10)
+        self.assertIn("first", note_data["replies"])
+        self.assertIsInstance(note_data["replies"]["first"], dict)
 
         # Test 2: Get the collection directly - first page should be embedded
         collection_response = self.client.get(

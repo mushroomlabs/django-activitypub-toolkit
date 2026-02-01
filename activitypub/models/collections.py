@@ -148,7 +148,7 @@ class CollectionContext(BaseCollectionContext):
             last_page = self.last.get_by_context(CollectionPageContext)
             return last_page._get_append_target()
 
-        return self.reference.domain.build_collection_page(collection=self)
+        return self.make_page()
 
     def _get_item_queryset(self):
         page_references = CollectionPageContext.objects.filter(part_of=self.reference)
@@ -160,7 +160,12 @@ class CollectionContext(BaseCollectionContext):
     @transaction.atomic
     def make_page(self):
         reference = CollectionPageContext.generate_reference(domain=self.reference.domain)
-        new_page = CollectionPageContext.make(reference=reference, part_of=self.reference)
+        page_types = CollectionPageContext.Types
+        new_page = CollectionPageContext.make(
+            reference=reference,
+            part_of=self.reference,
+            type=page_types.ORDERED if self.is_ordered else page_types.UNORDERED,
+        )
 
         if self.first is None:
             self.first = reference

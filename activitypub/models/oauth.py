@@ -2,6 +2,7 @@ from django.db import models
 from oauth2_provider.models import (
     AbstractAccessToken,
     AbstractApplication,
+    AbstractGrant,
     AbstractIDToken,
     AbstractRefreshToken,
 )
@@ -46,6 +47,16 @@ class OAuthRefreshToken(AbstractRefreshToken):
         verbose_name_plural = "OAuth Refresh Tokens"
 
 
+class OAuthAuthorizationCode(AbstractGrant):
+    identity = models.ForeignKey(
+        Identity, related_name="oauth_authorization_codes", on_delete=models.CASCADE
+    )
+
+    class Meta:
+        verbose_name = "OAuth Authorization Code"
+        verbose_name_plural = "OAuth Authorization Codes"
+
+
 class OidcIdentityToken(AbstractIDToken):
     identity = models.ForeignKey(Identity, related_name="oidc_id_tokens", on_delete=models.CASCADE)
 
@@ -57,4 +68,10 @@ class OidcIdentityToken(AbstractIDToken):
         verbose_name_plural = "OIDC ID Tokens"
 
 
-__all__ = ("OAuthAccessToken", "OAuthClientApplication", "OAuthRefreshToken", "OidcIdentityToken")
+__all__ = (
+    "OAuthAccessToken",
+    "OAuthAuthorizationCode",
+    "OAuthClientApplication",
+    "OAuthRefreshToken",
+    "OidcIdentityToken",
+)

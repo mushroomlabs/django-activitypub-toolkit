@@ -9,6 +9,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Introduced new `publishers.py` module for handling ActivityPub publishing logic.
+- Added OAuth authorization template `authorize_identity.html`.
+- Added new test settings and updated test suite for OAuth and views.
+
+### Changed
+- Updated core ActivityPub components: `admin/admins.py`, `apps.py`, `authentication_backends.py`, `contexts.py`, `decorators.py`, `exceptions.py`, `factories.py`, `forms.py`, `handlers.py`, models (`ap.py`, `as2.py`, `collections.py`, `languages.py`, `oauth.py`), `processors.py`, projection modules, `resolvers.py`, `settings.py`, `tasks.py`, and view modules (`activitystreams.py`, `linked_data.py`, `oauth.py`).
+- Refactored templates and view rendering for OAuth flow.
+- Updated migration `0001_initial.py` to reflect schema changes.
+- Enhanced test coverage for OAuth, policies, projections, and views.
+
+### Fixed
+- Various bug fixes across the updated modules, including import organization, context handling, and signal processing.
+
+
+### Added
 
 - Projection system for controlling JSON-LD presentation and access control
   - `ReferenceProjection` base class with declarative Meta configuration

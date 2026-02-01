@@ -7,7 +7,12 @@ from django.test import RequestFactory
 from django.utils import timezone
 
 from activitypub.factories import DomainFactory, IdentityFactory, UserFactory
-from activitypub.models import OAuthAccessToken, OAuthClientApplication, OAuthRefreshToken
+from activitypub.models import (
+    OAuthAccessToken,
+    OAuthAuthorizationCode,
+    OAuthClientApplication,
+    OAuthRefreshToken,
+)
 from activitypub.tests.base import BaseTestCase
 from activitypub.views.oauth import ActivityPubIdentityOAuth2Validator
 
@@ -28,132 +33,186 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
             redirect_uris="http://localhost:8000/callback",
         )
 
-    def test_save_bearer_token_links_identity_to_access_token(self):
-        """AccessToken should be linked to the selected identity"""
-        request = self.factory.post("/oauth/token/")
+    def test_create_authorization_code_with_identity(self):
+        """Authorization code should be created with identity from request"""
+        request = Mock()
         request.user = self.user
-        request.session = {"selected_identity_id": self.identity.id}
+        request.client = self.application
+        request.identity = self.identity
+        request.redirect_uri = "http://localhost:8000/callback"
+        request.scopes = ["read", "write"]
+        request.code_challenge = "test-challenge"
+        request.code_challenge_method = "S256"
+        request.nonce = "test-nonce"
+        request.claims = {}
 
-        # Create token objects first
-        access_token = OAuthAccessToken.objects.create(
-            user=self.user,
+        code_dict = {"code": "test-auth-code-123"}
+        expires = timezone.now() + timedelta(minutes=10)
+
+        auth_code = self.validator._create_authorization_code(request, code_dict, expires)
+
+        self.assertEqual(auth_code.code, "test-auth-code-123")
+        self.assertEqual(auth_code.identity, self.identity)
+        self.assertEqual(auth_code.user, self.user)
+        self.assertEqual(auth_code.application, self.application)
+
+    def test_create_authorization_code_raises_error_without_identity(self):
+        """Should raise PermissionDenied when request has no identity"""
+        request = Mock(spec=["user", "client", "redirect_uri", "scopes", "code_challenge",
+                             "code_challenge_method", "nonce", "claims"])
+        request.user = self.user
+        request.client = self.application
+        request.redirect_uri = "http://localhost:8000/callback"
+        request.scopes = ["read", "write"]
+        request.code_challenge = ""
+        request.code_challenge_method = ""
+        request.nonce = ""
+        request.claims = {}
+
+        code_dict = {"code": "test-auth-code-456"}
+
+        with self.assertRaises(PermissionDenied):
+            self.validator._create_authorization_code(request, code_dict)
+
+    def test_create_access_token_from_authorization_code(self):
+        """Access token should inherit identity from authorization code"""
+        # Create authorization code with identity
+        OAuthAuthorizationCode.objects.create(
             application=self.application,
-            token="test-access-token",
-            expires=timezone.now() + timedelta(hours=1),
-            identity=self.identity,  # Required field
+            user=self.user,
+            code="test-auth-code",
+            expires=timezone.now() + timedelta(minutes=10),
+            redirect_uri="http://localhost:8000/callback",
+            scope="read write",
+            identity=self.identity,
         )
+
+        request = Mock()
+        request.user = self.user
+        request.client = self.application
+        request.code = "test-auth-code"
 
         token_dict = {
-            "access_token": "test-access-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
+            "access_token": "test-access-token-123",
+            "scope": "read write",
         }
+        expires = timezone.now() + timedelta(hours=1)
 
-        # Mock the parent save_bearer_token to do nothing
-        with patch.object(ActivityPubIdentityOAuth2Validator.__bases__[0], "save_bearer_token"):
-            self.validator.save_bearer_token(token_dict, request)
-
-        # Verify identity was linked
-        access_token.refresh_from_db()
-        self.assertEqual(access_token.identity, self.identity)
-        self.assertNotIn("selected_identity_id", request.session)
-
-    def test_save_bearer_token_links_identity_to_refresh_token(self):
-        """RefreshToken should be linked to the selected identity"""
-        request = self.factory.post("/oauth/token/")
-        request.user = self.user
-        request.session = {"selected_identity_id": self.identity.id}
-
-        # Create token objects first
-        access_token = OAuthAccessToken.objects.create(
-            user=self.user,
-            application=self.application,
-            token="test-access-token",
-            expires=timezone.now() + timedelta(hours=1),
-            identity=self.identity,  # Required field
+        access_token = self.validator._create_access_token(
+            expires, request, token_dict, source_refresh_token=None
         )
+
+        self.assertEqual(access_token.token, "test-access-token-123")
+        self.assertEqual(access_token.identity, self.identity)
+        self.assertEqual(access_token.user, self.user)
+
+    def test_create_access_token_from_refresh_token(self):
+        """Access token should inherit identity from refresh token on refresh"""
+        # Create refresh token with identity
         refresh_token = OAuthRefreshToken.objects.create(
             user=self.user,
             application=self.application,
             token="test-refresh-token",
-            identity=self.identity,  # Required field
+            identity=self.identity,
         )
 
+        request = Mock()
+        request.user = self.user
+        request.client = self.application
+
         token_dict = {
-            "access_token": "test-access-token",
-            "refresh_token": "test-refresh-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
+            "access_token": "refreshed-access-token-456",
+            "scope": "read write",
         }
+        expires = timezone.now() + timedelta(hours=1)
 
-        # Mock the parent save_bearer_token to do nothing
-        with patch.object(ActivityPubIdentityOAuth2Validator.__bases__[0], "save_bearer_token"):
-            self.validator.save_bearer_token(token_dict, request)
+        access_token = self.validator._create_access_token(
+            expires, request, token_dict, source_refresh_token=refresh_token
+        )
 
-        # Verify identity was linked to both tokens
-        access_token.refresh_from_db()
-        refresh_token.refresh_from_db()
+        self.assertEqual(access_token.token, "refreshed-access-token-456")
         self.assertEqual(access_token.identity, self.identity)
+        self.assertEqual(access_token.source_refresh_token, refresh_token)
+
+    def test_create_refresh_token_initial_grant(self):
+        """Initial refresh token should get identity from authorization code"""
+        # Create authorization code with identity
+        OAuthAuthorizationCode.objects.create(
+            application=self.application,
+            user=self.user,
+            code="test-auth-code",
+            expires=timezone.now() + timedelta(minutes=10),
+            redirect_uri="http://localhost:8000/callback",
+            scope="read write",
+            identity=self.identity,
+        )
+
+        # Create access token
+        access_token = OAuthAccessToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="test-access-token",
+            expires=timezone.now() + timedelta(hours=1),
+            identity=self.identity,
+        )
+
+        request = Mock()
+        request.user = self.user
+        request.client = self.application
+        request.code = "test-auth-code"
+
+        refresh_token = self.validator._create_refresh_token(
+            request, "test-refresh-token-789", access_token, previous_refresh_token=None
+        )
+
+        self.assertEqual(refresh_token.token, "test-refresh-token-789")
         self.assertEqual(refresh_token.identity, self.identity)
-        self.assertNotIn("selected_identity_id", request.session)
+        self.assertIsNotNone(refresh_token.token_family)
 
-    def test_save_bearer_token_raises_error_when_no_identity_selected(self):
-        """Should raise PermissionDenied when no identity is selected in session"""
-        request = self.factory.post("/oauth/token/")
+    def test_create_refresh_token_preserves_identity(self):
+        """Refresh token rotation should preserve identity and token_family"""
+        # Create initial refresh token with identity and token_family
+        import uuid
+
+        token_family = uuid.uuid4()
+        previous_refresh_token = OAuthRefreshToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="old-refresh-token",
+            identity=self.identity,
+            token_family=token_family,
+        )
+
+        # Create new access token
+        new_access_token = OAuthAccessToken.objects.create(
+            user=self.user,
+            application=self.application,
+            token="new-access-token",
+            expires=timezone.now() + timedelta(hours=1),
+            identity=self.identity,
+            source_refresh_token=previous_refresh_token,
+        )
+
+        request = Mock()
         request.user = self.user
-        request.session = {}  # No identity selected
+        request.client = self.application
 
-        token_dict = {
-            "access_token": "test-access-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-        }
+        new_refresh_token = self.validator._create_refresh_token(
+            request,
+            "new-refresh-token-999",
+            new_access_token,
+            previous_refresh_token=previous_refresh_token,
+        )
 
-        # Mock the parent save_bearer_token to do nothing
-        with patch.object(ActivityPubIdentityOAuth2Validator.__bases__[0], "save_bearer_token"):
-            with self.assertRaises(PermissionDenied):
-                self.validator.save_bearer_token(token_dict, request)
-
-    def test_save_bearer_token_raises_error_for_invalid_identity(self):
-        """Should raise PermissionDenied when identity does not belong to user"""
-        other_user = UserFactory()
-        other_identity = IdentityFactory(user=other_user, actor__reference__domain=self.domain)
-
-        request = self.factory.post("/oauth/token/")
-        request.user = self.user
-        request.session = {"selected_identity_id": other_identity.id}  # Wrong user's identity
-
-        token_dict = {
-            "access_token": "test-access-token",
-            "token_type": "Bearer",
-            "expires_in": 3600,
-        }
-
-        # Mock the parent save_bearer_token to do nothing
-        with patch.object(ActivityPubIdentityOAuth2Validator.__bases__[0], "save_bearer_token"):
-            with self.assertRaises(PermissionDenied):
-                self.validator.save_bearer_token(token_dict, request)
+        self.assertEqual(new_refresh_token.token, "new-refresh-token-999")
+        self.assertEqual(new_refresh_token.identity, self.identity)
+        self.assertEqual(new_refresh_token.token_family, token_family)
 
     def test_get_identity_from_access_token(self):
         """Should retrieve identity directly from AccessToken"""
         request = Mock()
         access_token = Mock()
         access_token.identity = self.identity
-        request.access_token = access_token
-
-        result = self.validator._get_identity_for_request(request)
-
-        self.assertEqual(result, self.identity)
-
-    def test_get_identity_from_refresh_token_via_source(self):
-        """Should retrieve identity from RefreshToken via source_refresh_token"""
-        request = Mock()
-        refresh_token = Mock()
-        refresh_token.identity = self.identity
-
-        access_token = Mock()
-        access_token.identity = None
-        access_token.source_refresh_token = refresh_token
         request.access_token = access_token
 
         result = self.validator._get_identity_for_request(request)
@@ -214,9 +273,9 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
     def test_identity_persists_across_token_refresh(self):
         """
         Identity should persist when tokens are refreshed.
-        RefreshToken maintains identity link across multiple access token refreshes.
+        Access tokens created via refresh flow have identity directly set.
         """
-        # Create initial tokens with identity
+        # Create initial refresh token with identity
         refresh_token = OAuthRefreshToken.objects.create(
             user=self.user,
             application=self.application,
@@ -224,7 +283,7 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
             identity=self.identity,
         )
 
-        # Simulate token refresh: new access token created with source_refresh_token
+        # Simulate token refresh: new access token created with identity directly set
         new_access_token = OAuthAccessToken.objects.create(
             user=self.user,
             application=self.application,
@@ -238,10 +297,12 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
         request = Mock()
         request.access_token = new_access_token
 
-        # Should be able to retrieve identity via source_refresh_token
+        # Should retrieve identity directly from access token
         result = self.validator._get_identity_for_request(request)
 
         self.assertEqual(result, self.identity)
+        # Verify identity is directly set on access token, not via fallback
+        self.assertEqual(new_access_token.identity, self.identity)
 
 
 class OAuthUserinfoClaimsTestCase(BaseTestCase):

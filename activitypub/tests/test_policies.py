@@ -27,6 +27,8 @@ class FollowRequestPolicyTestCase(TestCase):
 
     @httpretty.activate
     @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @with_remote_reference("https://remote.example.com/users/alice", "standard/actor.alice.json")
+    @silence_notifications("https://remote.example.com")
     def test_follow_request_accepted_without_manual_approval(self):
         self.local_actor.manually_approves_followers = False
         self.local_actor.save()
@@ -78,6 +80,7 @@ class FollowRequestPolicyTestCase(TestCase):
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @silence_notifications("https://remote.example.com")
     def test_follow_request_rejected_by_policy(self):
         self.local_actor.manually_approves_followers = False
         self.local_actor.save()
@@ -107,6 +110,7 @@ class FollowRequestPolicyTestCase(TestCase):
     @httpretty.activate
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @silence_notifications("https://remote.example.com")
     def test_follow_request_passes_policy_check(self):
         self.local_actor.manually_approves_followers = False
         self.local_actor.save()
@@ -136,6 +140,7 @@ class FollowRequestPolicyTestCase(TestCase):
     @httpretty.activate
     @use_nodeinfo("https://bot.example.com", "nodeinfo/mastodon.json")
     @use_nodeinfo("https://local.example.com", "nodeinfo/testserver.json")
+    @silence_notifications("https://bot.example.com")
     def test_follow_request_rejected_by_bot_check_policy(self):
         remote_bot = ActorFactory(
             reference__domain__local=False,

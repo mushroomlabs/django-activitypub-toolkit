@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def builtin_document_loader(url: str, options={}):
     for ctx in app_settings.PRESET_CONTEXTS:
         if ctx.matches(url):
-            logger.info(f"Using builtin context for {url!r}")
+            logger.info(f"Using builtin context for {url}")
             return ctx.as_pyld
 
     logger.info(f"Fetching remote context: {url!r}")

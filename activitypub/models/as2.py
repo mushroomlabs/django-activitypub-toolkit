@@ -408,6 +408,15 @@ class ActorContext(BaseAs2ObjectContext):
     def __str__(self):
         return self.uri or f"Unreferenced actor {self.id}"
 
+    @classmethod
+    def generate_reference(cls, domain):
+        ulid = str(generate_ulid())
+        if app_settings.Instance.actor_view_name:
+            uri = domain.reverse_view(app_settings.Instance.actor_view_name, pk=ulid)
+        else:
+            uri = f"{domain.url}/actors/{ulid}"
+        return Reference.make(uri)
+
 
 class ActivityContext(BaseAs2ObjectContext):
     LINKED_DATA_FIELDS = BaseAs2ObjectContext.LINKED_DATA_FIELDS | {

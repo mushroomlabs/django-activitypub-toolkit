@@ -5,7 +5,7 @@ from functools import wraps
 from cryptography.hazmat.primitives import hashes
 from django.http import HttpResponseBadRequest
 
-from .models import HttpMessageSignature, Identity
+from .models import HttpMessageSignature
 
 logger = logging.getLogger(__name__)
 
