@@ -28,14 +28,6 @@ def set_default_port_for_domain(sender, **kw):
 
 
 @receiver(post_save, sender=Domain)
-def on_new_remote_domain_fetch_nodeinfo(sender, **kw):
-    domain = kw["instance"]
-
-    if kw["created"] and not domain.local:
-        tasks.fetch_nodeinfo.delay(domain_id=domain.id)
-
-
-@receiver(post_save, sender=Domain)
 def on_new_local_domain_setup_nodeinfo(sender, **kw):
     domain = kw["instance"]
 
@@ -101,8 +93,10 @@ def on_follow_request_received_check_policies(sender, **kw):
         return
 
     to_follow = follow_request.followed.get_by_context(Actor)
+    logger.debug(f"Followed actor: {to_follow}")
 
     if to_follow is not None and not to_follow.manually_approves_followers:
+        logger.info(f"Accepting follow request for {to_follow}")
         follow_request.accept()
 
 
@@ -167,7 +161,6 @@ def on_lemmy_activity_document_loaded_mark_unresolvable(sender, **kw):
 
 
 __all__ = (
-    "on_new_remote_domain_fetch_nodeinfo",
     "on_new_local_domain_setup_nodeinfo",
     "on_follow_request_received_check_policies",
     "on_follow_request_created_post_activity",
