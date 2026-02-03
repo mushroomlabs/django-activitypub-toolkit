@@ -72,6 +72,7 @@ def resolve_reference(uri, force=True):
 def process_incoming_notification(notification_id):
     try:
         notification = Notification.objects.get(id=notification_id)
+        notification.authenticate(fetch_missing_keys=True)
         document = LinkedDataDocument.objects.get(reference=notification.resource)
 
         for processor in app_settings.DOCUMENT_PROCESSORS:
@@ -79,7 +80,6 @@ def process_incoming_notification(notification_id):
 
         # Load context models from the document
         document.load()
-        notification.sender.resolve()
         notification_accepted.send(notification=notification, sender=Notification)
         box = CollectionContext.objects.get(reference=notification.target)
         box.append(item=notification.resource)
