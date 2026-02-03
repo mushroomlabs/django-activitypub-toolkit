@@ -24,11 +24,11 @@ from .linked_data import LinkedDataModelView
 logger = logging.getLogger(__name__)
 
 
-def is_an_inbox(uri):
+def is_an_inbox(reference):
     return any(
         [
-            Domain.objects.filter(local=True, instance__actor__inbox__uri=uri).exists(),
-            ActorContext.objects.filter(reference__domain__local=True, inbox__uri=uri).exists(),
+            Domain.objects.filter(local=True, instance__actor__inbox=reference).exists(),
+            ActorContext.objects.filter(reference__domain__local=True, inbox=reference).exists(),
         ]
     )
 
@@ -46,7 +46,8 @@ def is_outbox_owner(actor_reference: Reference, uri):
 class ActivityPubObjectDetailView(LinkedDataModelView):
     def get(self, *args, **kw):
         reference = self.get_object()
-        if is_an_inbox(reference.uri):
+        if is_an_inbox(reference):
+            logger.debug(f"{reference} is marked as an inbox")
             return Response(status=status.HTTP_401_UNAUTHORIZED)
         return super().get(*args, **kw)
 
@@ -141,7 +142,7 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
     def post(self, *args, **kw):
         reference = self.get_object()
 
-        if is_an_inbox(reference.uri):
+        if is_an_inbox(reference):
             return self._post_inbox(reference)
 
         if is_an_outbox(reference.uri):
