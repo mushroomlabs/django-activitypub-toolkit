@@ -176,7 +176,7 @@ class CollectionItemAdmin(admin.ModelAdmin):
 class BaseAs2ObjectAdmin(admin.ModelAdmin):
     list_display = ("uri", "name", "content")
     list_filter = ("media_type",)
-    search_fields = ("reference__uri",)
+    search_fields = ("reference__uri", "name")
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -186,7 +186,7 @@ class BaseAs2ObjectAdmin(admin.ModelAdmin):
 class ObjectAdmin(admin.ModelAdmin):
     list_display = ("uri", "type", "name", "content")
     list_filter = ("type", "media_type")
-    search_fields = ("reference__uri",)
+    search_fields = ("reference__uri", "name")
 
     def has_change_permission(self, request, obj=None):
         return False

@@ -33,22 +33,20 @@ def process_notifications(modeladmin, request, queryset):
     successful = 0
     for notification in queryset:
         try:
-            assert not notification.is_processed, f"{notification} has been processed already"
+            if notification.is_processed:
+                raise AssertionError(f"{notification} has been processed already")
+
             action = (
                 tasks.send_notification
                 if notification.sender.is_local
                 else tasks.process_incoming_notification
             )
 
-            result = action(notification.id)
-            assert result is not None, "Notification {notification} was skipped"
-
-            ok = result.result == models.NotificationProcessResult.Types.OK
-            assert ok, f"{result.get_result_display()} result for {notification.id}"
+            action(notification.id)
             successful += 1
         except AssertionError as exc:
             messages.warning(request, str(exc))
-        except (AssertionError, Exception) as exc:
+        except Exception as exc:
             messages.error(request, f"Error processing {notification.id}: {exc}")
 
     if successful:
