@@ -178,7 +178,7 @@ class LinkContext(AbstractContextModel):
         HASHTAG = str(AS2.Hashtag)
 
     type = models.CharField(max_length=48, choices=Types.choices, default=Types.LINK)
-    href = models.URLField()
+    href = models.URLField(max_length=2083)
     media_type = models.CharField(max_length=48, null=True, blank=True)
     name = models.TextField(null=True, blank=True)
     language = models.CharField(max_length=5, null=True, blank=True)
@@ -263,12 +263,12 @@ class EndpointContext(AbstractContextModel):
         "shared_inbox": AS2.sharedInbox,
     }
 
-    proxy_url = models.URLField(null=True, blank=True)
-    oauth_authorization_endpoint = models.URLField(null=True, blank=True)
-    oauth_token_endpoint = models.URLField(null=True, blank=True)
-    authorize_client_key_endpoint = models.URLField(null=True, blank=True)
-    sign_client_key_endpoint = models.URLField(null=True, blank=True)
-    shared_inbox = models.URLField(null=True, blank=True)
+    proxy_url = models.URLField(max_length=512, null=True, blank=True)
+    oauth_authorization_endpoint = models.URLField(max_length=512, null=True, blank=True)
+    oauth_token_endpoint = models.URLField(max_length=512, null=True, blank=True)
+    authorize_client_key_endpoint = models.URLField(max_length=512, null=True, blank=True)
+    sign_client_key_endpoint = models.URLField(max_length=512, null=True, blank=True)
+    shared_inbox = models.URLField(max_length=512, null=True, blank=True)
 
     @classmethod
     def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
@@ -329,40 +329,20 @@ class ActorContext(BaseAs2ObjectContext):
         Reference, related_name="actor_endpoints", null=True, blank=True, on_delete=models.SET_NULL
     )
 
-    inbox = models.OneToOneField(
-        Reference,
-        related_name="inbox_owner_actor",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+    inbox = models.ForeignKey(
+        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    outbox = models.OneToOneField(
-        Reference,
-        related_name="outbox_owner_actor",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+    outbox = models.ForeignKey(
+        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    following = models.OneToOneField(
-        Reference,
-        related_name="actor_follows",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+    following = models.ForeignKey(
+        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    followers = models.OneToOneField(
-        Reference,
-        related_name="actor_followers",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+    followers = models.ForeignKey(
+        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
-    liked = models.OneToOneField(
-        Reference,
-        related_name="actor_liked",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
+    liked = models.ForeignKey(
+        Reference, related_name="+", null=True, blank=True, on_delete=models.SET_NULL
     )
     objects = ActorManager()
 
