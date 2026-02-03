@@ -44,12 +44,6 @@ class HttpDocumentPublisher(DocumentPublisher):
                 raise UnauthenticatedPublisher("Authentication Required")
             response.raise_for_status()
         except (requests.HTTPError, requests.ConnectTimeout) as exc:
-            from pprint import pprint
-
-            print(exc)
-            print(response.text)
-            pprint(data)
-            breakpoint()
             raise DocumentPublishingError from exc
 
 
