@@ -44,6 +44,24 @@ class ActivityPubOAuthServer(OAuthLibCore):
 
         return super().create_authorization_response(request, scopes, credentials, allow)
 
+    def create_token_response(self, request):
+        uri, headers, body, status = super().create_token_response(request)
+
+        # Parse the token response body
+        token_data = json.loads(body)
+
+        # Get the access token and find its identity
+        access_token = (
+            OAuthAccessToken.objects.filter(token=token_data.get("access_token"))
+            .select_related("identity__actor__reference")
+            .first()
+        )
+
+        if access_token and access_token.identity:
+            token_data["actor"] = access_token.identity.actor.reference.uri
+
+        return uri, headers, json.dumps(token_data), status
+
 
 class ActivityPubIdentityOAuth2Validator(OAuth2Validator):
     oidc_claim_scope = OAuth2Validator.oidc_claim_scope.copy()
@@ -181,7 +199,7 @@ class ActivityPubIdentityOAuth2Validator(OAuth2Validator):
             "Request without associated identity",
             extra={"user_id": getattr(request.user, "id", None)},
         )
-        raise PermissionDenied("Request does not have an associated identity.")
+        return None
 
 
 class ActivityPubDynamicClientRegistrationView(DynamicClientRegistrationView):

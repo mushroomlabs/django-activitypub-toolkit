@@ -58,8 +58,18 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
 
     def test_create_authorization_code_raises_error_without_identity(self):
         """Should raise PermissionDenied when request has no identity"""
-        request = Mock(spec=["user", "client", "redirect_uri", "scopes", "code_challenge",
-                             "code_challenge_method", "nonce", "claims"])
+        request = Mock(
+            spec=[
+                "user",
+                "client",
+                "redirect_uri",
+                "scopes",
+                "code_challenge",
+                "code_challenge_method",
+                "nonce",
+                "claims",
+            ]
+        )
         request.user = self.user
         request.client = self.application
         request.redirect_uri = "http://localhost:8000/callback"
@@ -234,15 +244,14 @@ class OAuthIdentityLinkingTestCase(BaseTestCase):
 
         self.assertEqual(result, self.identity)
 
-    def test_get_identity_raises_error_when_no_identity_found(self):
-        """Should raise PermissionDenied when no identity can be found on request"""
+    def test_no_identity(self):
+        """no identity if not associated with the tokens"""
         request = Mock()
         request.user = self.user
         request.access_token = None
         request.id_token = None
 
-        with self.assertRaises(PermissionDenied):
-            self.validator._get_identity_for_request(request)
+        self.assertIsNone(self.validator._get_identity_for_request(request))
 
     def test_get_identity_priority_access_token_over_id_token(self):
         """AccessToken.identity should take priority over IDToken.identity"""
