@@ -1,22 +1,15 @@
 from rest_framework import permissions
 
-from .models import Domain
+from .models import ActorContext, Reference
 
 
-class UnblockedDomainOrActorPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        actor = getattr(request, "actor", None)
-        if actor is None:
+class IsOutboxOwnerOrReadOnly(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj: Reference):
+        if request.method in permissions.SAFE_METHODS:
             return True
 
-        return not Domain.objects.filter(accounts__actor=actor, blocked=True).exists()
+        if not request.user.is_authenticated:
+            return False
 
-
-class SignedRequestPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return hasattr(request, "signature")
-
-
-class SignedDocumentPermission(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return "signature" in request.data
+        actors = ActorContext.objects.filter(identity__user=request.user)
+        return actors.filter(outbox=obj).exists()

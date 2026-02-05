@@ -11,6 +11,7 @@ from activitypub.factories import (
     ActorFactory,
     CollectionFactory,
     DomainFactory,
+    IdentityFactory,
     ObjectFactory,
     SecV1ContextFactory,
 )
@@ -898,6 +899,12 @@ class ActivityOutboxTestCase(TransactionTestCase):
     @httpretty.activate
     @silence_notifications("https://remote.example.com")
     def test_local_actor_can_post_follow_to_own_outbox(self):
+        # Only actors with a django user can post to the outbox, so we
+        # need to create an identity which we use to connect the actor
+        # and user.
+        identity = IdentityFactory(actor=self.actor)
+        self.client.force_authenticate(user=identity.user)
+
         alice = "https://remote.example.com/users/alice"
 
         follow_activity = {
@@ -944,5 +951,5 @@ class ActivityOutboxTestCase(TransactionTestCase):
             content_type="application/ld+json",
         )
 
-        # Should return 403 Forbidden
-        self.assertEqual(response.status_code, 403)
+        # Should return 401 Unauthorized
+        self.assertEqual(response.status_code, 401)

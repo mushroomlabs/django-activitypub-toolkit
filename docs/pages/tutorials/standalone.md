@@ -83,7 +83,7 @@ from activitypub.models import Reference, ActorContext, CollectionContext, Domai
 
 class ManagedActor(models.Model):
     """Links Django users to actors they control."""
-    
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='managed_actors')
     actor_reference = models.OneToOneField(
         Reference,
@@ -92,24 +92,24 @@ class ManagedActor(models.Model):
     )
     display_name = models.CharField(max_length=100, help_text="Friendly name for this actor")
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         unique_together = ['user', 'actor_reference']
-    
+
     def __str__(self):
         return f"{self.user.username} manages {self.display_name}"
-    
+
     @property
     def actor(self):
         """Access the actor context."""
         return self.actor_reference.get_by_context(ActorContext)
-    
+
     @classmethod
     def create_actor(cls, user, preferred_username, display_name, actor_type='Person'):
         """Create a new actor with all required collections."""
         domain = Domain.get_default()
         actor_ref = ActorContext.generate_reference(domain)
-        
+
         # Map actor type string to enum
         type_mapping = {
             'Person': ActorContext.Types.PERSON,
@@ -119,7 +119,7 @@ class ManagedActor(models.Model):
             'Organization': ActorContext.Types.ORGANIZATION,
         }
         actor_type_enum = type_mapping.get(actor_type, ActorContext.Types.PERSON)
-        
+
         # Create actor
         actor = ActorContext.make(
             reference=actor_ref,
@@ -127,10 +127,10 @@ class ManagedActor(models.Model):
             preferred_username=preferred_username,
             name=display_name,
         )
-        
+
         # Generate keypair for signing
         SecV1Context.generate_keypair(owner=actor_ref)
-        
+
         # Create collections
         for collection_name in ['inbox', 'outbox', 'followers', 'following']:
             coll_ref = CollectionContext.generate_reference(domain)
@@ -139,16 +139,16 @@ class ManagedActor(models.Model):
                 type=CollectionContext.Types.ORDERED_COLLECTION,
             )
             setattr(actor, collection_name, coll_ref)
-        
+
         actor.save()
-        
+
         # Create management record
         managed = cls.objects.create(
             user=user,
             actor_reference=actor_ref,
             display_name=display_name
         )
-        
+
         return managed
 ```
 
@@ -205,13 +205,13 @@ from activitypub.models import ActorContext
 
 class ActorListCreateView(APIView):
     """List and create actors for the authenticated user."""
-    
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         """List actors managed by this user."""
         actors = ManagedActor.objects.filter(user=request.user)
-        
+
         data = []
         for managed in actors:
             actor = managed.actor
@@ -224,28 +224,28 @@ class ActorListCreateView(APIView):
                 'inbox': actor.inbox.uri if actor.inbox else None,
                 'outbox': actor.outbox.uri if actor.outbox else None,
             })
-        
+
         return Response(data)
-    
+
     def post(self, request):
         """Create a new actor."""
         preferred_username = request.data.get('preferred_username')
         display_name = request.data.get('display_name', preferred_username)
         actor_type = request.data.get('type', 'Person')
-        
+
         if not preferred_username:
             return Response(
                 {'error': 'preferred_username is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         # Check if username is taken
         if ActorContext.objects.filter(preferred_username=preferred_username).exists():
             return Response(
                 {'error': 'Username already taken'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             managed = ManagedActor.create_actor(
                 user=request.user,
@@ -258,7 +258,7 @@ class ActorListCreateView(APIView):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        
+
         actor = managed.actor
         return Response({
             'id': managed.id,
@@ -285,57 +285,7 @@ urlpatterns = [
 
 ## Authenticated ActivityPub Views
 
-The toolkit's `ActivityPubObjectDetailView` handles both inbox and outbox operations. For C2S, add authentication to verify the client is authorized to post to the outbox.
-
-Create `actors/activitypub_views.py`:
-
-```python
-from rest_framework.response import Response
-from rest_framework import status
-from activitypub.views import ActivityPubObjectDetailView
-from activitypub.views.activitystreams import is_an_outbox
-from activitypub.models import ActorContext
-from actors.models import ManagedActor
-
-
-class AuthenticatedActivityPubView(ActivityPubObjectDetailView):
-    """ActivityPub view with OAuth authentication for C2S operations."""
-    
-    def post(self, request, *args, **kwargs):
-        """Handle POST with authentication for outbox, signature check for inbox."""
-        reference = self.get_object()
-        
-        # Check if this is an outbox POST (C2S)
-        if is_an_outbox(reference.uri):
-            # C2S requires OAuth authentication
-            if not request.user or not request.user.is_authenticated:
-                return Response(
-                    {'error': 'Authentication required for outbox posting'},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
-            
-            # Verify user owns this outbox
-            actor = ActorContext.objects.filter(outbox=reference).first()
-            if not actor:
-                return Response(
-                    {'error': 'Invalid outbox'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            managed = ManagedActor.objects.filter(
-                user=request.user,
-                actor_reference=actor.reference
-            ).first()
-            
-            if not managed:
-                return Response(
-                    {'error': 'You do not own this outbox'},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        
-        # Proceed with standard processing
-        return super().post(request, *args, **kwargs)
-```
+The toolkit's `ActivityPubObjectDetailView` handles both inbox and outbox operations. For C2S, add authentication to verify the client is authorized to post to the outbox. The `IsOutboxOwnerOrReadOnly` permission class checks if the resource being accessed belongs to the authenticated user making the request.
 
 ## URL Routing
 
@@ -350,7 +300,7 @@ app_name = 'actors'
 
 urlpatterns = [
     path('api/actors', ActorListCreateView.as_view(), name='actor-list'),
-    
+
     # Catch-all for ActivityPub resources
     re_path(
         r'^(?P<path>.*)$',
@@ -384,13 +334,13 @@ from activitypub.models import Domain
 
 class Command(BaseCommand):
     help = 'Set up the local domain'
-    
+
     def handle(self, *args, **options):
         domain, created = Domain.objects.get_or_create(
             domain='localhost:8000',
             defaults={'local': True}
         )
-        
+
         if created:
             self.stdout.write(self.style.SUCCESS(f'Created domain: {domain}'))
         else:
@@ -522,24 +472,24 @@ from activitypub.models import ActorContext
 
 class GenericWebfinger(Webfinger):
     """WebFinger for generic server without ActorAccount model."""
-    
+
     def resolve_account(self, request, subject_name):
         """Resolve actor by username instead of ActorAccount."""
         try:
             username, domain = subject_name.split('@')
         except ValueError:
             raise Http404
-        
+
         try:
             actor_ctx = ActorContext.objects.get(preferred_username=username)
         except ActorContext.DoesNotExist:
             raise Http404
-        
+
         # Return a minimal object with actor attribute
         class MinimalAccount:
             def __init__(self, actor_ctx):
                 self.actor = actor_ctx.reference
-        
+
         return MinimalAccount(actor_ctx)
 ```
 
@@ -574,7 +524,7 @@ class ManagedActorAdmin(admin.ModelAdmin):
     list_filter = ('created_at', 'user')
     search_fields = ('display_name', 'user__username')
     readonly_fields = ('actor_reference', 'created_at')
-    
+
     def get_username(self, obj):
         return obj.actor.preferred_username if obj.actor else None
     get_username.short_description = 'Username'
@@ -617,7 +567,7 @@ class ActivityPubClient:
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/activity+json',
         }
-    
+
     def create_actor(self, username, display_name):
         response = requests.post(
             f'{self.base_url}/api/actors',
@@ -628,7 +578,7 @@ class ActivityPubClient:
             headers=self.headers
         )
         return response.json()
-    
+
     def post_note(self, outbox_url, content):
         activity = {
             '@context': 'https://www.w3.org/ns/activitystreams',

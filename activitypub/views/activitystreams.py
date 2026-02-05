@@ -37,10 +37,6 @@ def is_an_outbox(uri):
     return ActorContext.objects.filter(reference__domain__local=True, outbox__uri=uri).exists()
 
 
-def is_outbox_owner(actor_reference: Reference, uri):
-    return ActorContext.objects.filter(reference=actor_reference, outbox__uri=uri).exists()
-
-
 @method_decorator(calculate_digest, name="dispatch")
 @method_decorator(collect_signature, name="dispatch")
 class ActivityPubObjectDetailView(LinkedDataModelView):
@@ -56,11 +52,18 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
             document = self.request.data
             doc_id = document["id"]
             activity_reference = Reference.make(doc_id)
+
+            if LinkedDataDocument.objects.filter(reference=activity_reference).exists():
+                logger.warning(f"{activity_reference} already exists. Will ignore this post")
+                return Response(status=status.HTTP_202_ACCEPTED)
+
             g = LinkedDataDocument.get_graph(document)
 
             actor_uri = activity_reference.get_value(g=g, predicate=AS2.actor)
 
-            assert actor_uri is not None, "Can not determine actor in activity"
+            if actor_uri is None:
+                raise AssertionError("Can not determine actor in activity")
+
             actor_reference = Reference.make(actor_uri)
             if actor_reference.domain and actor_reference.domain.blocked:
                 return Response(
@@ -74,7 +77,6 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
                 HttpSignatureProof.objects.create(
                     notification=notification, http_message_signature=self.request.signature
                 )
-
             LinkedDataDocument.objects.create(reference=activity_reference, data=document)
             process_incoming_notification.delay_on_commit(notification_id=str(notification.id))
 
@@ -113,12 +115,6 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
             assert actor_uri is not None, "Can not determine actor in activity"
             actor_reference = Reference.make(actor_uri)
 
-            if not is_outbox_owner(actor_reference, reference.uri):
-                return Response(
-                    f"{reference.uri} is not owned by {actor_reference}",
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
             # FIXME: This is a lazy approach to process the document.
             # We should not create documents for data we control.
             notification = Notification.objects.create(
@@ -142,10 +138,23 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
     def post(self, *args, **kw):
         reference = self.get_object()
 
+        # Posting to inbox (Server-to-Server) does not require authentication
         if is_an_inbox(reference):
             return self._post_inbox(reference)
 
-        if is_an_outbox(reference.uri):
+        # Posting to outbox (C2S) requires an authenticated django user.
+        if is_an_outbox(reference):
+            if not self.request.user.is_authenticated:
+                return Response(
+                    "Post to outbox requires authentication", status=status.HTTP_401_UNAUTHORIZED
+                )
+            actors = ActorContext.objects.filter(identity__user=self.request.user)
+            if not actors.filter(outbox=reference).exists():
+                return Response(
+                    f"{reference.uri} is not owned by {self.request.user}",
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             return self._post_outbox(reference)
 
         return Response("Not a valid inbox or outbox", status=status.HTTP_400_BAD_REQUEST)
