@@ -3,7 +3,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path
 
-from activitypub.views import (
+from activitypub.core.views import (
     ActivityPubObjectDetailView,
     HostMeta,
     NodeInfo,

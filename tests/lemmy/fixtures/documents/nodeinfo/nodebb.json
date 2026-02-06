@@ -1,0 +1,28 @@
+{
+  "version": "2.0",
+  "software": {
+    "name": "NodeBB",
+    "version": "4.4.3"
+  },
+  "protocols": [
+    "activitypub"
+  ],
+  "services": {
+    "outbound": [],
+    "inbound": []
+  },
+  "usage": {
+    "users": {
+      "total": 26596,
+      "activeMonth": 160,
+      "activeHalfyear": 805
+    },
+    "localPosts": 40203,
+    "localComments": 154268
+  },
+  "openRegistrations": true,
+  "metadata": {
+    "nodeName": "NodeBB Test Instance",
+    "nodeDescription": "An imaginary NodeBB Server"
+  }
+}

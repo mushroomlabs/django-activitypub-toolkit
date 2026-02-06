@@ -17,7 +17,7 @@ This how-to guide shows you how to use `ReferenceField` and `RelatedContextField
 `ReferenceField` creates many-to-many relationships that work on unsaved model instances:
 
 ```python
-from activitypub.models import ReferenceField
+from activitypub.core.models import ReferenceField
 
 class ObjectContext(models.Model):
     reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
@@ -33,7 +33,7 @@ class ObjectContext(models.Model):
 `RelatedContextField` provides lazy access to ActivityStreams contexts:
 
 ```python
-from activitypub.models import RelatedContextField
+from activitypub.core.models import RelatedContextField
 
 class Site(models.Model):
     reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
@@ -48,7 +48,7 @@ class Site(models.Model):
 ### Creating Context Relationships Before Persistence
 
 ```python
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 # Create references for federated content
 post_ref = Reference.make("https://example.com/posts/123")

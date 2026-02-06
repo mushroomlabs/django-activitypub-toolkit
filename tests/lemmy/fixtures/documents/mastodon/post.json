@@ -1,0 +1,71 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/activitystreams",
+    {
+      "ostatus": "http://ostatus.org#",
+      "atomUri": "ostatus:atomUri",
+      "inReplyToAtomUri": "ostatus:inReplyToAtomUri",
+      "conversation": "ostatus:conversation",
+      "sensitive": "as:sensitive",
+      "toot": "http://joinmastodon.org/ns#",
+      "votersCount": "toot:votersCount",
+      "Hashtag": "as:Hashtag"
+    }
+  ],
+  "id": "https://mastodon.example.com/users/alice/statuses/123456789123456789",
+  "type": "Note",
+  "summary": null,
+  "inReplyTo": null,
+  "published": "1970-01-01T11:22:34Z",
+  "url": "https://mastodon.example.com/@alice/123456789123456789",
+  "attributedTo": "https://mastodon.example.com/users/alice",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://mastodon.example.com/users/alice/followers",
+    "https://lemmy.example.com/c/test",
+    "https://lemmy.example.com/c/test/followers"
+  ],
+  "sensitive": false,
+  "atomUri": "https://mastodon.example.com/users/alice/statuses/123456789123456789",
+  "inReplyToAtomUri": null,
+  "conversation": "tag:mastodon.example.com,1970-01-01:objectId=12345678:objectType=Conversation",
+  "content": "<p>Hello From Mastodon</p>",
+  "contentMap": {
+    "en": "<p>Hello from Mastodon</p>"
+  },
+  "attachment": [],
+  "tag": [
+    {
+      "type": "Mention",
+      "href": "https://lemmy.example.com/c/test",
+      "name": "@test@lemmy.example.com"
+    },
+    {
+      "type": "Hashtag",
+      "href": "https://mastodon.example.com/tags/test",
+      "name": "#test"
+    }
+  ],
+  "replies": {
+    "id": "https://mastodon.example.com/users/alice/statuses/123456789123456789/replies",
+    "type": "Collection",
+    "first": {
+      "type": "CollectionPage",
+      "next": "https://mastodon.example.com/users/alice/statuses/123456789123456789/replies?only_other_accounts=true&page=true",
+      "partOf": "https://mastodon.example.com/users/alice/statuses/123456789123456789/replies",
+      "items": []
+    }
+  },
+  "likes": {
+    "id": "https://mastodon.example.com/users/alice/statuses/123456789123456789/likes",
+    "type": "Collection",
+    "totalItems": 1
+  },
+  "shares": {
+    "id": "https://mastodon.example.com/users/alice/statuses/123456789123456789/shares",
+    "type": "Collection",
+    "totalItems": 1
+  }
+}

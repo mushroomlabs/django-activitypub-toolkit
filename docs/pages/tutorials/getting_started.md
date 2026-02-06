@@ -161,7 +161,7 @@ Create your application model in `journal/models.py`:
 ```python
 from django.db import models
 from django.contrib.auth.models import User
-from activitypub.models import Reference, ObjectContext
+from activitypub.core.models import Reference, ObjectContext
 
 class JournalEntry(models.Model):
     class EntryType(models.TextChoices):
@@ -213,7 +213,7 @@ When a user writes a journal entry, create both the application record and the A
 ```python
 from django.utils import timezone
 from datetime import timedelta
-from activitypub.models import Reference, ObjectContext, Domain
+from activitypub.core.models import Reference, ObjectContext, Domain
 
 class JournalEntry(models.Model):
     # ... existing fields ...
@@ -461,7 +461,7 @@ Check this relationship in the Django shell:
 python manage.py shell
 
 from journal.models import JournalEntry
-from activitypub.models import ObjectContext
+from activitypub.core.models import ObjectContext
 
 entry = JournalEntry.objects.first()
 print(f"Entry reference: {entry.reference.uri}")
@@ -484,7 +484,7 @@ Because context models are Django models, you can query them using the ORM. Find
 ```python
 from datetime import timedelta
 from django.utils import timezone
-from activitypub.models import ObjectContext
+from activitypub.core.models import ObjectContext
 
 week_ago = timezone.now() - timedelta(days=7)
 recent_contexts = ObjectContext.objects.filter(
@@ -518,7 +518,7 @@ Create a command to fetch and display a remote entry in `journal/management/comm
 
 ```python
 from django.core.management.base import BaseCommand
-from activitypub.models import Reference, ObjectContext
+from activitypub.core.models import Reference, ObjectContext
 
 class Command(BaseCommand):
     help = 'Fetch and display a remote journal entry'

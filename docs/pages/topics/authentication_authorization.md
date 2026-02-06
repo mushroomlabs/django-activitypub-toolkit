@@ -17,7 +17,7 @@ This proves two things: the request originated from a server that controls the a
 When your server receives an ActivityPub message—typically a POST to an inbox—the toolkit creates a `Notification` instance linking the sender, target, and resource references. Authentication happens through the `authenticate()` method, which processes all proof mechanisms attached to the notification.
 
 ```python
-from activitypub.models import Notification
+from activitypub.core.models import Notification
 
 notification = Notification.objects.get(pk=notification_id)
 notification.authenticate()
@@ -45,27 +45,27 @@ HTTP Signature proofs verify the signature on the HTTP request that delivered th
 def post(self, request):
     # Extract HTTP signature from request headers
     http_sig = HttpMessageSignature.extract(request)
-    
+
     # Parse the activity document
     activity_data = request.data
     activity_ref = Reference.make(activity_data['id'])
     document = LinkedDataDocument.make(activity_data)
     document.load()
-    
+
     # Create notification
     notification = Notification.objects.create(
         sender=Reference.make(activity_data['actor']),
         target=inbox_ref,
         resource=activity_ref
     )
-    
+
     # Create HTTP signature proof
     if http_sig:
         HttpSignatureProof.objects.create(
             notification=notification,
             http_message_signature=http_sig
         )
-    
+
     # Authenticate and process
     notification.authenticate()
     if notification.is_authorized:
@@ -83,7 +83,7 @@ Actors need cryptographic keys to sign requests. The `SecV1Context` model stores
 Generating a keypair for a local actor is straightforward:
 
 ```python
-from activitypub.models import SecV1Context, Reference
+from activitypub.core.models import SecV1Context, Reference
 
 actor_ref = Reference.objects.get(uri='https://myserver.com/actors/alice')
 keypair = SecV1Context.generate_keypair(owner=actor_ref)
@@ -105,13 +105,13 @@ Applications with specialized authentication requirements can implement custom p
 Consider an application that wants to support bearer token authentication for trusted external services:
 
 ```python
-from activitypub.models import NotificationIntegrityProof, NotificationProofVerification
+from activitypub.core.models import NotificationIntegrityProof, NotificationProofVerification
 from django.db import models
 from myapp.models import TrustedService
 
 class BearerTokenProof(NotificationIntegrityProof):
     token_value = models.CharField(max_length=255)
-    
+
     def verify(self, fetch_missing_keys=False):
         # Check token against allowed tokens for this sender
         service = TrustedService.objects.filter(
@@ -119,7 +119,7 @@ class BearerTokenProof(NotificationIntegrityProof):
             token=self.token_value,
             revoked=False
         ).first()
-        
+
         if service:
             return NotificationProofVerification.objects.create(
                 notification=self.notification,
@@ -150,23 +150,23 @@ Applications implement authorization policies in their notification handlers or 
 ```python
 def process_notification(notification):
     activity = notification.resource.get_by_context(ActivityContext)
-    
+
     # Authorization: check relationship
     if activity.type == ActivityContext.Types.CREATE:
         target_actor = notification.target.get_by_context(ActorContext)
         sender_in_followers = target_actor.followed_by.filter(
             uri=notification.sender.uri
         ).exists()
-        
+
         if not sender_in_followers:
             logger.info(f"Rejecting Create from non-follower {notification.sender.uri}")
             return
-    
+
     # Authorization: check domain block
     if notification.sender.domain.blocked:
         logger.info(f"Rejecting notification from blocked domain {notification.sender.domain}")
         return
-    
+
     # Process the activity
     handle_activity_type(activity)
 ```

@@ -18,7 +18,7 @@ Add a `reference` field to your existing content models:
 
 ```python
 from django.db import models
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 class Post(models.Model):
     title = models.CharField(max_length=200)
@@ -50,7 +50,7 @@ Create a management command to add references to existing content:
 ```python
 # yourapp/management/commands/backfill_references.py
 from django.core.management.base import BaseCommand
-from activitypub.models import Reference, ObjectContext, Domain
+from activitypub.core.models import Reference, ObjectContext, Domain
 from yourapp.models import Post
 
 class Command(BaseCommand):
@@ -93,7 +93,7 @@ class Command(BaseCommand):
 Update your content creation to automatically create references:
 
 ```python
-from activitypub.models import Reference, ObjectContext, Domain
+from activitypub.core.models import Reference, ObjectContext, Domain
 
 class Post(models.Model):
     # ... existing fields ...
@@ -158,7 +158,7 @@ urlpatterns = [
 Create handlers for federated interactions with your existing content:
 
 ```python
-from activitypub.signals import activity_processed
+from activitypub.core.signals import activity_processed
 from django.dispatch import receiver
 
 @receiver(activity_processed)

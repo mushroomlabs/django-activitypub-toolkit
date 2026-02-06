@@ -101,7 +101,7 @@ Connect your models to the Fediverse:
 
 ```python
 from django.db import models
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 class BlogPost(models.Model):
     reference = models.OneToOneField(

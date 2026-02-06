@@ -11,7 +11,7 @@ When your server receives a JSON-LD document, whether through an inbox POST or b
 The first step creates or retrieves a `LinkedDataDocument` instance. This model stores the raw JSON data and associates it with a Reference for the document's URI. The document is persisted before any parsing happens, ensuring you retain the original data even if processing fails.
 
 ```python
-from activitypub.models import LinkedDataDocument
+from activitypub.core.models import LinkedDataDocument
 
 document_data = {
     "id": "https://remote.example/posts/123",

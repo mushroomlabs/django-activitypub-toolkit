@@ -24,7 +24,7 @@ Navigate to the Domains section in Django admin and create a new domain record:
 ### Using Django Shell
 
 ```python
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 local_domain = Domain.objects.create(
     name="example.com",
@@ -44,7 +44,7 @@ Remote domains represent federation peers. The toolkit automatically creates rem
 To prevent all federation with a specific domain:
 
 ```python
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 blocked_domain = Domain.objects.create(
     name="spam.example",
@@ -60,7 +60,7 @@ Any incoming activities from actors on blocked domains will be rejected automati
 To ensure a domain is allowed (explicitly not blocked):
 
 ```python
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 trusted_domain, created = Domain.objects.get_or_create(
     name="mastodon.social",
@@ -106,7 +106,7 @@ Each `Domain` instance provides these properties:
 When the toolkit encounters a new remote domain, it can automatically fetch server metadata using NodeInfo. This happens through the `ActivityPubServer` model which links to a domain:
 
 ```python
-from activitypub.models import ActivityPubServer
+from activitypub.core.models import ActivityPubServer
 
 server = ActivityPubServer.objects.create(domain=remote_domain)
 server.get_nodeinfo()  # Fetches and stores software info

@@ -1,0 +1,36 @@
+{
+  "@context": [
+    "https://join-lemmy.org/context.json",
+    "https://www.w3.org/ns/activitystreams"
+  ],
+  "type": "Page",
+  "id": "https://lemmy.example.com/post/123456",
+  "attributedTo": "https://lemmy.example.com/u/TestUser",
+  "to": [
+    "https://lemmy.example.com/c/test",
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "name": "This is a test post",
+  "cc": [],
+  "content": "<p>cross-posted from: <a href=\"https://lemmy.example.com/post/654321\">lemmy.example.com/post/654321</a></p>\n",
+  "mediaType": "text/html",
+  "source": {
+    "content": "cross-posted from: https://lemmy.example.com/post/654321",
+    "mediaType": "text/markdown"
+  },
+  "attachment": [],
+  "sensitive": false,
+  "published": "1970-01-01T00:00:01.123456Z",
+  "language": {
+    "identifier": "en",
+    "name": "English"
+  },
+  "audience": "https://lemmy.example.com/c/test",
+  "tag": [
+    {
+      "href": "https://lemmy.example.com/post/123456",
+      "name": "#test",
+      "type": "Hashtag"
+    }
+  ]
+}

@@ -79,7 +79,7 @@ Users manage actors. A single user can control multiple actors, useful for clien
 ```python
 from django.db import models
 from django.contrib.auth.models import User
-from activitypub.models import Reference, ActorContext, CollectionContext, Domain, SecV1Context
+from activitypub.core.models import Reference, ActorContext, CollectionContext, Domain, SecV1Context
 
 class ManagedActor(models.Model):
     """Links Django users to actors they control."""
@@ -201,7 +201,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from actors.models import ManagedActor
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 
 class ActorListCreateView(APIView):
     """List and create actors for the authenticated user."""
@@ -330,7 +330,7 @@ Create the local domain with a management command in `actors/management/commands
 
 ```python
 from django.core.management.base import BaseCommand
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 class Command(BaseCommand):
     help = 'Set up the local domain'
@@ -467,7 +467,7 @@ Create `actors/discovery.py`:
 ```python
 from django.http import Http404
 from activitypub.views.discovery import Webfinger, NodeInfo, NodeInfo2
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 
 
 class GenericWebfinger(Webfinger):

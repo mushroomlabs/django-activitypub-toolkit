@@ -28,7 +28,7 @@ INSTALLED_APPS = [
     # ... other apps ...
     'blog',
     'accounts',
-    
+
     # Add the toolkit
     'activitypub',
 ]
@@ -75,13 +75,13 @@ urlpatterns = [
     # Your existing URL patterns
     path('admin/', admin.site.urls),
     path('blog/', include('blog.urls')),
-    
+
     # Discovery endpoints (required for federation)
     path('.well-known/nodeinfo', NodeInfo.as_view(), name='nodeinfo'),
     path('.well-known/webfinger', Webfinger.as_view(), name='webfinger'),
     path('.well-known/host-meta', HostMeta.as_view(), name='host-meta'),
     path('nodeinfo/2.0', NodeInfo2.as_view(), name='nodeinfo20'),
-    
+
     # Catch-all pattern for all ActivityPub objects (must be last)
     path('<path:resource>', ActivityPubObjectDetailView.as_view(), name='activitypub-resource'),
 ]
@@ -95,7 +95,7 @@ The toolkit requires a local domain record. Create one using the Django shell or
 
 ```python
 # In Django shell or a data migration
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 Domain.objects.get_or_create(
     name='yourblog.com',
@@ -112,7 +112,7 @@ The toolkit uses `Reference` objects as bridge pointers between your application
 ```python
 from django.db import models
 from django.contrib.auth.models import User
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 class Post(models.Model):
     # Existing fields
@@ -121,7 +121,7 @@ class Post(models.Model):
     author = models.ForeignKey(User, on_delete=models.CASCADE)
     published_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     # Add federation support
     reference = models.OneToOneField(
         Reference,
@@ -152,24 +152,24 @@ Create a signal to generate actors automatically for new users:
 from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from activitypub.models import ActorAccount, ActorContext, CollectionContext, Domain, Reference
+from activitypub.core.models import ActorAccount, ActorContext, CollectionContext, Domain, Reference
 
 @receiver(post_save, sender=User)
 def create_user_actor(sender, instance, created, **kwargs):
     if not created:
         return
-    
+
     # Check if user already has an actor account
     if ActorAccount.objects.filter(actor__preferred_username=instance.username).exists():
         return
-    
+
     domain = Domain.objects.get(local=True)
     username = instance.username
-    
+
     # Generate URIs using the domain
     actor_uri = f"https://{domain.name}/users/{username}"
     actor_ref = Reference.make(actor_uri)
-    
+
     # Create actor context
     actor = ActorContext.make(
         reference=actor_ref,
@@ -177,13 +177,13 @@ def create_user_actor(sender, instance, created, **kwargs):
         preferred_username=username,
         name=instance.get_full_name() or username,
     )
-    
+
     # Create collections for the actor
     inbox_ref = CollectionContext.generate_reference(domain)
     outbox_ref = CollectionContext.generate_reference(domain)
     followers_ref = CollectionContext.generate_reference(domain)
     following_ref = CollectionContext.generate_reference(domain)
-    
+
     CollectionContext.make(
         reference=inbox_ref,
         type=CollectionContext.Types.ORDERED_COLLECTION,
@@ -204,14 +204,14 @@ def create_user_actor(sender, instance, created, **kwargs):
         type=CollectionContext.Types.COLLECTION,
         name=f"Following for {username}"
     )
-    
+
     # Attach collections to actor
     actor.inbox = inbox_ref
     actor.outbox = outbox_ref
     actor.followers = followers_ref
     actor.following = following_ref
     actor.save()
-    
+
     # Create ActorAccount for authentication and WebFinger discovery
     ActorAccount.objects.create(actor=actor)
 ```
@@ -240,7 +240,7 @@ Create a management command to create actors for existing users:
 # blog/management/commands/backfill_actors.py
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from activitypub.models import ActorAccount
+from activitypub.core.models import ActorAccount
 
 class Command(BaseCommand):
     help = 'Create ActivityPub actors for existing users'
@@ -253,14 +253,14 @@ class Command(BaseCommand):
         users_without_accounts = User.objects.exclude(
             username__in=existing_usernames
         )
-        
+
         count = 0
         for user in users_without_accounts:
             # The signal will handle creation
             from blog.signals import create_user_actor
             create_user_actor(User, user, created=True)
             count += 1
-        
+
         self.stdout.write(
             self.style.SUCCESS(f'Created actors for {count} users')
         )
@@ -278,15 +278,15 @@ When creating new posts, generate a reference and attach ActivityPub context:
 
 ```python
 from django.utils import timezone
-from activitypub.models import ObjectContext, Reference, Domain, ActorAccount
+from activitypub.core.models import ObjectContext, Reference, Domain, ActorAccount
 
 def create_post(user, title, content):
     # Get the local domain
     domain = Domain.objects.get(local=True)
-    
+
     # Generate a reference for this post
     post_ref = ObjectContext.generate_reference(domain)
-    
+
     # Create application model
     post = Post.objects.create(
         title=title,
@@ -294,10 +294,10 @@ def create_post(user, title, content):
         author=user,
         reference=post_ref
     )
-    
+
     # Get the user's actor account
     actor_account = ActorAccount.objects.get(actor__preferred_username=user.username)
-    
+
     # Create ActivityPub context for the post
     obj_context = ObjectContext.make(
         reference=post_ref,
@@ -307,7 +307,7 @@ def create_post(user, title, content):
         published=post.published_at,
         attributed_to=actor_account.actor.reference
     )
-    
+
     return post
 ```
 
@@ -320,7 +320,7 @@ Create a management command to generate references for existing posts:
 ```python
 # blog/management/commands/backfill_post_references.py
 from django.core.management.base import BaseCommand
-from activitypub.models import ObjectContext, Reference, Domain, ActorAccount
+from activitypub.core.models import ObjectContext, Reference, Domain, ActorAccount
 from blog.models import Post
 
 class Command(BaseCommand):
@@ -330,11 +330,11 @@ class Command(BaseCommand):
         domain = Domain.objects.get(local=True)
         posts_without_refs = Post.objects.filter(reference__isnull=True)
         count = 0
-        
+
         for post in posts_without_refs:
             # Generate reference
             post_ref = ObjectContext.generate_reference(domain)
-            
+
             # Get author's actor account
             try:
                 actor_account = ActorAccount.objects.get(
@@ -345,7 +345,7 @@ class Command(BaseCommand):
                     self.style.WARNING(f'No actor account for user {post.author.username}')
                 )
                 continue
-            
+
             # Create context
             ObjectContext.make(
                 reference=post_ref,
@@ -355,12 +355,12 @@ class Command(BaseCommand):
                 published=post.published_at,
                 attributed_to=actor_account.actor.reference
             )
-            
+
             # Link to post
             post.reference = post_ref
             post.save()
             count += 1
-        
+
         self.stdout.write(
             self.style.SUCCESS(f'Created {count} references')
         )
@@ -379,17 +379,17 @@ All posts now have federated representations accessible via the catch-all view.
 When creating new posts, publish Create activities to followers' inboxes:
 
 ```python
-from activitypub.models import ActivityContext, Notification, ActorAccount, Domain
+from activitypub.core.models import ActivityContext, Notification, ActorAccount, Domain
 
 def publish_post_to_followers(post):
     # Get the author's actor account
     actor_account = ActorAccount.objects.get(actor__preferred_username=post.author.username)
     actor = actor_account.actor
-    
+
     # Generate activity reference
     domain = Domain.objects.get(local=True)
     activity_ref = ActivityContext.generate_reference(domain)
-    
+
     # Create the Create activity
     activity = ActivityContext.make(
         reference=activity_ref,
@@ -398,7 +398,7 @@ def publish_post_to_followers(post):
         object=post.reference,
         published=timezone.now()
     )
-    
+
     # Send to all follower inboxes
     for inbox_ref in actor.followers_inboxes:
         Notification.objects.create(
@@ -431,8 +431,8 @@ If you need application-specific behavior beyond standard ActivityPub flows, con
 import logging
 from django.dispatch import receiver
 from django.core.mail import send_mail
-from activitypub.signals import activity_done
-from activitypub.models import ActivityContext, ObjectContext
+from activitypub.core.signals import activity_done
+from activitypub.core.models import ActivityContext, ObjectContext
 from blog.models import Post
 
 logger = logging.getLogger(__name__)
@@ -440,24 +440,24 @@ logger = logging.getLogger(__name__)
 @receiver(activity_done)
 def notify_author_of_reply(sender, activity, **kwargs):
     """Email post authors when someone replies to their post."""
-    
+
     if activity.type != ActivityContext.Types.CREATE:
         return
-    
+
     # Get the created object
     obj_ref = activity.object
     if not obj_ref:
         return
-    
+
     obj = obj_ref.get_by_context(ObjectContext)
     if not obj or not obj.in_reply_to.exists():
         return
-    
+
     # Check if replying to one of our posts
     for parent_ref in obj.in_reply_to.all():
         try:
             post = Post.objects.get(reference=parent_ref)
-            
+
             # Send notification to author
             send_mail(
                 subject=f'New reply to your post: {post.title}',
@@ -465,9 +465,9 @@ def notify_author_of_reply(sender, activity, **kwargs):
                 from_email='noreply@yourblog.com',
                 recipient_list=[post.author.email],
             )
-            
+
             logger.info(f"Sent reply notification for post {post.id}")
-            
+
         except Post.DoesNotExist:
             continue
 ```
@@ -478,7 +478,7 @@ Register handlers in your app's ready() method:
 # blog/apps.py
 class BlogConfig(AppConfig):
     # ...
-    
+
     def ready(self):
         from . import signals
         from . import handlers  # Import to register signal handlers

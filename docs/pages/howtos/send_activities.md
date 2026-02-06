@@ -19,7 +19,7 @@ The toolkit handles HTTP delivery automatically through the `send_notification` 
 When users create content, generate corresponding activities:
 
 ```python
-from activitypub.models import (
+from activitypub.core.models import (
     ActivityContext,
     ObjectContext,
     CollectionContext,
@@ -28,7 +28,7 @@ from activitypub.models import (
     Domain,
     Actor,
 )
-from activitypub.tasks import send_notification
+from activitypub.core.tasks import send_notification
 from activitypub.schemas import AS2
 from django.utils import timezone
 
@@ -43,7 +43,7 @@ class Post(models.Model):
     def create_post(cls, author, title, content, public=True):
         """Create a post and publish to followers."""
         domain = Domain.get_default()
-        
+
         # Create post object
         post_ref = ObjectContext.generate_reference(domain)
         post_obj = ObjectContext.make(
@@ -54,7 +54,7 @@ class Post(models.Model):
             published=timezone.now(),
             attributed_to=author.profile.actor_reference,
         )
-        
+
         # Create Django model
         post = cls.objects.create(
             author=author,
@@ -62,7 +62,7 @@ class Post(models.Model):
             content=content,
             reference=post_ref
         )
-        
+
         # Create activity
         activity_ref = ActivityContext.generate_reference(domain)
         activity = ActivityContext.make(
@@ -72,7 +72,7 @@ class Post(models.Model):
             object=post_ref,
             published=timezone.now(),
         )
-        
+
         # Set addressing
         actor = author.profile.actor_reference.get_by_context(Actor)
         if public:
@@ -84,15 +84,15 @@ class Post(models.Model):
             # Followers-only: to=followers
             if actor and actor.followers:
                 activity.to.add(actor.followers)
-        
+
         activity.save()
-        
+
         # Add to outbox
         if actor and actor.outbox:
             outbox = actor.outbox.get_by_context(CollectionContext)
             if outbox:
                 outbox.append(activity_ref)
-        
+
         # Deliver to followers
         if actor:
             for inbox_ref in actor.followers_inboxes:
@@ -102,7 +102,7 @@ class Post(models.Model):
                     target=inbox_ref,
                 )
                 send_notification.delay(notification_id=str(notification.id))
-        
+
         return post
 ```
 
@@ -113,7 +113,7 @@ When content changes, send Update activities:
 ```python
 def update_post(self, title=None, content=None):
     """Update the post and send Update activity to followers."""
-    
+
     # Update the object
     obj = self.reference.get_by_context(ObjectContext)
     if title is not None:
@@ -125,12 +125,12 @@ def update_post(self, title=None, content=None):
     obj.updated = timezone.now()
     obj.save()
     self.save()
-    
+
     # Create Update activity
     domain = Domain.get_default()
     activity_ref = ActivityContext.generate_reference(domain)
     actor_ref = self.author.profile.actor_reference
-    
+
     activity = ActivityContext.make(
         reference=activity_ref,
         type=ActivityContext.Types.UPDATE,
@@ -138,20 +138,20 @@ def update_post(self, title=None, content=None):
         object=self.reference,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(Actor)
     activity.to.add(Reference.make(str(AS2.Public)))
     if actor and actor.followers:
         activity.cc.add(actor.followers)
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followers
     if actor:
         for inbox_ref in actor.followers_inboxes:
@@ -170,12 +170,12 @@ When content is deleted, send Delete activities:
 ```python
 def delete_post(self):
     """Delete the post and send Delete activity to followers."""
-    
+
     # Create Delete activity before deleting the object
     domain = Domain.get_default()
     activity_ref = ActivityContext.generate_reference(domain)
     actor_ref = self.author.profile.actor_reference
-    
+
     activity = ActivityContext.make(
         reference=activity_ref,
         type=ActivityContext.Types.DELETE,
@@ -183,20 +183,20 @@ def delete_post(self):
         object=self.reference,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(Actor)
     activity.to.add(Reference.make(str(AS2.Public)))
     if actor and actor.followers:
         activity.cc.add(actor.followers)
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followers
     if actor:
         for inbox_ref in actor.followers_inboxes:
@@ -206,7 +206,7 @@ def delete_post(self):
                 target=inbox_ref,
             )
             send_notification.delay(notification_id=str(notification.id))
-    
+
     # Delete the post and object
     self.reference.delete()
     self.delete()
@@ -217,13 +217,13 @@ def delete_post(self):
 Create activities for user interactions like likes:
 
 ```python
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 from yourapp.models import Like
 
 def like_post(user, post):
     """Like a post and send activity to the post author's inbox."""
     domain = Domain.get_default()
-    
+
     # Create Like activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -233,19 +233,19 @@ def like_post(user, post):
         object=post.reference,
         published=timezone.now(),
     )
-    
+
     # Address to the post author and public
     activity.to.add(post.author.profile.actor_reference)
     activity.cc.add(Reference.make(str(AS2.Public)))
     activity.save()
-    
+
     # Add to user's outbox
     actor = user.profile.actor_reference.get_by_context(Actor)
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to post author's inbox
     post_author_actor = post.author.profile.actor_reference.get_by_context(ActorContext)
     if post_author_actor and post_author_actor.inbox:
@@ -255,14 +255,14 @@ def like_post(user, post):
             target=post_author_actor.inbox,
         )
         send_notification.delay(notification_id=str(notification.id))
-    
+
     # Record like locally
     Like.objects.create(
         user=user,
         post=post,
         activity_reference=activity_ref
     )
-    
+
     return activity
 ```
 
@@ -271,17 +271,17 @@ def like_post(user, post):
 Send Follow activities to remote actors:
 
 ```python
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 
 def follow_user(follower, followed_actor_uri):
     """Follow a remote user."""
     domain = Domain.get_default()
-    
+
     # Get or create reference to followed actor
     followed_ref = Reference.make(followed_actor_uri)
     if not followed_ref.is_resolved:
         followed_ref.resolve()
-    
+
     # Create Follow activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -291,18 +291,18 @@ def follow_user(follower, followed_actor_uri):
         object=followed_ref,
         published=timezone.now(),
     )
-    
+
     # Address to the followed actor
     activity.to.add(followed_ref)
     activity.save()
-    
+
     # Add to follower's outbox
     actor = follower.profile.actor_reference.get_by_context(Actor)
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followed actor's inbox
     followed_actor = followed_ref.get_by_context(ActorContext)
     if followed_actor and followed_actor.inbox:
@@ -312,7 +312,7 @@ def follow_user(follower, followed_actor_uri):
             target=followed_actor.inbox,
         )
         send_notification.delay(notification_id=str(notification.id))
-    
+
     return activity
 ```
 
@@ -362,12 +362,12 @@ Test that activities are published correctly:
 ```python
 from django.test import TestCase
 from yourapp.models import Post
-from activitypub.models import Notification
+from activitypub.core.models import Notification
 
 class PublishingTest(TestCase):
     def test_create_post_publishes_activity(self):
         """Test that creating a post publishes a Create activity."""
-        
+
         # Create post
         post = Post.create_post(
             author=self.user,
@@ -375,18 +375,18 @@ class PublishingTest(TestCase):
             content="Test content",
             public=True
         )
-        
+
         # Check activity was created
         actor = self.user.profile.actor_reference.get_by_context(Actor)
         outbox = actor.outbox.get_by_context(CollectionContext)
-        
+
         activities = outbox.items.all()
         self.assertEqual(len(activities), 1)
-        
+
         activity = activities[0].item.get_by_context(ActivityContext)
         self.assertEqual(activity.type, ActivityContext.Types.CREATE)
         self.assertEqual(activity.object, post.reference)
-        
+
         # Check notifications were created
         notifications = Notification.objects.filter(resource=activity.reference)
         self.assertEqual(notifications.count(), len(actor.followers_inboxes))
@@ -413,13 +413,13 @@ tail -f celery.log
 Handle delivery failures gracefully:
 
 ```python
-from activitypub.models import NotificationProcessResult, Notification
+from activitypub.core.models import NotificationProcessResult, Notification
 
 # Check delivery results
 def check_delivery_status(activity_ref):
     """Check delivery status for an activity."""
     notifications = Notification.objects.filter(resource=activity_ref)
-    
+
     for notification in notifications:
         results = notification.results.all()
         for result in results:
@@ -433,7 +433,7 @@ The toolkit records delivery results but doesn't retry automatically. You can im
 
 ```python
 from celery import shared_task
-from activitypub.models import Notification, NotificationProcessResult
+from activitypub.core.models import Notification, NotificationProcessResult
 
 @shared_task
 def retry_failed_deliveries():
@@ -445,10 +445,10 @@ def retry_failed_deliveries():
             NotificationProcessResult.Types.UNAUTHENTICATED,
         ]
     )
-    
+
     for result in failed_results:
         notification = result.notification
-        
+
         # Retry delivery
         send_notification.delay(notification_id=str(notification.id))
 ```
