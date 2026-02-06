@@ -75,7 +75,7 @@ publish_python_package:
   script:
     - apt-get update && apt-get install -y jq curl
     - pip install id
-    - oidc_token=$(python -m id PYPI)
+    - oidc_token=$(python -m id pypi)
     - uv build
     - resp=$(curl -X POST https://pypi.org/_/oidc/mint-token -d "{\"token\":\"${oidc_token}\"}")
     - api_token=$(jq --raw-output '.token' <<< "${resp}")
