@@ -24,7 +24,7 @@ cd apserver
 python -m venv venv
 source venv/bin/activate
 
-pip install django django-activitypub-toolkit djangorestframework django-oauth-toolkit
+pip install django django-activitypub-toolkit djangorestframework
 django-admin startproject config .
 python manage.py startapp actors
 ```
@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'oauth2_provider',
-    'activitypub',
+    'activitypub.core',
+    'activitypub.extras.oauth',
     'actors',
 ]
 
@@ -56,8 +57,17 @@ OAUTH2_PROVIDER = {
         'read': 'Read access',
         'write': 'Write access',
         'follow': 'Follow and unfollow users',
-    }
+        'activitypub': 'ActivityPub identity information',
+    },
+    'OAUTH2_VALIDATOR_CLASS': 'activitypub.extras.oauth.views.ActivityPubIdentityOAuth2Validator',
+    'OAUTH2_SERVER_CLASS': 'activitypub.extras.oauth.views.ActivityPubOAuthServer',
 }
+
+OAUTH2_PROVIDER_APPLICATION_MODEL = 'activitypub_oauth.OAuthClientApplication'
+OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'activitypub_oauth.OAuthAccessToken'
+OAUTH2_PROVIDER_GRANT_MODEL = 'activitypub_oauth.OAuthAuthorizationCode'
+OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = 'activitypub_oauth.OAuthRefreshToken'
+OAUTH2_PROVIDER_ID_TOKEN_MODEL = 'activitypub_oauth.OidcIdentityToken'
 
 FEDERATION = {
     'DEFAULT_URL': 'http://localhost:8000',
@@ -72,124 +82,51 @@ Run initial migrations:
 python manage.py migrate
 ```
 
-## Actor Management
+## Identity System
 
-Users manage actors. A single user can control multiple actors, useful for clients supporting multiple accounts. Create the model in `actors/models.py`:
+The toolkit provides a built-in Identity system that links Django users to ActivityPub actors. A single user can control multiple actors, each representing a distinct identity. The `activitypub.extras.oauth` package extends this with OAuth support for client applications.
 
-```python
-from django.db import models
-from django.contrib.auth.models import User
-from activitypub.core.models import Reference, ActorContext, CollectionContext, Domain, SecV1Context
-
-class ManagedActor(models.Model):
-    """Links Django users to actors they control."""
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='managed_actors')
-    actor_reference = models.OneToOneField(
-        Reference,
-        on_delete=models.CASCADE,
-        related_name='managed_by'
-    )
-    display_name = models.CharField(max_length=100, help_text="Friendly name for this actor")
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ['user', 'actor_reference']
-
-    def __str__(self):
-        return f"{self.user.username} manages {self.display_name}"
-
-    @property
-    def actor(self):
-        """Access the actor context."""
-        return self.actor_reference.get_by_context(ActorContext)
-
-    @classmethod
-    def create_actor(cls, user, preferred_username, display_name, actor_type='Person'):
-        """Create a new actor with all required collections."""
-        domain = Domain.get_default()
-        actor_ref = ActorContext.generate_reference(domain)
-
-        # Map actor type string to enum
-        type_mapping = {
-            'Person': ActorContext.Types.PERSON,
-            'Service': ActorContext.Types.SERVICE,
-            'Application': ActorContext.Types.APPLICATION,
-            'Group': ActorContext.Types.GROUP,
-            'Organization': ActorContext.Types.ORGANIZATION,
-        }
-        actor_type_enum = type_mapping.get(actor_type, ActorContext.Types.PERSON)
-
-        # Create actor
-        actor = ActorContext.make(
-            reference=actor_ref,
-            type=actor_type_enum,
-            preferred_username=preferred_username,
-            name=display_name,
-        )
-
-        # Generate keypair for signing
-        SecV1Context.generate_keypair(owner=actor_ref)
-
-        # Create collections
-        for collection_name in ['inbox', 'outbox', 'followers', 'following']:
-            coll_ref = CollectionContext.generate_reference(domain)
-            coll = CollectionContext.make(
-                reference=coll_ref,
-                type=CollectionContext.Types.ORDERED_COLLECTION,
-            )
-            setattr(actor, collection_name, coll_ref)
-
-        actor.save()
-
-        # Create management record
-        managed = cls.objects.create(
-            user=user,
-            actor_reference=actor_ref,
-            display_name=display_name
-        )
-
-        return managed
-```
-
-Run migrations:
-
-```bash
-python manage.py makemigrations
-python manage.py migrate
-```
+No additional models are needed. The Identity system is already configured through the installed apps.
 
 ## OAuth Authentication Setup
 
-OAuth enables clients to authenticate on behalf of users. Configure OAuth in `config/urls.py`:
+OAuth enables clients to authenticate on behalf of users. The toolkit's OAuth integration supports identity selection, allowing users to choose which actor to authorize. Configure OAuth in `config/urls.py`:
 
 ```python
 from django.contrib import admin
 from django.urls import path, include
+from activitypub.extras.oauth.views import (
+    IdentitySelectionAuthorizationView,
+    ActivityPubDynamicClientRegistrationView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('o/authorize/', IdentitySelectionAuthorizationView.as_view(), name='authorize'),
+    path('o/register/', ActivityPubDynamicClientRegistrationView.as_view(), name='register'),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('', include('actors.urls')),
 ]
 ```
 
-Create a superuser and OAuth application:
+Create a superuser and an identity:
 
 ```bash
+python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Visit `http://localhost:8000/admin/` and create an OAuth application:
+Visit `http://localhost:8000/admin/` to create an identity:
 
-1. Navigate to OAuth2 Provider → Applications
-2. Click "Add Application"
+1. Navigate to Activitypub Core → Identities
+2. Click "Add Identity"
 3. Select your user
-4. Client type: "Confidential"
-5. Authorization grant type: "Resource owner password-based"
-6. Name: "Test Client"
-7. Save and note the Client ID and Client Secret
+4. Create or select an actor (you may need to create an ActorContext first)
+5. Mark as primary identity
+6. Save
+
+For OAuth applications, clients can use Dynamic Client Registration or you can manually create applications in the admin interface under OAuth Client Applications.
 
 ## Actor Creation API
 
@@ -200,8 +137,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from actors.models import ManagedActor
-from activitypub.core.models import ActorContext
+from activitypub.core.models import Identity, ActorContext, Reference, Domain, SecV1Context, CollectionContext
 
 class ActorListCreateView(APIView):
     """List and create actors for the authenticated user."""
@@ -210,17 +146,18 @@ class ActorListCreateView(APIView):
 
     def get(self, request):
         """List actors managed by this user."""
-        actors = ManagedActor.objects.filter(user=request.user)
+        identities = Identity.objects.filter(user=request.user).select_related('actor')
 
         data = []
-        for managed in actors:
-            actor = managed.actor
+        for identity in identities:
+            actor = identity.actor
             data.append({
-                'id': managed.id,
+                'id': identity.id,
                 'actor_uri': actor.reference.uri,
                 'preferred_username': actor.preferred_username,
-                'display_name': managed.display_name,
+                'display_name': actor.name,
                 'type': actor.get_type_display(),
+                'is_primary': identity.is_primary,
                 'inbox': actor.inbox.uri if actor.inbox else None,
                 'outbox': actor.outbox.uri if actor.outbox else None,
             })
@@ -228,7 +165,7 @@ class ActorListCreateView(APIView):
         return Response(data)
 
     def post(self, request):
-        """Create a new actor."""
+        """Create a new actor and identity."""
         preferred_username = request.data.get('preferred_username')
         display_name = request.data.get('display_name', preferred_username)
         actor_type = request.data.get('type', 'Person')
@@ -246,25 +183,62 @@ class ActorListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Map actor type string to enum
+        type_mapping = {
+            'Person': ActorContext.Types.PERSON,
+            'Service': ActorContext.Types.SERVICE,
+            'Application': ActorContext.Types.APPLICATION,
+            'Group': ActorContext.Types.GROUP,
+            'Organization': ActorContext.Types.ORGANIZATION,
+        }
+        actor_type_enum = type_mapping.get(actor_type, ActorContext.Types.PERSON)
+
         try:
-            managed = ManagedActor.create_actor(
-                user=request.user,
+            domain = Domain.get_default()
+            actor_ref = ActorContext.generate_reference(domain)
+
+            # Create actor
+            actor = ActorContext.make(
+                reference=actor_ref,
+                type=actor_type_enum,
                 preferred_username=preferred_username,
-                display_name=display_name,
-                actor_type=actor_type
+                name=display_name,
             )
+
+            # Generate keypair for signing
+            SecV1Context.generate_keypair(owner=actor_ref)
+
+            # Create collections
+            for collection_name in ['inbox', 'outbox', 'followers', 'following']:
+                coll_ref = CollectionContext.generate_reference(domain)
+                coll = CollectionContext.make(
+                    reference=coll_ref,
+                    type=CollectionContext.Types.ORDERED_COLLECTION,
+                )
+                setattr(actor, collection_name, coll_ref)
+
+            actor.save()
+
+            # Create identity
+            is_primary = not request.user.identities.exists()
+            identity = Identity.objects.create(
+                user=request.user,
+                actor=actor,
+                is_primary=is_primary
+            )
+
         except Exception as e:
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        actor = managed.actor
         return Response({
-            'id': managed.id,
+            'id': identity.id,
             'actor_uri': actor.reference.uri,
             'preferred_username': actor.preferred_username,
-            'display_name': managed.display_name,
+            'display_name': actor.name,
+            'is_primary': identity.is_primary,
             'inbox': actor.inbox.uri if actor.inbox else None,
             'outbox': actor.outbox.uri if actor.outbox else None,
         }, status=status.HTTP_201_CREATED)
@@ -355,13 +329,28 @@ python manage.py setup_domain
 
 ## Testing C2S: Creating an Actor
 
-Test the API using OAuth authentication. First, get an access token:
+Test the API using OAuth authentication. First, get an access token using the password grant:
 
 ```bash
-curl -X POST -d "grant_type=password&username=yourusername&password=yourpassword&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET" http://localhost:8000/o/token/
+curl -X POST \
+  -d "grant_type=password&username=yourusername&password=yourpassword&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET&scope=read write activitypub" \
+  http://localhost:8000/o/token/
 ```
 
-This returns an access token. Use it to create an actor:
+The response includes an access token and the actor URI if you already have an identity:
+
+```json
+{
+  "access_token": "your-access-token",
+  "token_type": "Bearer",
+  "expires_in": 36000,
+  "refresh_token": "your-refresh-token",
+  "scope": "read write activitypub",
+  "actor": "http://localhost:8000/actors/uuid-here"
+}
+```
+
+Use the access token to create a new actor:
 
 ```bash
 curl -X POST \
@@ -379,6 +368,7 @@ Response:
   "actor_uri": "http://localhost:8000/actors/uuid-here",
   "preferred_username": "alice",
   "display_name": "Alice Smith",
+  "is_primary": true,
   "inbox": "http://localhost:8000/collections/uuid-here",
   "outbox": "http://localhost:8000/collections/uuid-here"
 }
@@ -460,75 +450,40 @@ The server:
 
 ## Discovery Endpoints
 
-The toolkit provides built-in views for WebFinger and NodeInfo discovery. However, these require the `Account` model which links users to actors. For a generic server using only context models, create a simple adapter.
+The toolkit provides built-in views for WebFinger and NodeInfo discovery. These work with the Identity system to resolve actors by their subject names.
 
-Create `actors/discovery.py`:
-
-```python
-from django.http import Http404
-from activitypub.views.discovery import Webfinger, NodeInfo, NodeInfo2
-from activitypub.core.models import ActorContext
-
-
-class GenericWebfinger(Webfinger):
-    """WebFinger for generic server without ActorAccount model."""
-
-    def resolve_account(self, request, subject_name):
-        """Resolve actor by username instead of ActorAccount."""
-        try:
-            username, domain = subject_name.split('@')
-        except ValueError:
-            raise Http404
-
-        try:
-            actor_ctx = ActorContext.objects.get(preferred_username=username)
-        except ActorContext.DoesNotExist:
-            raise Http404
-
-        # Return a minimal object with actor attribute
-        class MinimalAccount:
-            def __init__(self, actor_ctx):
-                self.actor = actor_ctx.reference
-
-        return MinimalAccount(actor_ctx)
-```
-
-Update `config/urls.py`:
+Update `config/urls.py` to include discovery endpoints:
 
 ```python
-from activitypub.views.discovery import NodeInfo, NodeInfo2, HostMeta
-from actors.discovery import GenericWebfinger
+from django.contrib import admin
+from django.urls import path, include
+from activitypub.extras.oauth.views import (
+    IdentitySelectionAuthorizationView,
+    ActivityPubDynamicClientRegistrationView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('o/authorize/', IdentitySelectionAuthorizationView.as_view(), name='authorize'),
+    path('o/register/', ActivityPubDynamicClientRegistrationView.as_view(), name='register'),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
-    path('.well-known/webfinger', GenericWebfinger.as_view(), name='webfinger'),
-    path('.well-known/nodeinfo', NodeInfo.as_view(), name='nodeinfo'),
-    path('.well-known/host-meta', HostMeta.as_view(), name='host-meta'),
-    path('nodeinfo/2.0', NodeInfo2.as_view(), name='nodeinfo-2.0'),
     path('', include('actors.urls')),
 ]
 ```
 
-## Admin Interface
+The toolkit's discovery views automatically work with the Identity system, resolving actors by their preferred username and domain.
 
-Create admin views for managing actors in `actors/admin.py`:
+## Managing Identities
 
-```python
-from django.contrib import admin
-from actors.models import ManagedActor
+The toolkit provides a built-in `IdentityAdmin` for managing user identities through the Django admin interface. Navigate to **Activitypub Core → Identities** to view and manage which actors users control.
 
-@admin.register(ManagedActor)
-class ManagedActorAdmin(admin.ModelAdmin):
-    list_display = ('user', 'display_name', 'get_username', 'created_at')
-    list_filter = ('created_at', 'user')
-    search_fields = ('display_name', 'user__username')
-    readonly_fields = ('actor_reference', 'created_at')
+The admin interface displays:
+- User associated with the identity
+- Actor reference and handle
+- Primary identity designation
+- Search and filtering capabilities
 
-    def get_username(self, obj):
-        return obj.actor.preferred_username if obj.actor else None
-    get_username.short_description = 'Username'
-```
+No additional admin configuration is required.
 
 ## Handling Different Object Types
 
@@ -561,28 +516,65 @@ A simple Python client using this server:
 import requests
 
 class ActivityPubClient:
-    def __init__(self, base_url, access_token):
+    def __init__(self, base_url, client_id, client_secret):
         self.base_url = base_url
-        self.headers = {
-            'Authorization': f'Bearer {access_token}',
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.access_token = None
+        self.actor_uri = None
+
+    def authenticate(self, username, password):
+        """Authenticate and get access token with actor information."""
+        response = requests.post(
+            f'{self.base_url}/o/token/',
+            data={
+                'grant_type': 'password',
+                'username': username,
+                'password': password,
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'scope': 'read write activitypub',
+            }
+        )
+        data = response.json()
+        self.access_token = data['access_token']
+        self.actor_uri = data.get('actor')
+        return data
+
+    @property
+    def headers(self):
+        return {
+            'Authorization': f'Bearer {self.access_token}',
             'Content-Type': 'application/activity+json',
         }
 
-    def create_actor(self, username, display_name):
+    def list_actors(self):
+        """List all actors for the authenticated user."""
+        response = requests.get(
+            f'{self.base_url}/api/actors',
+            headers=self.headers
+        )
+        return response.json()
+
+    def create_actor(self, username, display_name, actor_type='Person'):
+        """Create a new actor identity."""
         response = requests.post(
             f'{self.base_url}/api/actors',
             json={
                 'preferred_username': username,
                 'display_name': display_name,
+                'type': actor_type,
             },
             headers=self.headers
         )
         return response.json()
 
     def post_note(self, outbox_url, content):
+        """Post a note to an actor's outbox."""
         activity = {
             '@context': 'https://www.w3.org/ns/activitystreams',
             'type': 'Create',
+            'actor': self.actor_uri,
             'object': {
                 'type': 'Note',
                 'content': content,
@@ -592,8 +584,24 @@ class ActivityPubClient:
         return response.json()
 
 # Usage
-client = ActivityPubClient('http://localhost:8000', 'your-access-token')
-actor = client.create_actor('testuser', 'Test User')
+client = ActivityPubClient('http://localhost:8000', 'client-id', 'client-secret')
+
+# Authenticate
+auth_data = client.authenticate('myusername', 'mypassword')
+print(f"Authenticated as: {auth_data.get('actor')}")
+
+# List existing actors
+actors = client.list_actors()
+print(f"User has {len(actors)} actor(s)")
+
+# Create a new actor if needed
+if not actors:
+    actor = client.create_actor('alice', 'Alice Smith')
+    print(f"Created actor: {actor['actor_uri']}")
+else:
+    actor = actors[0]
+
+# Post a note
 client.post_note(actor['outbox'], 'Hello, Fediverse!')
 ```
 
@@ -617,10 +625,18 @@ For production deployment:
 
 ## Summary
 
-You have built a complete generic ActivityPub server. It implements both C2S (client-to-server) and S2S (server-to-server) protocols. Clients authenticate via OAuth and post activities to outboxes. Remote servers deliver activities to inboxes via HTTP Signatures.
+You have built a complete generic ActivityPub server using the toolkit's built-in Identity and OAuth systems. The server implements both C2S (client-to-server) and S2S (server-to-server) protocols. Clients authenticate via OAuth with identity-scoped tokens and post activities to outboxes. Remote servers deliver activities to inboxes via HTTP Signatures.
 
-The server stores ActivityStreams objects using only the toolkit's context models. No application-specific models are required. This enables any ActivityPub client to work with the server, creating any type of ActivityStreams object.
+Key features of this implementation:
+
+**Identity Management:** Users control multiple actors through the Identity system. Each OAuth token is bound to a specific identity, allowing clients to operate in the context of that actor.
+
+**OAuth Integration:** The `activitypub.extras.oauth` package provides identity selection during authorization, custom ActivityPub OIDC claims, and dynamic client registration.
+
+**Generic Storage:** The server stores ActivityStreams objects using only the toolkit's context models. No application-specific models are required beyond the built-in Identity system.
+
+**Protocol Compliance:** Full support for ActivityPub discovery (WebFinger, NodeInfo), HTTP Signatures for federation, and OAuth 2.0 for client authentication.
 
 This architecture realizes the vision of the Fediverse as a shared social graph. Multiple clients—microblogging apps, photo galleries, event calendars—can use the same server. Each client presents a different view of the user's social data without requiring separate accounts or servers.
 
-The generic server pattern demonstrates the toolkit's flexibility. By relying on context models and references, you can build protocol-level infrastructure that adapts to any use case. Applications add domain-specific logic as separate layers without modifying the core federation mechanics.
+The generic server pattern demonstrates the toolkit's flexibility. By relying on context models, references, and the Identity system, you can build protocol-level infrastructure that adapts to any use case. Applications add domain-specific logic as separate layers without modifying the core federation mechanics.
