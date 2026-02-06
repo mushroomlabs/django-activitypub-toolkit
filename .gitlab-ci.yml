@@ -16,7 +16,7 @@ run_tests:
   image: ghcr.io/astral-sh/uv:$UV_VERSION-python$PYTHON_VERSION-$BASE_LAYER
 
   script:
-    - uv sync --extra dev
+    - uv sync --extra dev --extra lemmy --extra oauth
     - uv run pytest
 
   rules:
