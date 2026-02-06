@@ -2,6 +2,16 @@ import datetime
 import uuid
 from collections import OrderedDict
 
+from box import Box
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from django.db.models import Max, Q
+from django.db.models.functions import Now
+from django.utils import timezone
+from markdown import markdown
+from rest_framework import serializers
+
 from activitypub.core.authentication_backends import ActorUsernameAuthenticationBackend
 from activitypub.core.contexts import AS2
 from activitypub.core.exceptions import InvalidDomainError
@@ -20,15 +30,6 @@ from activitypub.core.models import (
     SecV1Context,
     SourceContentContext,
 )
-from box import Box
-from django.contrib.auth import get_user_model
-from django.core.exceptions import ObjectDoesNotExist
-from django.db import transaction
-from django.db.models import Max, Q
-from django.db.models.functions import Now
-from django.utils import timezone
-from markdown import markdown
-from rest_framework import serializers
 
 from . import models
 from .choices import PostFeatureType, SearchType, SubscriptionStatus

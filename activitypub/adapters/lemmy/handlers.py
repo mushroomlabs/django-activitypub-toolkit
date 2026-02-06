@@ -1,11 +1,12 @@
 import logging
 
-from activitypub.core.models import ActorContext, CollectionContext
-from activitypub.core.signals import reference_loaded
 from django.contrib.auth import get_user_model
 from django.db.models import F
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+
+from activitypub.core.models import ActorContext, CollectionContext
+from activitypub.core.signals import reference_loaded
 
 from .models import (
     Comment,

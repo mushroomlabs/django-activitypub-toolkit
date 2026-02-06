@@ -1,5 +1,3 @@
-from activitypub.core.factories import DomainFactory, IdentityFactory, InstanceFactory
-from activitypub.core.models import ObjectContext
 from django.test import RequestFactory, TransactionTestCase, override_settings
 
 from activitypub.adapters.lemmy import models
@@ -12,6 +10,8 @@ from activitypub.adapters.lemmy.factories import (
     SiteFactory,
 )
 from activitypub.adapters.lemmy.filters import CommentFilter, PostFilter
+from activitypub.core.factories import DomainFactory, IdentityFactory, InstanceFactory
+from activitypub.core.models import ObjectContext
 
 
 @override_settings(

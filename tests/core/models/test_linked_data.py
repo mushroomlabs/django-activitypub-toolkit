@@ -3,7 +3,6 @@ import httpretty
 from activitypub.core import factories
 from activitypub.core.contexts import AS2
 from activitypub.core.models import ActorContext, EndpointContext, LinkContext
-
 from tests.core.base import BaseTestCase, use_nodeinfo, with_document_file
 
 

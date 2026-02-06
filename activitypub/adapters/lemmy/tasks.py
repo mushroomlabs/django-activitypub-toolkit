@@ -1,9 +1,10 @@
 import logging
 
-from activitypub.core.contexts import AS2
-from activitypub.core.models import Reference, ActivityContext, ActorContext
-from activitypub.publishers import publish
 from celery import shared_task
+
+from activitypub.core.contexts import AS2
+from activitypub.core.models import ActivityContext, ActorContext, Reference
+from activitypub.publishers import publish
 
 from .models.core import LemmyObject
 from .projections import lemmy_projection_selector

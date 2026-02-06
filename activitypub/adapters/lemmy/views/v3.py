@@ -1,3 +1,12 @@
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import generics, status
+from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from activitypub.core.models import (
     Activity,
     ActivityContext,
@@ -8,14 +17,6 @@ from activitypub.core.models import (
     Reference,
 )
 from activitypub.core.tasks import resolve_reference, webfinger_lookup
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics, status
-from rest_framework.decorators import api_view
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
-from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from .. import filters, models, pagination, permissions, serializers
 from ..exceptions import NoIdGiven, PersonNotFound

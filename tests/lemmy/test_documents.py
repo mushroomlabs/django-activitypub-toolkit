@@ -5,7 +5,6 @@ import httpretty
 from activitypub.adapters.lemmy.models import LemmyContextModel
 from tests.core.base import BaseTestCase, use_nodeinfo, with_document_file
 
-
 TEST_DOCUMENTS_FOLDER = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "fixtures/documents")
 )

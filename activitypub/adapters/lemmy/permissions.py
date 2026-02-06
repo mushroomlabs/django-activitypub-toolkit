@@ -1,5 +1,6 @@
-from activitypub.core.models import Identity
 from rest_framework import permissions
+
+from activitypub.core.models import Identity
 
 from .models import Site
 

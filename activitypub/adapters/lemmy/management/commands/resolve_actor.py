@@ -1,8 +1,9 @@
 import logging
 
+from django.core.management.base import BaseCommand
+
 from activitypub.core.models import Reference
 from activitypub.core.tasks import run_webfinger_lookup
-from django.core.management.base import BaseCommand
 
 logger = logging.getLogger(__name__)
 

@@ -1,9 +1,18 @@
 import logging
 import mimetypes
-from typing import Optional
 from datetime import timedelta
+from typing import Optional
 
 import mmh3
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
+from model_utils.managers import InheritanceManager
+from model_utils.models import TimeStampedModel
+from rdflib import RDF, Graph
+from taggit.managers import TaggableManager
+from tree_queries.models import TreeNode
+
 from activitypub.core.contexts import (
     AS2_CONTEXT,
     LEMMY_CONTEXT,
@@ -28,14 +37,6 @@ from activitypub.core.models import (
 )
 from activitypub.core.models import Language as BaseLanguage
 from activitypub.core.models.fields import RelatedContextField
-from django.conf import settings
-from django.db import models
-from django.utils import timezone
-from model_utils.managers import InheritanceManager
-from model_utils.models import TimeStampedModel
-from rdflib import RDF, Graph
-from taggit.managers import TaggableManager
-from tree_queries.models import TreeNode
 
 from ..choices import ListingTypes, PostListingModes, SortOrderTypes
 

@@ -9,6 +9,7 @@ from activitypub.core.projections import (
     CollectionWithFirstPageProjection,
     ReferenceProjection,
 )
+
 from .base import BaseTestCase
 
 

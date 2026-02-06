@@ -1,6 +1,6 @@
 variables:
   PYTEST_ADDOPTS: "--disable-socket"
-  UV_VERSION: "0.9.11"
+  UV_VERSION: "0.9.30"
   PYTHON_VERSION: "3.13"
   BASE_LAYER: bookworm-slim
   # GitLab CI creates a separate mountpoint for the build directory,

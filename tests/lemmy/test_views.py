@@ -1,5 +1,19 @@
 import uuid
 
+from django.contrib.auth import get_user_model
+from django.test import TransactionTestCase, override_settings
+from django.utils import timezone
+from freezegun import freeze_time
+from rest_framework.test import APIClient
+
+from activitypub.adapters.lemmy import models
+from activitypub.adapters.lemmy.factories import (
+    CommentFactory,
+    CommunityFactory,
+    PersonFactory,
+    PostFactory,
+    SiteFactory,
+)
 from activitypub.core.factories import (
     ActivityFactory,
     ActorFactory,
@@ -20,20 +34,6 @@ from activitypub.core.models import (
     Reference,
 )
 from activitypub.core.models.base import generate_ulid
-from django.contrib.auth import get_user_model
-from django.test import TransactionTestCase, override_settings
-from django.utils import timezone
-from freezegun import freeze_time
-from rest_framework.test import APIClient
-
-from activitypub.adapters.lemmy import models
-from activitypub.adapters.lemmy.factories import (
-    CommentFactory,
-    CommunityFactory,
-    PersonFactory,
-    PostFactory,
-    SiteFactory,
-)
 
 User = get_user_model()
 

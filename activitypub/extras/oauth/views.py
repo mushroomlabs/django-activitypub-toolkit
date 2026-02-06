@@ -32,7 +32,6 @@ from .models import (
     OAuthRefreshToken,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

@@ -1,12 +1,12 @@
 from datetime import datetime
 
-from activitypub.core.factories import DomainFactory, ObjectFactory, SourceContentContextFactory
-from activitypub.core.models import ObjectContext
 from django.test import TestCase
 from django.utils.timezone import make_aware
 
 from activitypub.adapters.lemmy.factories import CommentFactory
 from activitypub.adapters.lemmy.serializers import CommentSerializer
+from activitypub.core.factories import DomainFactory, ObjectFactory, SourceContentContextFactory
+from activitypub.core.models import ObjectContext
 
 
 class CommentSerializerTestCase(TestCase):

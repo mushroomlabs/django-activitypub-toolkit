@@ -1,10 +1,11 @@
 import datetime
 
 import jwt
-from activitypub.core.models import Domain, Identity
 from django.conf import settings
 from django.db import models
 from model_utils.models import TimeStampedModel
+
+from activitypub.core.models import Domain, Identity
 
 
 class RegistrationApplication(TimeStampedModel):

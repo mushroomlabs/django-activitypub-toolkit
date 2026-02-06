@@ -1,4 +1,5 @@
 import factory
+
 from activitypub.core.factories import (
     ActorFactory,
     ReferenceFactory,

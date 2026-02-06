@@ -1,14 +1,14 @@
+from activitypub.adapters.lemmy.models.core import Comment, Community, Language, LemmyObject, Post
 from activitypub.core.contexts import AS2, SCHEMA
 from activitypub.core.models import ActivityContext
 from activitypub.projections import (
-    default_projection_selector,
     ActivityProjection,
     ActorProjection,
     LanguageProjection,
     ObjectProjection,
     ReferenceProjection,
+    default_projection_selector,
 )
-from activitypub.adapters.lemmy.models.core import Comment, Community, Language, LemmyObject, Post
 
 
 class LemmyObjectProjectionMixin(ReferenceProjection):

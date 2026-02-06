@@ -20,7 +20,7 @@ These models manage the fundamental entities for ActivityPub federation.
     options:
       heading_level: 4
 
-::: activitypub.models.ActivityPubServer
+::: activitypub.core.models.ActivityPubServer
     options:
       heading_level: 4
 
@@ -34,13 +34,13 @@ These models manage the fundamental entities for ActivityPub federation.
     options:
       heading_level: 4
 
-### Accounts and Actors
+### Identity and User Domain
 
 ::: activitypub.core.models.Identity
     options:
       heading_level: 4
 
-::: activitypub.core.models.ActivityPubServer
+::: activitypub.core.models.UserDomain
     options:
       heading_level: 4
 

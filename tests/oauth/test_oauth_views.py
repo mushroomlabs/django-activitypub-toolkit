@@ -16,7 +16,6 @@ from activitypub.extras.oauth.models import (
 from activitypub.extras.oauth.views import ActivityPubIdentityOAuth2Validator
 from tests.core.base import BaseTestCase
 
-
 User = get_user_model()
 
 

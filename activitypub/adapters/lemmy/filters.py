@@ -1,9 +1,10 @@
 from datetime import timedelta
 
-from activitypub.core.models import ActorContext, Identity, ObjectContext
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
+
+from activitypub.core.models import ActorContext, Identity, ObjectContext
 
 from . import models
 from .choices import ListingTypes, SortOrderTypes
