@@ -121,7 +121,7 @@ Map context models to custom serializers:
 FEDERATION = {
     # ... other settings ...
     'CUSTOM_SERIALIZERS': {
-        'activitypub.models.CollectionContext': 'myapp.serializers.CustomCollectionSerializer',
+        'activitypub.core.models.CollectionContext': 'myapp.serializers.CustomCollectionSerializer',
         'myapp.models.CustomContext': 'myapp.serializers.CustomContextSerializer',
     },
 }

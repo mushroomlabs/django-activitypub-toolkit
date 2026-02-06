@@ -50,7 +50,7 @@ JSON-LD document, stores it in LinkedDataDocument, and populates the
 relevant context models. Subsequent access hits the local cache.
 
 ```python
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 # Get a reference to a remote post
 post_ref = Reference.objects.get(uri='https://remote.example/posts/123')
@@ -127,7 +127,7 @@ references to activities. Adding an item to a collection creates a
 persistent record of membership.
 
 ```python
-from activitypub.models import ActorContext, ActivityContext, ObjectContext
+from activitypub.core.models import ActorContext, ActivityContext, ObjectContext
 
 actor = ActorContext.objects.get(preferred_username='alice')
 

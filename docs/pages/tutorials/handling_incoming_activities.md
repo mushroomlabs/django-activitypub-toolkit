@@ -62,7 +62,7 @@ In your application's `models.py`:
 ```python
 from django.db import models
 from django.contrib.auth.models import User
-from activitypub.models import Reference, ActorContext, CollectionContext, Domain
+from activitypub.core.models import Reference, ActorContext, CollectionContext, Domain
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -71,19 +71,19 @@ class UserProfile(models.Model):
         on_delete=models.CASCADE,
         related_name='user_profile'
     )
-    
+
     @classmethod
     def create_for_user(cls, user):
         domain = Domain.get_default()
         actor_ref = ActorContext.generate_reference(domain)
-        
+
         actor = ActorContext.make(
             reference=actor_ref,
             type=ActorContext.Types.PERSON,
             preferred_username=user.username,
             name=user.get_full_name() or user.username,
         )
-        
+
         inbox_ref = CollectionContext.generate_reference(domain)
         inbox = CollectionContext.make(
             reference=inbox_ref,
@@ -91,7 +91,7 @@ class UserProfile(models.Model):
         )
         actor.inbox = inbox_ref
         actor.save()
-        
+
         outbox_ref = CollectionContext.generate_reference(domain)
         outbox = CollectionContext.make(
             reference=outbox_ref,
@@ -99,14 +99,14 @@ class UserProfile(models.Model):
         )
         actor.outbox = outbox_ref
         actor.save()
-        
+
         profile = cls.objects.create(
             user=user,
             actor_reference=actor_ref
         )
-        
+
         return profile
-    
+
     @property
     def actor(self):
         return self.actor_reference.get_by_context(ActorContext)
@@ -165,7 +165,7 @@ print(f"Response: {response.status_code}")
 A 202 Accepted response indicates the activity was queued for processing. Check that the activity was added to the inbox collection:
 
 ```python
-from activitypub.models import CollectionContext
+from activitypub.core.models import CollectionContext
 
 inbox = actor.inbox.get_by_context(CollectionContext)
 print(f"Inbox has {inbox.total_items} items")
@@ -181,7 +181,7 @@ Common reasons to write custom handlers:
 
 - **User notifications** - Send an email or push notification when someone follows or mentions a user
 - **Moderation workflows** - Alert moderators when a Flag activity arrives
-- **Application-specific state** - Update non-ActivityPub models in your application
+- **Application-specific state** - Update non-activitypub.core.models in your application
 - **Custom validation** - Implement business rules beyond standard ActivityPub semantics
 - **Integration hooks** - Trigger external services or webhooks
 
@@ -198,8 +198,8 @@ Create a handlers module in your application:
 ```python
 import logging
 from django.dispatch import receiver
-from activitypub.signals import activity_done
-from activitypub.models import ActivityContext
+from activitypub.core.signals import activity_done
+from activitypub.core.models import ActivityContext
 from myapp.models import JournalEntry, UserProfile
 
 logger = logging.getLogger(__name__)
@@ -207,7 +207,7 @@ logger = logging.getLogger(__name__)
 @receiver(activity_done)
 def notify_user_of_interaction(sender, activity, **kwargs):
     """Send notification to user when they receive an interaction."""
-    
+
     if activity.type == ActivityContext.Types.LIKE:
         handle_like_notification(activity)
     elif activity.type == ActivityContext.Types.FOLLOW:
@@ -218,11 +218,11 @@ def handle_like_notification(activity):
     try:
         # Check if the liked object is one of our entries
         entry = JournalEntry.objects.get(reference=activity.object)
-        
+
         # Send notification to the entry's author
         logger.info(f"Sending like notification to {entry.user.email}")
         # Your notification logic here - email, push notification, etc.
-        
+
     except JournalEntry.DoesNotExist:
         # Not one of our entries, nothing to do
         pass
@@ -232,10 +232,10 @@ def handle_follow_notification(activity):
     try:
         # Check if the followed actor is one of our users
         profile = UserProfile.objects.get(actor_reference=activity.object)
-        
+
         logger.info(f"Sending follow notification to {profile.user.email}")
         # Your notification logic here
-        
+
     except UserProfile.DoesNotExist:
         pass
 ```
@@ -248,7 +248,7 @@ from django.apps import AppConfig
 class MyAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'myapp'
-    
+
     def ready(self):
         import myapp.handlers  # noqa
 ```
@@ -266,18 +266,18 @@ from myapp.models import JournalEntry
 @receiver(activity_done)
 def handle_moderation_flags(sender, activity, **kwargs):
     """Alert moderators when content is flagged."""
-    
+
     if activity.type != ActivityContext.Types.FLAG:
         return
-    
+
     try:
         # Get the flagged object
         flagged_ref = activity.object
         entry = JournalEntry.objects.get(reference=flagged_ref)
-        
+
         # Get the flagger
         flagger_uri = activity.actor.uri
-        
+
         # Send email to moderators
         send_mail(
             subject=f'Content flagged: {entry.title}',
@@ -285,9 +285,9 @@ def handle_moderation_flags(sender, activity, **kwargs):
             from_email='noreply@example.com',
             recipient_list=['moderators@example.com'],
         )
-        
+
         logger.info(f"Sent moderation alert for entry {entry.id}")
-        
+
     except JournalEntry.DoesNotExist:
         logger.warning(f"Flag activity for unknown object {flagged_ref.uri}")
 ```
@@ -302,15 +302,15 @@ Implement additional authorization in your handlers if needed. For example, you 
 
 ```python
 from myapp.models import BlockedUser
-from activitypub.models import ActivityContext, NotificationProcessResult
+from activitypub.core.models import ActivityContext, NotificationProcessResult
 
 @receiver(notification_accepted)
 def enforce_interaction_policy(sender, notification, **kwargs):
     """Enforce custom policies before standard processing."""
-    
+
     activity_ref = notification.resource
     activity = activity_ref.get_by_context(ActivityContext)
-    
+
     # Check if the actor is blocked
     if activity.actor and BlockedUser.objects.filter(actor_reference=activity.actor).exists():
         logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
@@ -333,40 +333,40 @@ The toolkit maintains collections automatically, so displaying interactions is s
 ```python
 from django.views.generic import DetailView
 from myapp.models import JournalEntry
-from activitypub.models import CollectionContext, ObjectContext
+from activitypub.core.models import CollectionContext, ObjectContext
 
 class EntryDetailView(DetailView):
     model = JournalEntry
     template_name = 'myapp/entry_detail.html'
     context_object_name = 'entry'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         entry = self.object
-        
+
         # Get the ActivityPub object context
         obj = entry.reference.get_by_context(ObjectContext)
-        
+
         # Get likes
         if obj.likes:
             likes_collection = obj.likes.get_by_context(CollectionContext)
             context['likes_count'] = likes_collection.total_items
-        
+
         # Get shares
         if obj.shares:
             shares_collection = obj.shares.get_by_context(CollectionContext)
             context['shares_count'] = shares_collection.total_items
-        
+
         # Get replies - automatically populated by the toolkit
         if obj.replies:
             replies_collection = obj.replies.get_by_context(CollectionContext)
             context['replies_count'] = replies_collection.total_items
             # You can also iterate through the replies
             context['replies'] = [
-                item.get_by_context(ObjectContext) 
+                item.get_by_context(ObjectContext)
                 for item in replies_collection.items.all()
             ]
-        
+
         return context
 ```
 
@@ -377,7 +377,7 @@ In your template:
 <div class="entry">
     <h2>{{ entry.title }}</h2>
     <div class="content">{{ entry.content }}</div>
-    
+
     <div class="interactions">
         <span>{{ likes_count }} likes</span>
         <span>{{ shares_count }} shares</span>
@@ -399,7 +399,7 @@ Your custom handlers should handle errors gracefully:
 @receiver(activity_done)
 def safe_notification_handler(sender, activity, **kwargs):
     """Handle activities with proper error handling."""
-    
+
     try:
         # Your handler logic here
         pass

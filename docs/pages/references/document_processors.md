@@ -6,7 +6,7 @@ processing logic for federation notifications.
 
 ## Base Class
 
-::: activitypub.processors.DocumentProcessor
+::: activitypub.core.processors.DocumentProcessor
     options:
       heading_level: 3
 
@@ -14,13 +14,13 @@ processing logic for federation notifications.
 
 ### Actor Deletion Processor
 
-::: activitypub.processors.ActorDeletionDocumentProcessor
+::: activitypub.core.processors.ActorDeletionDocumentProcessor
     options:
       heading_level: 3
 
 ### JSON-LD Compaction Processor
 
-::: activitypub.processors.CompactJsonLdDocumentProcessor
+::: activitypub.core.processors.CompactJsonLdDocumentProcessor
     options:
       heading_level: 3
 
@@ -33,8 +33,8 @@ both incoming and outgoing notifications.
 ```python
 FEDERATION = {
     'DOCUMENT_PROCESSORS': [
-        'activitypub.processors.ActorDeletionDocumentProcessor',
-        'activitypub.processors.CompactJsonLdDocumentProcessor',
+        'activitypub.core.processors.ActorDeletionDocumentProcessor',
+        'activitypub.core.processors.CompactJsonLdDocumentProcessor',
         'myapp.processors.CustomProcessor',
     ]
 }
@@ -45,7 +45,7 @@ FEDERATION = {
 Create a custom document processor by subclassing `DocumentProcessor`:
 
 ```python
-from activitypub.processors import DocumentProcessor
+from activitypub.core.processors import DocumentProcessor
 
 class CustomProcessor(DocumentProcessor):
     def process_incoming(self, document):

@@ -9,7 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-
+- Integrated Lemmy Adapter API (optional) at activitypub.adapters.lemmy
+- Added OAuth support (optional) on activitypub.extras.oauth
+  - Identity-scoped access tokens linking OAuth tokens to specific actors
+  - Custom ActivityPub OIDC claims for actor information
+  - Identity selection during authorization flow
+- Implemented proper authentication for actor outbox access.
+- Added strict checks to prevent processing untrusted content.
+- Identity system for linking Django users to ActivityPub actors
+  - Support for multiple identities per user
+  - Primary identity designation for default operations
+  - `ActorUsernameAuthenticationBackend` for actor-based login
+  - `ActorMiddleware` for automatic actor attachment to requests
+  - `UserDomain` model for user-controlled domain management
 - Projection system for controlling JSON-LD presentation and access control
   - `ReferenceProjection` base class with declarative Meta configuration
   - Built-in projections for actors, collections, notes, and questions
@@ -17,21 +29,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Automatic context tracking and JSON-LD compaction
   - Viewer-scoped access control via `scope` parameter
   - `@use_context` decorator for registering required contexts
-- Comprehensive projection documentation
-  - Understanding Projections topic guide covering architecture and lifecycle
-  - Projections reference documentation with API details
-  - Integration examples in publishing and custom context tutorials
+- Added `redirects_to` field to Reference model for URL redirections
 
 ### Changed
-
-- Moved all module-level imports from function scope to module scope in documentation code samples
-- Improved code quality and consistency across all documentation examples
-- Enhanced projection integration in LinkedDataModelView
+- activitypub package now is moved to activitypub.core namespace
+- Actor collections are not exclusive, allowing more flexible collection management.
+- fetch_nodeinfo is no longer automatically called after remote domain is created
+- Plenty of improvements in the admin, to allow easier filtering and searching of records
+- Improved reference resolution management logic.
+- Updated authentication and authorization documentation to cover both local user authentication (Identity system) and remote actor authentication (HTTP Signatures).
+- Rewrote standalone server tutorial to use built-in Identity system and OAuth package instead of custom models, removed custom admin interface section in favor of built-in IdentityAdmin.
 
 ### Fixed
+- LinkedDataDocument.load() was not checking for domain authority before updating references
 
-- Function-level import violations in documentation code samples across tutorials, how-tos, and topic guides
-- Import organization in projection examples for better clarity
 
 ## [0.1.6] - 2025-12-14
 

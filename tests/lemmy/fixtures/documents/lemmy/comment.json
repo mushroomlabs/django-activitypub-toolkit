@@ -1,0 +1,32 @@
+{
+  "@context": [
+    "https://join-lemmy.org/context.json",
+    "https://www.w3.org/ns/activitystreams"
+  ],
+  "type": "Note",
+  "id": "https://lemmy.example.com/comment/1",
+  "attributedTo": "https://lemmy.example.com/u/alice",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://lemmy.example.com/c/test",
+    "https://lemmy.example.com/users/bob"
+  ],
+  "content": "<p>This is a test</p>\n<p>In markdown</p>\n",
+  "inReplyTo": "https://lemmy.example.com/users/bob/post/123456",
+  "mediaType": "text/html",
+  "source": {
+    "content": "This is a test.\n\nIn markdown",
+    "mediaType": "text/markdown"
+  },
+  "published": "2026-01-01T10:10:10.654321Z",
+  "updated": "2026-01-01T10:10:20.654321Z",
+  "distinguished": false,
+  "language": {
+    "identifier": "en",
+    "name": "English"
+  },
+  "audience": "https://lemmy.example.com/c/test",
+  "attachment": []
+}

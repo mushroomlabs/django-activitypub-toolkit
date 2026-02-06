@@ -21,7 +21,7 @@ You only need custom handlers when:
 
 - **Sending user notifications** - Email or push notifications when someone follows or mentions a user
 - **Moderation workflows** - Alert moderators when Flag activities arrive
-- **Application-specific state** - Update non-ActivityPub models in your application
+- **Application-specific state** - Update non-activitypub.core.models in your application
 - **Custom validation** - Implement business rules beyond standard ActivityPub semantics
 - **Integration hooks** - Trigger external services or webhooks
 
@@ -45,16 +45,16 @@ Connect to Django signals to add application-specific logic:
 
 ```python
 from django.dispatch import receiver
-from activitypub.signals import activity_done, notification_accepted
-from activitypub.models import Activity, ActivityContext
+from activitypub.core.signals import activity_done, notification_accepted
+from activitypub.core.models import Activity, ActivityContext
 
 @receiver(activity_done)
 def handle_activity(sender, activity, **kwargs):
     """Add custom logic after standard processing completes."""
-    
+
     # activity_done fires after the toolkit has updated collections
     # This is where you add application-specific behavior
-    
+
     if activity.type == Activity.Types.LIKE:
         handle_like_notification(activity)
     elif activity.type == Activity.Types.FOLLOW:
@@ -71,7 +71,7 @@ from django.apps import AppConfig
 class YourAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'yourapp'
-    
+
     def ready(self):
         import yourapp.handlers  # noqa
 ```
@@ -89,7 +89,7 @@ def handle_like_notification(activity):
     try:
         # Check if the liked object is one of our posts
         post = Post.objects.get(reference=activity.object)
-        
+
         # Send notification to the post's author
         send_mail(
             subject=f'Your post was liked',
@@ -97,7 +97,7 @@ def handle_like_notification(activity):
             from_email='noreply@example.com',
             recipient_list=[post.author.email],
         )
-        
+
     except Post.DoesNotExist:
         # Not one of our posts, nothing to do
         pass
@@ -107,14 +107,14 @@ def handle_follow_notification(activity):
     try:
         # Check if the followed actor is one of our users
         profile = UserProfile.objects.get(actor_reference=activity.object)
-        
+
         send_mail(
             subject='New follower',
             message=f'{activity.actor.uri} is now following you',
             from_email='noreply@example.com',
             recipient_list=[profile.user.email],
         )
-        
+
     except UserProfile.DoesNotExist:
         pass
 ```
@@ -136,10 +136,10 @@ def handle_moderation_flag(activity):
         # Get the flagged object
         flagged_ref = activity.object
         post = Post.objects.get(reference=flagged_ref)
-        
+
         # Get the flagger
         flagger_uri = activity.actor.uri
-        
+
         # Send email to moderators
         send_mail(
             subject=f'Content flagged: {post.title}',
@@ -147,9 +147,9 @@ def handle_moderation_flag(activity):
             from_email='noreply@example.com',
             recipient_list=['moderators@example.com'],
         )
-        
+
         logger.info(f"Sent moderation alert for post {post.id}")
-        
+
     except Post.DoesNotExist:
         logger.warning(f"Flag activity for unknown object {flagged_ref.uri}")
 ```
@@ -165,7 +165,7 @@ def handle_like_notification(activity):
     """Update application state when content is liked."""
     try:
         post = Post.objects.get(reference=activity.object)
-        
+
         # Create application-specific Like record
         Like.objects.get_or_create(
             post=post,
@@ -175,11 +175,11 @@ def handle_like_notification(activity):
                 'created_at': activity.published,
             }
         )
-        
+
         # Update denormalized like count
         post.like_count = Like.objects.filter(post=post).count()
         post.save()
-        
+
     except Post.DoesNotExist:
         pass
 ```
@@ -189,21 +189,23 @@ def handle_like_notification(activity):
 Enforce application-specific policies before standard processing:
 
 ```python
-from activitypub.signals import notification_accepted
+from activitypub.core.signals import notification_accepted
+from activitypub.core.models import ActivityContext
+from activitypub.core.exceptions import DropMessage
+
 from yourapp.models import BlockedUser
-from activitypub.models import ActivityContext
-from activitypub.exceptions import DropMessage
+
 
 @receiver(notification_accepted)
 def enforce_interaction_policy(sender, notification, **kwargs):
     """Enforce custom policies before standard processing."""
     activity_ref = notification.resource
     activity = activity_ref.get_by_context(ActivityContext)
-    
+
     # Check if the actor is blocked
     if activity.actor and BlockedUser.objects.filter(actor_uri=activity.actor.uri).exists():
         logger.info(f"Rejecting activity from blocked user {activity.actor.uri}")
-        
+
         # Prevent further processing
         raise DropMessage("Actor is blocked")
 ```
@@ -215,15 +217,15 @@ The `notification_accepted` signal fires before standard activity processing, al
 Automatically accept follow requests instead of requiring manual approval:
 
 ```python
-from activitypub.models import FollowRequest
+from activitypub.core.models import FollowRequest
 
 @receiver(activity_done)
 def auto_accept_follows(sender, activity, **kwargs):
     """Automatically accept follow requests."""
-    
+
     if activity.type != Activity.Types.FOLLOW:
         return
-    
+
     try:
         request = FollowRequest.objects.get(activity=activity)
         if request.status == FollowRequest.STATUS.pending:
@@ -244,18 +246,18 @@ from yourapp.models import ActivityStats
 @receiver(activity_done)
 def update_activity_stats(sender, activity, **kwargs):
     """Track activity statistics."""
-    
+
     stats, created = ActivityStats.objects.get_or_create(
         date=timezone.now().date()
     )
-    
+
     if activity.type == Activity.Types.LIKE:
         stats.likes_received += 1
     elif activity.type == Activity.Types.FOLLOW:
         stats.follows_received += 1
     elif activity.type == Activity.Types.ANNOUNCE:
         stats.shares_received += 1
-    
+
     stats.save()
 ```
 
@@ -267,7 +269,7 @@ Handle processing errors gracefully without blocking other activities:
 @receiver(activity_done)
 def safe_handler(sender, activity, **kwargs):
     """Handle activities with proper error handling."""
-    
+
     try:
         # Your handler logic here
         process_activity(activity)
@@ -285,26 +287,26 @@ Test your handlers by simulating incoming activities:
 
 ```python
 from django.test import TestCase
-from activitypub.models import ActivityContext, Reference, Domain
+from activitypub.core.models import ActivityContext, Reference, Domain
 
 class ActivityHandlerTest(TestCase):
     def test_like_notification(self):
         """Test that like activities trigger notifications."""
-        
+
         # Create test activity
         domain = Domain.get_default()
         activity_ref = ActivityContext.generate_reference(domain)
-        
+
         activity = ActivityContext.make(
             reference=activity_ref,
             type=ActivityContext.Types.LIKE,
             actor=Reference.make('https://example.com/users/alice'),
             object=self.post.reference,
         )
-        
+
         # Trigger signal
         activity_done.send(sender=ActivityContext, activity=activity)
-        
+
         # Assert notification was sent
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('liked', mail.outbox[0].subject)

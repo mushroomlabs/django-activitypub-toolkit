@@ -136,7 +136,7 @@ Now create a context model that handles ONLY Mastodon-specific fields. AS2 field
 
 ```python
 from django.db import models
-from activitypub.models import AbstractContextModel
+from activitypub.core.models import AbstractContextModel
 from activitypub.contexts import MASTODON_CONTEXT, MASTODON, AS2
 import rdflib
 
@@ -213,7 +213,7 @@ Create a test document representing a Mastodon note. In the Django shell:
 ```python
 python manage.py shell
 
-from activitypub.models import LinkedDataDocument, Reference
+from activitypub.core.models import LinkedDataDocument, Reference
 
 # Simulate receiving a Mastodon note document
 document = {
@@ -244,7 +244,7 @@ doc.load()
 ref = Reference.objects.get(uri='https://mastodon.social/users/alice/statuses/123456')
 
 # AS2 context handles basic Note properties
-as2_ctx = ref.get_by_context('activitypub.models.ObjectContext')
+as2_ctx = ref.get_by_context('activitypub.core.models.ObjectContext')
 
 # Mastodon context handles Mastodon-specific extensions
 mastodon_ctx = ref.get_by_context('journal.mastodon_context.MastodonNoteContext')
@@ -348,7 +348,7 @@ Now create the context model that implements storage for mood properties in `jou
 
 ```python
 from django.db import models
-from activitypub.models import AbstractContextModel
+from activitypub.core.models import AbstractContextModel
 from journal.contexts import MOOD, MOOD_CONTEXT
 
 class MoodContext(AbstractContextModel):
@@ -571,7 +571,7 @@ Custom contexts integrate with Django's ORM, enabling complex queries across voc
 ```python
 from django.db.models import Q
 from journal.mood_context import MoodContext
-from activitypub.models import ObjectContext
+from activitypub.core.models import ObjectContext
 
 # Find energetic entries over 30 minutes
 energetic_long_entries = JournalEntry.objects.filter(

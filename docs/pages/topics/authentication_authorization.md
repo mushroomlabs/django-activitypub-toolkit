@@ -2,22 +2,135 @@
 title: Authentication and Authorization
 ---
 
-Trust and security in federated systems require mechanisms to verify the authenticity of messages and control access to resources. Django ActivityPub Toolkit provides a flexible authentication framework built around cryptographic proofs and extensible authorization policies.
+Trust and security in federated systems require mechanisms to verify the authenticity of messages and control access to resources. Django ActivityPub Toolkit provides authentication for both local users and remote actors, along with extensible authorization policies.
 
-## The Authentication Problem
+## Authentication in Federated Systems
 
-When your server receives a message claiming to be from a remote actor, you need to verify that claim. Unlike centralized systems where all requests authenticate against a central authority, federated systems must establish trust across autonomous servers that have never directly coordinated.
+ActivityPub servers handle two distinct authentication scenarios: verifying messages from remote servers and authenticating local users who control actors on your server.
 
-ActivityPub addresses this through HTTP Signatures, a standard for signing HTTP requests using public-key cryptography. Each actor publishes a public key as part of their actor document. When their server sends a request, it signs the request headers with the corresponding private key. The receiving server fetches the actor's public key and verifies the signature.
+Remote authentication uses HTTP Signatures, a standard for signing HTTP requests using public-key cryptography. Each actor publishes a public key as part of their actor document. When their server sends a request, it signs the request headers with the corresponding private key. The receiving server fetches the actor's public key and verifies the signature. This proves the request originated from a server that controls the actor's domain and has not been tampered with in transit.
 
-This proves two things: the request originated from a server that controls the actor's domain, and the request has not been tampered with in transit. It does not prove that a specific person authorized the request, only that the request came from the server claiming to host that actor.
+Local authentication connects Django users to ActivityPub actors through the Identity system. A single Django user can control multiple actors, each representing a distinct identity within the fediverse. This separation allows users to maintain different personas or manage multiple accounts while authenticating once to your application.
 
-## Notification Authentication
+## Local User Authentication
+
+The Identity system bridges Django's authentication with ActivityPub actors. Each Identity links a Django user to an ActorContext, establishing ownership and control.
+
+```python
+from activitypub.core.models import Identity, ActorContext, Reference
+
+# Create an actor for a user
+actor_ref = Reference.make('https://myserver.com/actors/alice')
+actor = ActorContext.objects.create(
+    reference=actor_ref,
+    preferred_username='alice',
+    name='Alice Smith'
+)
+
+# Link it to a Django user
+identity = Identity.objects.create(
+    user=user,
+    actor=actor,
+    is_primary=True
+)
+```
+
+Users can have multiple identities, but only one can be marked as primary. The primary identity represents the user's default actor for operations that don't specify which identity to use.
+
+The `ActorMiddleware` automatically attaches the actor to incoming requests when a user is authenticated and has exactly one identity. This provides convenient access to the current actor without manual lookups:
+
+```python
+# In a view with ActorMiddleware enabled
+def my_view(request):
+    if hasattr(request, 'actor'):
+        # User is authenticated and has a single identity
+        actor = request.actor
+        # Perform operations as this actor
+```
+
+For applications where users manage multiple identities, views must explicitly determine which identity the user is acting as. The OAuth authorization flow demonstrates this pattern by prompting users to select an identity when authorizing client applications.
+
+### Authentication Backends
+
+The toolkit provides `ActorUsernameAuthenticationBackend` for authenticating users by actor username and domain rather than Django username:
+
+```python
+# settings.py
+AUTHENTICATION_BACKENDS = [
+    'activitypub.core.authentication_backends.ActorUsernameAuthenticationBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+```
+
+This backend authenticates users by looking up an Identity with the specified username and domain, then verifying the password against the associated Django user. This allows users to log in using their ActivityPub actor identifier rather than their Django username.
+
+### OAuth and Identity Selection
+
+The OAuth integration extends django-oauth-toolkit to support identity-scoped tokens. When a client application requests authorization, the user selects which identity to authorize. Access tokens are bound to that identity, and API requests authenticated with the token operate in the context of that specific actor.
+
+```python
+from activitypub.extras.oauth.models import OAuthAccessToken
+
+# Access tokens are bound to identities
+token = OAuthAccessToken.objects.get(token=token_string)
+actor = token.identity.actor
+
+# The token response includes the actor URI
+# {
+#   "access_token": "...",
+#   "token_type": "Bearer",
+#   "expires_in": 3600,
+#   "actor": "https://myserver.com/actors/alice"
+# }
+```
+
+Client applications receive the actor URI in the token response, allowing them to identify which actor they're operating as. This supports multi-account clients that manage multiple identities across different servers.
+
+The OAuth validator includes custom OIDC claims for ActivityPub identity information:
+
+```python
+# Claims available in the activitypub scope
+{
+    "sub": "https://myserver.com/actors/alice",
+    "preferred_username": "alice",
+    "subject_username": "alice@myserver.com",
+    "display_name": "Alice Smith",
+    "profile": "https://myserver.com/actors/alice",
+    "identity_id": 123
+}
+```
+
+These claims allow client applications to retrieve actor information without additional API requests.
+
+### User-Controlled Domains
+
+The `UserDomain` model allows users to control entire domains hosted on your server. This supports multi-tenant scenarios where different users manage separate namespaces:
+
+```python
+from activitypub.core.models import UserDomain, Domain
+
+# Create a local domain controlled by a user
+domain = Domain.objects.create(
+    url='https://alice-space.example.com',
+    local=True
+)
+
+user_domain = UserDomain.objects.create(
+    domain=domain,
+    owner=user
+)
+```
+
+When a user controls a domain, they can create actors within that namespace and manage resources associated with those actors. This pattern supports applications that provide personal fediverse instances or allow users to bring their own domains.
+
+The validation ensures only local domains can be assigned to users, preventing users from claiming ownership of remote domains they don't control.
+
+## Remote Actor Authentication
 
 When your server receives an ActivityPub message—typically a POST to an inbox—the toolkit creates a `Notification` instance linking the sender, target, and resource references. Authentication happens through the `authenticate()` method, which processes all proof mechanisms attached to the notification.
 
 ```python
-from activitypub.models import Notification
+from activitypub.core.models import Notification
 
 notification = Notification.objects.get(pk=notification_id)
 notification.authenticate()
@@ -45,27 +158,27 @@ HTTP Signature proofs verify the signature on the HTTP request that delivered th
 def post(self, request):
     # Extract HTTP signature from request headers
     http_sig = HttpMessageSignature.extract(request)
-    
+
     # Parse the activity document
     activity_data = request.data
     activity_ref = Reference.make(activity_data['id'])
     document = LinkedDataDocument.make(activity_data)
     document.load()
-    
+
     # Create notification
     notification = Notification.objects.create(
         sender=Reference.make(activity_data['actor']),
         target=inbox_ref,
         resource=activity_ref
     )
-    
+
     # Create HTTP signature proof
     if http_sig:
         HttpSignatureProof.objects.create(
             notification=notification,
             http_message_signature=http_sig
         )
-    
+
     # Authenticate and process
     notification.authenticate()
     if notification.is_authorized:
@@ -83,7 +196,7 @@ Actors need cryptographic keys to sign requests. The `SecV1Context` model stores
 Generating a keypair for a local actor is straightforward:
 
 ```python
-from activitypub.models import SecV1Context, Reference
+from activitypub.core.models import SecV1Context, Reference
 
 actor_ref = Reference.objects.get(uri='https://myserver.com/actors/alice')
 keypair = SecV1Context.generate_keypair(owner=actor_ref)
@@ -105,13 +218,13 @@ Applications with specialized authentication requirements can implement custom p
 Consider an application that wants to support bearer token authentication for trusted external services:
 
 ```python
-from activitypub.models import NotificationIntegrityProof, NotificationProofVerification
+from activitypub.core.models import NotificationIntegrityProof, NotificationProofVerification
 from django.db import models
 from myapp.models import TrustedService
 
 class BearerTokenProof(NotificationIntegrityProof):
     token_value = models.CharField(max_length=255)
-    
+
     def verify(self, fetch_missing_keys=False):
         # Check token against allowed tokens for this sender
         service = TrustedService.objects.filter(
@@ -119,7 +232,7 @@ class BearerTokenProof(NotificationIntegrityProof):
             token=self.token_value,
             revoked=False
         ).first()
-        
+
         if service:
             return NotificationProofVerification.objects.create(
                 notification=self.notification,
@@ -133,49 +246,87 @@ This pattern extends to any authentication mechanism: OAuth tokens, API keys, ch
 
 ## Authorization Policies
 
-Authentication establishes identity. Authorization determines what actions that identity can perform. The toolkit provides a minimal authorization model that applications extend based on their requirements.
+Authentication establishes identity. Authorization determines what actions that identity can perform.
 
-The `is_authorized` property on `Notification` checks for successful verification or local origin. This answers "is this notification from who it claims to be?" but not "should we accept this notification?"
+For remote notifications, the `is_authorized` property on `Notification` checks for successful cryptographic verification or local origin. This answers "is this notification from who it claims to be?" but not "should we accept this notification?" Applications implement additional authorization policies in their notification handlers based on relationships, content rules, or domain policies.
 
-Applications implement authorization policies in their notification handlers or view permissions. Common policies include:
+For local users accessing resources, the toolkit provides Django REST Framework permission classes. The `IsOutboxOwnerOrReadOnly` permission demonstrates the pattern:
 
-**Domain blocking.** Reject notifications from actors whose domains appear on a blocklist. The `UnblockedDomainOrActorPermission` class demonstrates this pattern.
+```python
+from rest_framework import permissions
+from activitypub.core.models import ActorContext, Reference
 
-**Relationship requirements.** Only accept certain activity types from actors that have an established relationship. For example, only process `Create` activities from actors that the target follows.
+class IsOutboxOwnerOrReadOnly(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj: Reference):
+        if request.method in permissions.SAFE_METHODS:
+            return True
 
-**Content policies.** Inspect activity objects for policy violations before accepting them. This might include spam filtering, content restrictions, or rate limiting.
+        if not request.user.is_authenticated:
+            return False
 
-**Scope limitations.** Restrict what activities can be posted to specific collections. Public inboxes might accept `Follow` and `Like` activities but reject `Delete` activities for objects they don't own.
+        actors = ActorContext.objects.filter(identity__user=request.user)
+        return actors.filter(outbox=obj).exists()
+```
+
+This permission allows anyone to read an outbox but restricts write operations to the user who owns the actor. The pattern checks whether any of the user's identities control the resource in question.
+
+Applications extend this model with domain-specific policies:
+
+```python
+class CanModerateContent(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+
+        # Check if any of the user's actors have moderator status
+        return ActorContext.objects.filter(
+            identity__user=request.user,
+            moderator_status=True
+        ).exists()
+
+class IsActorOwner(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+
+        # For actor resources, check identity ownership
+        return Identity.objects.filter(
+            user=request.user,
+            actor=obj
+        ).exists()
+```
+
+Authorization for incoming federated activities typically happens in notification processors rather than view permissions. Processors inspect the activity type, sender relationships, and content before deciding whether to accept the activity:
 
 ```python
 def process_notification(notification):
+    if not notification.is_authorized:
+        logger.warning(f"Rejecting unauthorized notification from {notification.sender.uri}")
+        return
+
     activity = notification.resource.get_by_context(ActivityContext)
-    
-    # Authorization: check relationship
+
+    # Domain-level blocking
+    if notification.sender.domain.blocked:
+        logger.info(f"Rejecting notification from blocked domain")
+        return
+
+    # Relationship-based authorization
     if activity.type == ActivityContext.Types.CREATE:
         target_actor = notification.target.get_by_context(ActorContext)
-        sender_in_followers = target_actor.followed_by.filter(
-            uri=notification.sender.uri
-        ).exists()
-        
-        if not sender_in_followers:
-            logger.info(f"Rejecting Create from non-follower {notification.sender.uri}")
+        if not target_actor.followed_by.filter(uri=notification.sender.uri).exists():
+            logger.info(f"Rejecting Create from non-follower")
             return
-    
-    # Authorization: check domain block
-    if notification.sender.domain.blocked:
-        logger.info(f"Rejecting notification from blocked domain {notification.sender.domain}")
-        return
-    
+
     # Process the activity
     handle_activity_type(activity)
 ```
 
-Authorization logic lives in application code, not in the toolkit. Different applications have different trust models. A public forum might accept posts from any authenticated actor. A private community might only accept from members. A content aggregator might only accept from verified sources.
+Different applications require different trust models. A public forum might accept posts from any authenticated actor. A private community might only accept from members. A content aggregator might only accept from verified sources. The toolkit provides the authentication primitives; applications implement authorization policies appropriate to their use case.
 
 ## Outgoing Request Authentication
 
-When your server fetches resources from remote servers, it should identify itself. Many servers require signed requests to access non-public resources or to prevent abuse.
+When your server fetches resources from remote servers or delivers activities, it should identify itself. Many servers require signed requests to access non-public resources or to prevent abuse.
 
 The `HttpDocumentResolver` automatically signs outgoing requests using the local server's actor keypair. When resolving a reference, it looks up the default domain's actor and, if that actor has a keypair, attaches an HTTP Signature to the GET request.
 
@@ -193,6 +344,23 @@ if signing_key:
 The `signed_request_auth` property returns a `requests` authentication handler that signs the request according to the HTTP Signatures specification. It signs the request target, host, date, and user-agent headers, providing proof that the request comes from your server.
 
 Applications making direct HTTP requests to remote servers should use the same pattern. Fetch the local actor's keypair and attach it as authentication to the request. This establishes trust and increases the likelihood that remote servers will respond positively.
+
+### Protecting Actor Resources
+
+Actor outboxes and other writable collections require authentication to prevent unauthorized posting. The toolkit provides authentication checks for these endpoints, ensuring only the actor owner can post to their outbox:
+
+```python
+# In a view handling outbox POST requests
+class OutboxView(APIView):
+    permission_classes = [IsOutboxOwnerOrReadOnly]
+
+    def post(self, request, actor_id):
+        # Permission class ensures user owns this actor
+        # Process the activity posting
+        pass
+```
+
+This protection prevents remote actors from posting to local actor outboxes, even if they present valid HTTP signatures. Only authenticated local users who control the actor can write to protected collections.
 
 ## Multi-Tenancy and Per-Actor Keys
 

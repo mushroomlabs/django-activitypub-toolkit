@@ -7,7 +7,7 @@ This guide shows you how to block domains and servers that send unwanted or mali
 Block entire domains to prevent any federation with them:
 
 ```python
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 # Block a domain
 blocked_domain = Domain.objects.create(
@@ -40,7 +40,7 @@ Use Django admin to manage blocked domains:
 ```python
 # In admin.py
 from django.contrib import admin
-from activitypub.models import Domain
+from activitypub.core.models import Domain
 
 @admin.register(Domain)
 class DomainAdmin(admin.ModelAdmin):
@@ -54,13 +54,13 @@ class DomainAdmin(admin.ModelAdmin):
 Implement automatic blocking based on activity patterns:
 
 ```python
-from activitypub.signals import activity_received
+from activitypub.core.signals import activity_received
 
 @receiver(activity_received)
 def check_for_spam(sender, activity, **kwargs):
     """Automatically block domains that send spam."""
     sender_domain = activity.sender.domain
-    
+
     # Check for spam patterns
     if is_spam_activity(activity):
         sender_domain.blocked = True
@@ -76,15 +76,15 @@ Block activities based on content:
 def should_block_activity(activity):
     """Check if activity should be blocked."""
     obj = activity.object.get_by_context(ObjectContext)
-    
+
     # Block based on content
     if obj and 'spam' in obj.content.lower():
         return True
-    
+
     # Block based on actor reputation
     if activity.actor.domain.blocked:
         return True
-    
+
     return False
 
 @receiver(activity_processed)
@@ -106,17 +106,17 @@ def check_rate_limit(domain_name, max_requests=100, window=3600):
     """Check if domain has exceeded rate limit."""
     cache_key = f"domain_requests_{domain_name}"
     request_count = cache.get(cache_key, 0)
-    
+
     if request_count >= max_requests:
         return False  # Block
-    
+
     cache.set(cache_key, request_count + 1, window)
     return True
 
 @receiver(activity_received)
 def rate_limit_domains(sender, activity, **kwargs):
     domain_name = activity.sender.domain.name
-    
+
     if not check_rate_limit(domain_name):
         activity.sender.domain.blocked = True
         activity.sender.domain.save()
@@ -141,7 +141,7 @@ def filter_blocked_actors(sender, activity, **kwargs):
     blocked_by_users = UserBlock.objects.filter(
         blocked_actor=activity.actor
     ).exists()
-    
+
     if blocked_by_users:
         # Don't deliver to blocked users
         return
@@ -169,7 +169,7 @@ def moderate_suspicious_activities(sender, activity, **kwargs):
         )
         # Don't process until moderated
         return
-    
+
     # Process normally
 ```
 
@@ -205,7 +205,7 @@ def send_block_alert(domain):
 class Domain(models.Model):
     # ... existing fields ...
     block_reason = models.TextField(blank=True)
-    
+
     def block(self, reason=""):
         self.blocked = True
         self.block_reason = reason

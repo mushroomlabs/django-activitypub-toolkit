@@ -8,35 +8,39 @@ These models manage the fundamental entities for ActivityPub federation.
 
 ### Domains and References
 
-::: activitypub.models.Domain
+::: activitypub.core.models.Domain
     options:
       heading_level: 4
 
-::: activitypub.models.Reference
+::: activitypub.core.models.Reference
     options:
       heading_level: 4
 
-::: activitypub.models.LinkedDataDocument
+::: activitypub.core.models.LinkedDataDocument
     options:
       heading_level: 4
 
-::: activitypub.models.ActivityPubServer
+::: activitypub.core.models.ActivityPubServer
     options:
       heading_level: 4
 
 ### Field Types
 
-::: activitypub.models.ReferenceField
+::: activitypub.core.models.ReferenceField
     options:
       heading_level: 4
 
-::: activitypub.models.RelatedContextField
+::: activitypub.core.models.RelatedContextField
     options:
       heading_level: 4
 
-### Accounts and Actors
+### Identity and User Domain
 
-::: activitypub.models.ActorAccount
+::: activitypub.core.models.Identity
+    options:
+      heading_level: 4
+
+::: activitypub.core.models.UserDomain
     options:
       heading_level: 4
 
@@ -46,70 +50,70 @@ These models store ActivityStreams 2.0 vocabulary data attached to references.
 
 ### Core Types
 
-::: activitypub.models.LinkContext
+::: activitypub.core.models.LinkContext
     options:
       heading_level: 4
 
-::: activitypub.models.as2.AbstractAs2ObjectContext
+::: activitypub.core.models.as2.AbstractAs2ObjectContext
     options:
       heading_level: 4
 
-::: activitypub.models.ActorContext
+::: activitypub.core.models.ActorContext
     options:
       heading_level: 4
 
-::: activitypub.models.ActivityContext
+::: activitypub.core.models.ActivityContext
     options:
       heading_level: 4
 
-::: activitypub.models.QuestionContext
+::: activitypub.core.models.QuestionContext
     options:
       heading_level: 4
 
 ### Collections
 
-::: activitypub.models.CollectionContext
+::: activitypub.core.models.CollectionContext
     options:
       heading_level: 4
 
-::: activitypub.models.CollectionPageContext
+::: activitypub.core.models.CollectionPageContext
     options:
       heading_level: 4
 
-::: activitypub.models.CollectionItem
+::: activitypub.core.models.CollectionItem
     options:
       heading_level: 4
 
 ### Extended Properties
 
-::: activitypub.models.EndpointContext
+::: activitypub.core.models.EndpointContext
     options:
       heading_level: 4
 
-::: activitypub.models.LinkRelation
+::: activitypub.core.models.LinkRelation
     options:
       heading_level: 4
 
-::: activitypub.models.RelationshipProperties
+::: activitypub.core.models.RelationshipProperties
     options:
       heading_level: 4
 
-::: activitypub.models.LinkedFile
+::: activitypub.core.models.LinkedFile
     options:
       heading_level: 4
 
 ### Reference Relationships
 
-::: activitypub.models.fields.ReferenceRelationship
+::: activitypub.core.models.fields.ReferenceRelationship
     options:
       heading_level: 4
 
-::: activitypub.models.fields.ContextProxy
+::: activitypub.core.models.fields.ContextProxy
     options:
       heading_level: 4
 
 ## Social Features
 
-::: activitypub.models.FollowRequest
+::: activitypub.core.models.FollowRequest
     options:
       heading_level: 4

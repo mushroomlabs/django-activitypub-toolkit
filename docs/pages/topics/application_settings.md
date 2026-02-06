@@ -226,7 +226,7 @@ default `ContextModelSerializer`.
 ```python
 FEDERATION = {
     'CUSTOM_SERIALIZERS': {
-        'activitypub.models.CollectionContext': 'activitypub.serializers.CollectionContextSerializer',
+        'activitypub.core.models.CollectionContext': 'activitypub.serializers.CollectionContextSerializer',
         'myapp.models.CustomContext': 'myapp.serializers.CustomContextSerializer',
     },
 }
@@ -335,7 +335,7 @@ patterns in your application.
 Access toolkit settings through the `app_settings` object:
 
 ```python
-from activitypub.settings import app_settings
+from activitypub.core.settings import app_settings
 
 default_domain = app_settings.Instance.default_url
 page_size = app_settings.Instance.collection_page_size

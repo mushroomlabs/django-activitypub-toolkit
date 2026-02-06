@@ -9,7 +9,7 @@ Django ActivityPub Toolkit bridges the gap between RDF's graph model and Django'
 A `Reference` represents a node in the global social graph. Each reference has a URI that uniquely identifies a resource, whether that resource lives on your server or a remote server.
 
 ```python
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 # Reference to a local resource
 local_ref = Reference.objects.get(uri='https://myserver.com/users/alice')
@@ -33,7 +33,7 @@ Context models are composable and organized by "what kind of thing is this?" rat
 ActivityStreams 2.0, the core vocabulary for ActivityPub, maps to context models like `ObjectContext`, `ActorContext`, and `ActivityContext`. These models store properties such as `content`, `name`, `published`, and relationship pointers like `attributed_to` and `in_reply_to`.
 
 ```python
-from activitypub.models import Reference, ObjectContext
+from activitypub.core.models import Reference, ObjectContext
 
 ref = Reference.objects.get(uri='https://example.com/posts/123')
 
@@ -80,7 +80,7 @@ CREATE TABLE app_model_tags (
 Usage example:
 
 ```python
-from activitypub.models import ReferenceField
+from activitypub.core.models import ReferenceField
 
 class ObjectContext(models.Model):
     reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
@@ -100,7 +100,7 @@ related_tags = obj.tags.all()     # Queries work
 The `RelatedContextField` provides lazy access to ActivityStreams contexts through a `ContextProxy`. This allows you to navigate and modify context data without loading it from the database until necessary.
 
 ```python
-from activitypub.models import RelatedContextField
+from activitypub.core.models import RelatedContextField
 
 class Site(models.Model):
     reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
@@ -180,7 +180,7 @@ When you query for posts by a particular author, you're not querying an RDF grap
 
 ```python
 # Efficient relational query
-from activitypub.models import ObjectContext, Reference
+from activitypub.core.models import ObjectContext, Reference
 
 author_ref = Reference.objects.get(uri='https://example.com/users/alice')
 posts = ObjectContext.objects.filter(
@@ -197,7 +197,7 @@ Your application models should link to references, not directly to context model
 
 ```python
 from django.db import models
-from activitypub.models import Reference, RelatedContextField
+from activitypub.core.models import Reference, RelatedContextField
 
 class Post(models.Model):
     reference = models.ForeignKey(Reference, on_delete=models.CASCADE)
@@ -220,7 +220,7 @@ This pattern keeps your application models focused on your business logic while 
 When creating a new local post, generate a reference first, then create both your application model and the appropriate context models.
 
 ```python
-from activitypub.models import Domain, Reference, ObjectContext
+from activitypub.core.models import Domain, Reference, ObjectContext
 from myapp.models import Post
 
 # Generate URI for the new post
@@ -251,7 +251,7 @@ Applications that work with specialized object types create their own context mo
 
 ```python
 from rdflib import Namespace
-from activitypub.models import AbstractContextModel, ReferenceField
+from activitypub.core.models import AbstractContextModel, ReferenceField
 from activitypub.contexts import AS2, LEMMY, SCHEMA, LEMMY_CONTEXT
 from django.db import models
 

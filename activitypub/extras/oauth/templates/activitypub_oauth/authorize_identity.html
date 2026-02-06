@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select Identity - Authorization</title>
+    <style>
+     body {
+         font-family: system-ui, -apple-system, sans-serif;
+         max-width: 600px;
+         margin: 50px auto;
+         padding: 20px;
+     }
+     fieldset {
+         border: 0;
+         padding: 1vh 0;
+     }
+     .identity-card {
+         border: 1px solid #ddd;
+         display: block;
+         padding: 15px;
+         margin: 10px 0;
+         border-radius: 8px;
+         cursor: pointer;
+         transition: all 0.2s;
+     }
+     .identity-card:hover {
+         border-color: #0066cc;
+         background-color: #f5f9ff;
+     }
+     .identity-card input[type="radio"] {
+         margin-right: 10px;
+     }
+     .actor-name {
+         font-weight: bold;
+         font-size: 1.1em;
+     }
+     .actor-username {
+         color: #666;
+         font-size: 0.9em;
+     }
+     .btn {
+         background-color: #0066cc;
+         color: white;
+         border: none;
+         padding: 12px 24px;
+         border-radius: 6px;
+         font-size: 1em;
+         cursor: pointer;
+         margin-top: 20px;
+     }
+     .btn:hover {
+         background-color: #0052a3;
+     }
+     .btn:disabled {
+         background-color: #ccc;
+         cursor: not-allowed;
+     }
+     .info-box {
+         background-color: #f0f7ff;
+         border-left: 4px solid #0066cc;
+         padding: 15px;
+         margin-bottom: 20px;
+     }
+     h1 {
+         color: #333;
+     }
+    </style>
+</head>
+<body>
+    <h1>Select Identity for Authorization</h1>
+
+    <div class="info-box">
+        <p><strong>Client:</strong> {{ application.name }}</p>
+        <p>
+          <strong>Requested Scopes:</strong>
+          <ul>
+            {% for scope in scopes_descriptions %}
+            <li>{{ scope }}</li>
+            {% endfor %}
+          </ul>{{ scope }}
+        </p>
+    </div>
+    {% if not error %}
+    <form method="post" id="identity-form">
+      {% csrf_token %}
+
+      {% for field in form %}
+      {% if field.is_hidden %}
+      {{ field }}
+      {% endif %}
+      {% endfor %}
+
+      <hr />
+
+      <p>Please select which identity you want to authorize for this application.</p>
+      <fieldset id="identities">
+        {% for identity in user.identities.all %}
+        <label class="identity-card">
+          <input type="radio" name="identity" value="{{ identity.id }}" required>
+          <span class="actor-name">{{ identity.actor.name }}</span>
+          <span class="actor-username">{{ identity.actor.subject_name }}</span>
+        </label>
+        {% endfor %}
+
+      </fieldset>
+
+      {{ form.errors }}
+      {{ form.non_field_errors }}
+
+      <div class="button-group">
+        <button type="submit" name="allow" value="1" class="btn btn-authorize">Authorize</button>
+        <button type="submit" class="btn btn-deny">Deny</button>
+      </div>
+    </form>
+    {% else %}
+    <h2>Error: {{ error.error }}</h2>
+    <p>{{ error.description }}</p>
+    {% endif %}
+</body>
+</html>

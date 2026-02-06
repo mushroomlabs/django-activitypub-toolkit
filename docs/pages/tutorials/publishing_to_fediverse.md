@@ -32,7 +32,7 @@ Update your journal entry creation to include ActivityPub objects. In `journal/m
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
-from activitypub.models import (
+from activitypub.core.models import (
     ObjectContext,
     ActivityContext,
     CollectionContext,
@@ -48,19 +48,19 @@ class JournalEntry(models.Model):
         related_name='journal_entry'
     )
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     @classmethod
     def create_entry(cls, user, content, title=None):
         """Create a journal entry with its ActivityPub representation."""
-        
+
         domain = Domain.get_default()
-        
+
         # Create the object reference
         entry_ref = ObjectContext.generate_reference(domain)
-        
+
         # Get the user's actor
         actor_ref = user.profile.actor_reference
-        
+
         # Create the object context
         obj = ObjectContext.make(
             reference=entry_ref,
@@ -70,13 +70,13 @@ class JournalEntry(models.Model):
             published=timezone.now(),
             attributed_to=actor_ref,
         )
-        
+
         # Create the application model
         entry = cls.objects.create(
             user=user,
             reference=entry_ref,
         )
-        
+
         return entry
 ```
 
@@ -99,15 +99,15 @@ Extend the entry creation to include a Create activity:
 @classmethod
 def create_entry(cls, user, content, title=None):
     """Create a journal entry with its ActivityPub representation and activity."""
-    
+
     domain = Domain.get_default()
-    
+
     # Create the object reference
     entry_ref = ObjectContext.generate_reference(domain)
-    
+
     # Get the user's actor
     actor_ref = user.profile.actor_reference
-    
+
     # Create the object context
     obj = ObjectContext.make(
         reference=entry_ref,
@@ -117,13 +117,13 @@ def create_entry(cls, user, content, title=None):
         published=timezone.now(),
         attributed_to=actor_ref,
     )
-    
+
     # Create the application model
     entry = cls.objects.create(
         user=user,
         reference=entry_ref,
     )
-    
+
     # Create the Create activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -133,7 +133,7 @@ def create_entry(cls, user, content, title=None):
         object=entry_ref,
         published=timezone.now(),
     )
-    
+
     return entry, activity
 ```
 
@@ -148,16 +148,16 @@ The activity has three critical fields:
 Activities should be added to the actor's outbox collection. This makes them discoverable through the outbox endpoint and provides a record of what the actor has published.
 
 ```python
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 
 @classmethod
 def create_entry(cls, user, content, title=None):
     """Create a journal entry with activity and add to outbox."""
-    
+
     domain = Domain.get_default()
     entry_ref = ObjectContext.generate_reference(domain)
     actor_ref = user.profile.actor_reference
-    
+
     # Create object
     obj = ObjectContext.make(
         reference=entry_ref,
@@ -167,13 +167,13 @@ def create_entry(cls, user, content, title=None):
         published=timezone.now(),
         attributed_to=actor_ref,
     )
-    
+
     # Create entry
     entry = cls.objects.create(
         user=user,
         reference=entry_ref,
     )
-    
+
     # Create activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -183,14 +183,14 @@ def create_entry(cls, user, content, title=None):
         object=entry_ref,
         published=timezone.now(),
     )
-    
+
     # Add to outbox
     actor = actor_ref.get_by_context(ActorContext)
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     return entry, activity
 ```
 
@@ -206,16 +206,16 @@ Add addressing to your activities:
 
 ```python
 from activitypub.schemas import AS2
-from activitypub.models import ActorContext
+from activitypub.core.models import ActorContext
 
 @classmethod
 def create_entry(cls, user, content, title=None, public=True):
     """Create a journal entry with proper addressing."""
-    
+
     domain = Domain.get_default()
     entry_ref = ObjectContext.generate_reference(domain)
     actor_ref = user.profile.actor_reference
-    
+
     # Create object
     obj = ObjectContext.make(
         reference=entry_ref,
@@ -225,13 +225,13 @@ def create_entry(cls, user, content, title=None, public=True):
         published=timezone.now(),
         attributed_to=actor_ref,
     )
-    
+
     # Create entry
     entry = cls.objects.create(
         user=user,
         reference=entry_ref,
     )
-    
+
     # Create activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -241,10 +241,10 @@ def create_entry(cls, user, content, title=None, public=True):
         object=entry_ref,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(ActorContext)
-    
+
     if public:
         # Public post: to=Public, cc=followers
         activity.to.add(Reference.make(str(AS2.Public)))
@@ -254,15 +254,15 @@ def create_entry(cls, user, content, title=None, public=True):
         # Followers-only post: to=followers
         if actor and actor.followers:
             activity.to.add(actor.followers)
-    
+
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     return entry, activity
 ```
 
@@ -275,17 +275,17 @@ The core of publishing is delivering activities to follower inboxes. The toolkit
 Add delivery to your entry creation:
 
 ```python
-from activitypub.models import Notification, Actor
-from activitypub.tasks import send_notification
+from activitypub.core.models import Notification, Actor
+from activitypub.core.tasks import send_notification
 
 @classmethod
 def create_entry(cls, user, content, title=None, public=True):
     """Create and publish a journal entry to followers."""
-    
+
     domain = Domain.get_default()
     entry_ref = ObjectContext.generate_reference(domain)
     actor_ref = user.profile.actor_reference
-    
+
     # Create object
     obj = ObjectContext.make(
         reference=entry_ref,
@@ -295,13 +295,13 @@ def create_entry(cls, user, content, title=None, public=True):
         published=timezone.now(),
         attributed_to=actor_ref,
     )
-    
+
     # Create entry
     entry = cls.objects.create(
         user=user,
         reference=entry_ref,
     )
-    
+
     # Create activity
     activity_ref = ActivityContext.generate_reference(domain)
     activity = ActivityContext.make(
@@ -311,10 +311,10 @@ def create_entry(cls, user, content, title=None, public=True):
         object=entry_ref,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(Actor)
-    
+
     if public:
         activity.to.add(Reference.make(str(AS2.Public)))
         if actor and actor.followers:
@@ -322,15 +322,15 @@ def create_entry(cls, user, content, title=None, public=True):
     else:
         if actor and actor.followers:
             activity.to.add(actor.followers)
-    
+
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followers
     if actor:
         for inbox_ref in actor.followers_inboxes:
@@ -340,7 +340,7 @@ def create_entry(cls, user, content, title=None, public=True):
                 target=inbox_ref,
             )
             send_notification.delay(notification_id=str(notification.id))
-    
+
     return entry, activity
 ```
 
@@ -379,13 +379,13 @@ print(f"Created entry: {entry.reference.uri}")
 print(f"Created activity: {activity.reference.uri}")
 
 # Check outbox
-from activitypub.models import CollectionContext
+from activitypub.core.models import CollectionContext
 actor = user.profile.actor
 outbox = actor.outbox.get_by_context(CollectionContext)
 print(f"Outbox has {outbox.total_items} items")
 
 # Check notifications
-from activitypub.models import Notification
+from activitypub.core.models import Notification
 notifications = Notification.objects.filter(resource=activity.reference)
 print(f"Created {notifications.count()} notifications")
 ```
@@ -403,12 +403,12 @@ You should see log entries showing the HTTP POST requests to follower inboxes.
 When content changes, send an Update activity. Add an update method to your model:
 
 ```python
-from activitypub.models import ObjectContext, ActivityContext, Actor
+from activitypub.core.models import ObjectContext, ActivityContext, Actor
 from activitypub.schemas import AS2
 
 def update_content(self, content, title=None):
     """Update the entry and send Update activity to followers."""
-    
+
     # Update the object
     obj = self.reference.get_by_context(ObjectContext)
     obj.content = content
@@ -416,12 +416,12 @@ def update_content(self, content, title=None):
         obj.name = title
     obj.updated = timezone.now()
     obj.save()
-    
+
     # Create Update activity
     domain = Domain.get_default()
     activity_ref = ActivityContext.generate_reference(domain)
     actor_ref = self.user.profile.actor_reference
-    
+
     activity = ActivityContext.make(
         reference=activity_ref,
         type=ActivityContext.Types.UPDATE,
@@ -429,20 +429,20 @@ def update_content(self, content, title=None):
         object=self.reference,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(Actor)
     activity.to.add(Reference.make(str(AS2.Public)))
     if actor and actor.followers:
         activity.cc.add(actor.followers)
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followers
     if actor:
         for inbox_ref in actor.followers_inboxes:
@@ -461,17 +461,17 @@ The Update activity uses the same delivery pattern as Create. The `object` field
 When content is deleted, send a Delete activity. Add a delete method:
 
 ```python
-from activitypub.models import ObjectContext, ActivityContext, Actor
+from activitypub.core.models import ObjectContext, ActivityContext, Actor
 from activitypub.schemas import AS2
 
 def delete_entry(self):
     """Delete the entry and send Delete activity to followers."""
-    
+
     # Create Delete activity before deleting the object
     domain = Domain.get_default()
     activity_ref = ActivityContext.generate_reference(domain)
     actor_ref = self.user.profile.actor_reference
-    
+
     activity = ActivityContext.make(
         reference=activity_ref,
         type=ActivityContext.Types.DELETE,
@@ -479,20 +479,20 @@ def delete_entry(self):
         object=self.reference,
         published=timezone.now(),
     )
-    
+
     # Set addressing
     actor = actor_ref.get_by_context(Actor)
     activity.to.add(Reference.make(str(AS2.Public)))
     if actor and actor.followers:
         activity.cc.add(actor.followers)
     activity.save()
-    
+
     # Add to outbox
     if actor and actor.outbox:
         outbox = actor.outbox.get_by_context(CollectionContext)
         if outbox:
             outbox.append(activity_ref)
-    
+
     # Deliver to followers
     if actor:
         for inbox_ref in actor.followers_inboxes:
@@ -502,7 +502,7 @@ def delete_entry(self):
                 target=inbox_ref,
             )
             send_notification.delay(notification_id=str(notification.id))
-    
+
     # Delete the entry and object
     self.reference.delete()
     self.delete()
@@ -591,7 +591,7 @@ Use the `extra` Meta option to add fields computed at serialization time. Define
 ```python
 from activitypub.contexts import AS2, SEC_V1_CONTEXT, SECv1
 from activitypub.projections import ReferenceProjection, PublicKeyProjection, use_context
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 
 class ActorProjection(ReferenceProjection):
     @use_context(SEC_V1_CONTEXT.url)
@@ -602,7 +602,7 @@ class ActorProjection(ReferenceProjection):
         )
         projections = [PublicKeyProjection(reference=ref, parent=self) for ref in references]
         return [p.get_expanded() for p in projections]
-    
+
     class Meta:
         extra = {"get_public_key": SECv1.publicKey}
 ```
@@ -621,7 +621,7 @@ class JournalEntryProjection(ReferenceProjection):
         """Only show private notes to the author."""
         viewer = self.scope.get('viewer')
         obj = self.reference.get_by_context(ObjectContext)
-        
+
         # Check if viewer is the author
         if obj and obj.attributed_to.all():
             author = obj.attributed_to.first()
@@ -629,9 +629,9 @@ class JournalEntryProjection(ReferenceProjection):
                 mood = self.reference.get_by_context(MoodContext)
                 if mood and mood.mood_notes:
                     return [{"@value": mood.mood_notes}]
-        
+
         return None  # Omit field if not authorized
-    
+
     class Meta:
         extra = {"get_private_notes": MOOD.notes}
 ```
@@ -645,16 +645,16 @@ Context models can also implement `show_<field>()` methods that control visibili
 ```python
 class MoodContext(AbstractContextModel):
     # ... field definitions ...
-    
+
     def show_mood_notes(self, scope):
         """Only show mood notes to the entry author."""
         viewer = scope.get('viewer')
         obj = self.reference.get_by_context(ObjectContext)
-        
+
         if obj and obj.attributed_to.all():
             author = obj.attributed_to.first()
             return viewer and viewer.uri == author.uri
-        
+
         return False
 ```
 
@@ -674,7 +674,7 @@ class JournalEntryView(LinkedDataModelView):
         """Use custom projection for journal entries."""
         if hasattr(reference, 'journal_entry'):
             return JournalEntryProjection
-        
+
         return super().get_projection_class(reference)
 ```
 
@@ -724,7 +724,7 @@ When a remote server requests `GET https://yourserver.com/entries/123`, here's w
 Test projections in the Django shell:
 
 ```python
-from activitypub.models import Reference
+from activitypub.core.models import Reference
 from journal.projections import JournalEntryProjection
 
 # Get a reference
@@ -793,7 +793,7 @@ Not all deliveries succeed. Remote servers might be offline, reject the activity
 Check delivery results:
 
 ```python
-from activitypub.models import Notification, NotificationProcessResult
+from activitypub.core.models import Notification, NotificationProcessResult
 
 notification = Notification.objects.first()
 results = notification.results.all()

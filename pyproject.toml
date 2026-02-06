@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-activitypub-toolkit"
-version = "0.1.5"
-requires-python = ">= 3.10,<4"
+version = "0.2.0"
+requires-python = ">= 3.10"
 description = "Django pluggable application to ActivityPub servers"
 authors = [{name = "Raphael Lullis", email = "raphael@mushroomlabs.com"}]
 keywords = ["django", "activitypub"]
@@ -30,25 +30,43 @@ classifiers = [
 ]
 
 dependencies = [
-  "django >= 4.2.26",
+  "django >= 5.2",
   "django-model-utils >= 4.2",
-  "djangorestframework >= 3.13",
+  "djangorestframework >= 3.16",
   "celery >= 5.4",
   "pyld >= 2.0.4",
   "rdflib >= 7.0.0",
   "requests-http-message-signatures >= 0.3.1",
   "django-celery-beat >= 2.7.0",
   "python-ulid (>=3.0.0,<4.0.0)",
+  "mmh3>=5.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "factory-boy",
+  "freezegun",
   "pytest",
   "pytest-django",
   "pytest-env",
   "pytest-socket",
   "httpretty",
+]
+
+# OAuth support
+oauth = [
+  "django-oauth-toolkit>=3.2.0",
+  "django-oauth-toolkit-dcr>=0.1.0",
+]
+
+# Lemmy API adapter
+lemmy = [
+  "django-filter",
+  "python-box==7.3.2",
+  "django-taggit>=6.1.0",
+  "django-tree-queries>=0.23.0",
+  "pyjwt>=2.10.1",
+  "markdown>=3.10.1"
 ]
 
 docs = [
@@ -58,10 +76,28 @@ docs = [
   "mkdocstrings[python]"
 ]
 
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["activitypub*"]
+
+[tool.uv]
+exclude-newer = "5 days"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+python_files = ["tests.py", "test_*.py"]
+addopts = "--disable-socket --allow-hosts=127.0.0.1"
+filterwarnings = [
+    "ignore:the imp module is deprecated in favour of importlib:DeprecationWarning",
+    "ignore:The loop argument is deprecated:DeprecationWarning",
+    "ignore::DeprecationWarning:django.*",
+    "ignore:.*_after_postgeneration will stop saving the instance after postgeneration hooks in the next major release:DeprecationWarning",
+    "ignore::DeprecationWarning:httpretty.*",
+    "ignore:ConjunctiveGraph is deprecated, use Dataset instead.:DeprecationWarning",
+]
+
+[tool.pytest_env]
+DJANGO_SETTINGS_MODULE = "tests.settings.full"
 
 [tool.black]
 line-length = 99

@@ -1,0 +1,21 @@
+{
+  "version": "2.0",
+  "software": {
+    "name": "django-activitypub",
+    "version": "0.0.1"
+  },
+  "protocols": [
+    "activitypub"
+  ],
+  "services": {
+    "outbound": [],
+    "inbound": []
+  },
+  "openRegistrations": true,
+  "metadata": {},
+  "usage": {
+    "users": {
+      "total": 1
+    }
+  }
+}

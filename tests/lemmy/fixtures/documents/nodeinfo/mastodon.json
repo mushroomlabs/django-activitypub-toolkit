@@ -1,0 +1,27 @@
+{
+  "version": "2.0",
+  "software": {
+    "name": "mastodon",
+    "version": "4.3.8"
+  },
+  "protocols": [
+    "activitypub"
+  ],
+  "services": {
+    "outbound": [],
+    "inbound": []
+  },
+  "usage": {
+    "users": {
+      "total": 1000,
+      "activeMonth": 100,
+      "activeHalfyear": 300
+    },
+    "localPosts": 10000
+  },
+  "openRegistrations": false,
+  "metadata": {
+    "nodeName": "Mastodon Test Instance",
+    "nodeDescription": ""
+  }
+}
