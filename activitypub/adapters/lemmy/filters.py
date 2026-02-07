@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import F, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django_filters import rest_framework as filters
 
@@ -8,6 +9,30 @@ from activitypub.core.models import ActorContext, Identity, ObjectContext
 
 from . import models
 from .choices import ListingTypes, SortOrderTypes
+
+
+def ranking_subquery(ranking_type):
+    """Create a subquery to get the ranking score for a specific type."""
+    return Coalesce(
+        Subquery(
+            models.RankingScore.objects.filter(
+                reference=OuterRef("reference"), type=ranking_type
+            ).values("score")[:1]
+        ),
+        Value(0.0),
+    )
+
+
+def submission_count_subquery(submission_type, field="total"):
+    """Create a subquery to get submission count for a specific type."""
+    return Coalesce(
+        Subquery(
+            models.SubmissionCount.objects.filter(
+                reference=OuterRef("reference"), type=submission_type
+            ).values(field)[:1]
+        ),
+        Value(0),
+    )
 
 
 class LemmyFilterSet(filters.FilterSet):
@@ -127,19 +152,37 @@ class PostFilter(LemmyFilterSet):
 
     def apply_sort(self, queryset, name, value):
         now = timezone.now()
-        order_map = {
-            SortOrderTypes.ACTIVE: "-postaggregates__hot_rank_active",
-            SortOrderTypes.HOT: "-postaggregates__hot_rank",
-            SortOrderTypes.NEW: "-reference__activitypub_baseas2objectcontext_context__published",
-            SortOrderTypes.OLD: "reference__activitypub_baseas2objectcontext_context__published",
-            SortOrderTypes.MOST_COMMENTS: "-postaggregates__comments",
-            SortOrderTypes.NEW_COMMENTS: "-postaggregates__newest_comment_time",
-            SortOrderTypes.CONTROVERSIAL: "-postaggregates__controversy_rank",
-            SortOrderTypes.SCALED: "-postaggregates__scaled_rank",
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
+
+        if value == SortOrderTypes.NEW:
+            return queryset.order_by(f"-{published_path}")
+
+        if value == SortOrderTypes.OLD:
+            return queryset.order_by(published_path)
+
+        if value == SortOrderTypes.MOST_COMMENTS:
+            return queryset.annotate(
+                comment_count=submission_count_subquery(models.SubmissionCount.Types.COMMENT)
+            ).order_by("-comment_count")
+
+        if value == SortOrderTypes.NEW_COMMENTS:
+            return queryset.annotate(
+                newest_comment=submission_count_subquery(
+                    models.SubmissionCount.Types.COMMENT, field="latest_reply"
+                )
+            ).order_by("-newest_comment")
+
+        ranking_types = {
+            SortOrderTypes.ACTIVE: models.RankingScore.Types.ACTIVE,
+            SortOrderTypes.HOT: models.RankingScore.Types.HOT,
+            SortOrderTypes.CONTROVERSIAL: models.RankingScore.Types.CONTROVERSY,
+            SortOrderTypes.SCALED: models.RankingScore.Types.SCALED,
         }
 
-        if value in order_map:
-            return queryset.order_by(order_map[value])
+        if value in ranking_types:
+            return queryset.annotate(
+                rank_score=ranking_subquery(ranking_types[value])
+            ).order_by("-rank_score")
 
         time_filters = {
             SortOrderTypes.TOP_HOUR: timedelta(hours=1),
@@ -156,14 +199,18 @@ class PostFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(postaggregates__published__gte=cutoff).order_by(
-                "-postaggregates__score"
-            )
+            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
 
         if value == SortOrderTypes.TOP_ALL:
-            return queryset.order_by("-postaggregates__score")
+            return queryset.annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
 
-        return queryset.order_by("-postaggregates__published")
+        return queryset.order_by(f"-{published_path}")
 
 
 class CommentFilter(LemmyFilterSet):
@@ -251,15 +298,23 @@ class CommentFilter(LemmyFilterSet):
 
     def apply_sort(self, queryset, name, value):
         now = timezone.now()
-        order_map = {
-            SortOrderTypes.HOT: "-commentaggregates__hot_rank",
-            SortOrderTypes.NEW: "-commentaggregates__published",
-            SortOrderTypes.OLD: "commentaggregates__published",
-            SortOrderTypes.CONTROVERSIAL: "-commentaggregates__controversy_rank",
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
+
+        if value == SortOrderTypes.NEW:
+            return queryset.order_by(f"-{published_path}")
+
+        if value == SortOrderTypes.OLD:
+            return queryset.order_by(published_path)
+
+        ranking_types = {
+            SortOrderTypes.HOT: models.RankingScore.Types.HOT,
+            SortOrderTypes.CONTROVERSIAL: models.RankingScore.Types.CONTROVERSY,
         }
 
-        if value in order_map:
-            return queryset.order_by(order_map[value])
+        if value in ranking_types:
+            return queryset.annotate(
+                rank_score=ranking_subquery(ranking_types[value])
+            ).order_by("-rank_score")
 
         time_filters = {
             SortOrderTypes.TOP_HOUR: timedelta(hours=1),
@@ -276,14 +331,18 @@ class CommentFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(commentaggregates__published__gte=cutoff).order_by(
-                "-commentaggregates__score"
-            )
+            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
 
         if value == SortOrderTypes.TOP_ALL:
-            return queryset.order_by("-commentaggregates__score")
+            return queryset.annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
 
-        return queryset.order_by("-commentaggregates__published")
+        return queryset.order_by(f"-{published_path}")
 
 
 class CommunityFilter(LemmyFilterSet):
@@ -316,15 +375,18 @@ class CommunityFilter(LemmyFilterSet):
 
     def apply_sort(self, queryset, name, value):
         now = timezone.now()
-        order_map = {
-            SortOrderTypes.ACTIVE: "-communityaggregates__hot_rank",
-            SortOrderTypes.HOT: "-communityaggregates__hot_rank",
-            SortOrderTypes.NEW: "-communityaggregates__published",
-            SortOrderTypes.OLD: "communityaggregates__published",
-        }
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
 
-        if value in order_map:
-            return queryset.order_by(order_map[value])
+        if value == SortOrderTypes.NEW:
+            return queryset.order_by(f"-{published_path}")
+
+        if value == SortOrderTypes.OLD:
+            return queryset.order_by(published_path)
+
+        if value in [SortOrderTypes.ACTIVE, SortOrderTypes.HOT]:
+            return queryset.annotate(
+                rank_score=ranking_subquery(models.RankingScore.Types.HOT)
+            ).order_by("-rank_score")
 
         time_filters = {
             SortOrderTypes.TOP_HOUR: timedelta(hours=1),
@@ -341,14 +403,16 @@ class CommunityFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(communityaggregates__published__gte=cutoff).order_by(
-                "-communityaggregates__subscribers"
-            )
+            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
+                subscriber_count=Coalesce(F("reference__follower_count__total"), Value(0))
+            ).order_by("-subscriber_count")
 
         if value == SortOrderTypes.TOP_ALL:
-            return queryset.order_by("-communityaggregates__subscribers")
+            return queryset.annotate(
+                subscriber_count=Coalesce(F("reference__follower_count__total"), Value(0))
+            ).order_by("-subscriber_count")
 
-        return queryset.order_by("-communityaggregates__published")
+        return queryset.order_by(f"-{published_path}")
 
 
 # Query path constants for searching through Reference -> Context models
@@ -373,14 +437,21 @@ class PostSearchFilter(LemmyFilterSet):
         )
 
     def apply_sort(self, queryset, name, value):
-        order_map = {
-            SortOrderTypes.NEW: "-postaggregates__published",
-            SortOrderTypes.OLD: "postaggregates__published",
-            SortOrderTypes.TOP_ALL: "-postaggregates__score",
-        }
-        if value in order_map:
-            return queryset.order_by(order_map[value])
-        return queryset.order_by("-postaggregates__published")
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
+
+        if value == SortOrderTypes.NEW:
+            return queryset.order_by(f"-{published_path}")
+
+        if value == SortOrderTypes.OLD:
+            return queryset.order_by(published_path)
+
+        if value == SortOrderTypes.TOP_ALL:
+            return queryset.annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
+
+        return queryset.order_by(f"-{published_path}")
 
 
 class CommunitySearchFilter(LemmyFilterSet):
@@ -401,14 +472,20 @@ class CommunitySearchFilter(LemmyFilterSet):
         ).exclude(Q(deleted=True) | Q(removed=True))
 
     def apply_sort(self, queryset, name, value):
-        order_map = {
-            SortOrderTypes.NEW: "-communityaggregates__published",
-            SortOrderTypes.OLD: "communityaggregates__published",
-            SortOrderTypes.TOP_ALL: "-communityaggregates__subscribers",
-        }
-        if value in order_map:
-            return queryset.order_by(order_map[value])
-        return queryset.order_by("-communityaggregates__published")
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
+
+        if value == SortOrderTypes.NEW:
+            return queryset.order_by(f"-{published_path}")
+
+        if value == SortOrderTypes.OLD:
+            return queryset.order_by(published_path)
+
+        if value == SortOrderTypes.TOP_ALL:
+            return queryset.annotate(
+                subscriber_count=Coalesce(F("reference__follower_count__total"), Value(0))
+            ).order_by("-subscriber_count")
+
+        return queryset.order_by(f"-{published_path}")
 
 
 class PersonSearchFilter(LemmyFilterSet):

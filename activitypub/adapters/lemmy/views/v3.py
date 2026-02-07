@@ -1,3 +1,5 @@
+from django.db.models import F, Value
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
@@ -309,7 +311,7 @@ class SearchView(LemmyAPIView):
         if search_type in (serializers.SearchType.ALL, serializers.SearchType.POSTS):
             post_filter = filters.PostSearchFilter(
                 data=filter_params,
-                queryset=models.Post.objects.select_related("community", "postaggregates"),
+                queryset=models.Post.objects.select_related("community"),
             )
             results["posts"] = list(post_filter.qs[offset : offset + limit])
 
@@ -322,7 +324,7 @@ class SearchView(LemmyAPIView):
         if search_type in (serializers.SearchType.ALL, serializers.SearchType.COMMUNITIES):
             community_filter_instance = filters.CommunitySearchFilter(
                 data=filter_params,
-                queryset=models.Community.objects.select_related("communityaggregates"),
+                queryset=models.Community.objects.all(),
             )
             results["communities"] = list(community_filter_instance.qs[offset : offset + limit])
 
@@ -556,7 +558,7 @@ class ListPostsView(LemmyListAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return queryset.select_related("community", "postaggregates")
+        return queryset.select_related("community")
 
 
 class PostLikeView(LemmyAPIView):
@@ -825,9 +827,7 @@ class CreatePostReportView(LemmyAPIView):
             "creator_blocked": False,  # TODO: Implement block check
             "my_vote": None,  # TODO: Implement vote check
             "unread_comments": 0,  # TODO: Implement unread comments count
-            "counts": serializers.PostAggregatesSerializer(post.postaggregates).data
-            if post and hasattr(post, "postaggregates")
-            else None,
+            "counts": post,
             "resolver": reporter,
         }
 
@@ -884,9 +884,7 @@ class ResolvePostReportView(LemmyAPIView):
             "creator_blocked": False,  # TODO: Implement block check
             "my_vote": None,  # TODO: Implement vote check
             "unread_comments": 0,  # TODO: Implement unread comments count
-            "counts": serializers.PostAggregatesSerializer(post.postaggregates).data
-            if post and hasattr(post, "postaggregates")
-            else None,
+            "counts": post,
             "resolver": resolver,
         }
 
@@ -964,9 +962,7 @@ class ListPostReportsView(APIView):
                 "creator_blocked": False,  # TODO: Implement block check
                 "my_vote": None,  # TODO: Implement vote check
                 "unread_comments": 0,  # TODO: Implement unread comments count
-                "counts": serializers.PostAggregatesSerializer(post.postaggregates).data
-                if post and hasattr(post, "postaggregates")
-                else None,
+                "counts": post,
                 "resolver": resolver,
             }
             reports_data.append(post_report_view_data)
@@ -1016,9 +1012,7 @@ class CreateCommentReportView(LemmyAPIView):
             "subscribed": "NotSubscribed",
             "saved": False,
             "my_vote": None,
-            "counts": serializers.CommentAggregatesSerializer(
-                comment.comment_data.commentaggregates
-            ).data,
+            "counts": comment,
             "resolver": None,
         }
 
@@ -1074,9 +1068,7 @@ class ResolveCommentReportView(LemmyAPIView):
             "subscribed": "NotSubscribed",
             "saved": False,
             "my_vote": None,
-            "counts": serializers.CommentAggregatesSerializer(comment.commentaggregates).data
-            if comment and hasattr(comment, "commentaggregates")
-            else None,
+            "counts": comment,
             "resolver": resolver,
         }
 
@@ -1147,9 +1139,7 @@ class ListCommentReportsView(APIView):
                 "subscribed": "NotSubscribed",
                 "saved": False,
                 "my_vote": None,
-                "counts": serializers.CommentAggregatesSerializer(comment.commentaggregates).data
-                if comment and hasattr(comment, "commentaggregates")
-                else None,
+                "counts": comment,
                 "resolver": resolver,
             }
             reports_data.append(comment_report_view_data)
@@ -1365,7 +1355,7 @@ class ListCommunitiesView(LemmyListAPIView):
 
     def get_queryset(self, *args, **kw):
         queryset = super().get_queryset(*args, **kw)
-        return queryset.select_related("communityaggregates")
+        return queryset
 
 
 class FollowCommunityView(LemmyAPIView):
@@ -1589,25 +1579,23 @@ class GetPersonDetailsView(APIView):
 
     def _apply_sort(self, queryset, sort, content_type):
         """Apply sorting to queryset"""
-        if content_type == "post":
-            order_map = {
-                "New": "-postaggregates__published",
-                "Old": "postaggregates__published",
-                "Hot": "-postaggregates__hot_rank",
-                "TopAll": "-postaggregates__score",
-            }
-            default = "-postaggregates__published"
-        else:  # comment
-            order_map = {
-                "New": "-commentaggregates__published",
-                "Old": "commentaggregates__published",
-                "Hot": "-commentaggregates__hot_rank",
-                "TopAll": "-commentaggregates__score",
-            }
-            default = "-commentaggregates__published"
+        published_path = "reference__activitypub_baseas2objectcontext_context__published"
 
-        order_field = order_map.get(sort, default)
-        return queryset.order_by(order_field)
+        if sort == "New":
+            return queryset.order_by(f"-{published_path}")
+        elif sort == "Old":
+            return queryset.order_by(published_path)
+        elif sort == "Hot":
+            return queryset.annotate(
+                rank_score=filters.ranking_subquery(models.RankingScore.Types.HOT)
+            ).order_by("-rank_score")
+        elif sort == "TopAll":
+            return queryset.annotate(
+                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+            ).order_by("-vote_score")
+
+        return queryset.order_by(f"-{published_path}")
 
     def _get_moderated_communities(self, person):
         """Get communities where this person is a moderator"""

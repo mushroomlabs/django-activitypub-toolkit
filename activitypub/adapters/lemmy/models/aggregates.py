@@ -1,102 +1,114 @@
 from django.db import models
 from django.utils import timezone
+from model_utils.models import TimeStampedModel
 
-from .core import Comment, Community, Person, Post, Site
+from activitypub.core.models import Reference
 
 
-class AggregateModelMixin:
+class ReactionCount(TimeStampedModel):
+    reference = models.OneToOneField(
+        Reference, related_name="reaction_count", on_delete=models.CASCADE, primary_key=True
+    )
+    upvotes = models.BigIntegerField(default=1)
+    downvotes = models.BigIntegerField(default=0)
+
+    @property
+    def score(self):
+        return self.upvotes - self.downvotes
+
+
+class RankingScore(TimeStampedModel):
+    class Types(models.IntegerChoices):
+        TOP = (0, "Top")
+        HOT = (1, "Hot")
+        ACTIVE = (2, "Active")
+        CONTROVERSY = (3, "Controversy")
+        SCALED = (4, "Scaled")
+
+    type = models.SmallIntegerField(choices=Types.choices)
+    reference = models.ForeignKey(Reference, related_name="rankings", on_delete=models.CASCADE)
+    score = models.FloatField(default=0.0)
+
     @property
     def hours_since_published(self):
-        delta = timezone.now() - self.published
+        delta = timezone.now() - self.created
         return delta.days * 24 + int(delta.seconds / 60)
 
-    def recalculate_ranks(self):
+    def calculate(self):
+        calculators = {
+            self.Types.TOP: self._calculate_top,
+            self.Types.HOT: self._calculate_hot,
+            self.Types.ACTIVE: self._calculate_active,
+            self.Types.CONTROVERSY: self._calculate_controversy,
+            self.Types.SCALED: self._calculate_scaled,
+        }
+        self.score = calculators[self.type]()
+
+    def _calculate_top(self):
+        try:
+            return self.reference.reaction_count.score
+        except Reference.reaction_count.RelatedObjectDoesNotExist:
+            return 0
+
+    def _calculate_hot(self):
+        try:
+            voting_score = self.reference.reaction_count.score
+        except Reference.reaction_count.RelatedObjectDoesNotExist:
+            voting_score = 0
+
         decay = (self.hours_since_published + 2) ** (1.8)
-        self.hot_rank = (self.score + 2) / decay
-        self.save()
+        return (voting_score + 2) / decay
+
+    def _calculate_active(self):
+        pass
+
+    def _calculate_controversy(self):
+        pass
+
+    def _calculate_scaled(self):
+        pass
 
 
-class CommentAggregates(models.Model, AggregateModelMixin):
-    comment = models.OneToOneField(Comment, models.CASCADE, primary_key=True)
-    score = models.BigIntegerField(default=1)
-    upvotes = models.BigIntegerField(default=1)
-    downvotes = models.BigIntegerField(default=0)
-    published = models.DateTimeField(auto_now_add=True)
-    child_count = models.IntegerField(default=0)
-    hot_rank = models.FloatField(default=0.0)
-    controversy_rank = models.FloatField(default=0.0)
+class UserActivity(TimeStampedModel):
+    reference = models.OneToOneField(
+        Reference, related_name="user_activity_report", on_delete=models.CASCADE, primary_key=True
+    )
+    active_day = models.BigIntegerField(default=0)
+    active_week = models.BigIntegerField(default=0)
+    active_month = models.BigIntegerField(default=0)
+    active_half_year = models.BigIntegerField(default=0)
 
 
-class CommunityAggregates(models.Model):
-    community = models.OneToOneField(Community, on_delete=models.CASCADE, primary_key=True)
-    subscribers = models.BigIntegerField(default=0)
-    posts = models.BigIntegerField(default=0)
-    comments = models.BigIntegerField(default=0)
-    published = models.DateTimeField(auto_now_add=True)
-    users_active_day = models.BigIntegerField(default=0)
-    users_active_week = models.BigIntegerField(default=0)
-    users_active_month = models.BigIntegerField(default=0)
-    users_active_half_year = models.BigIntegerField(default=0)
-    hot_rank = models.FloatField(default=0.0)
-    subscribers_local = models.BigIntegerField(default=0)
+class FollowerCount(TimeStampedModel):
+    reference = models.OneToOneField(
+        Reference, related_name="follower_count", on_delete=models.CASCADE, primary_key=True
+    )
+    total = models.BigIntegerField(default=0)
+    local = models.BigIntegerField(default=0)
 
 
-class PostAggregates(models.Model, AggregateModelMixin):
-    post = models.OneToOneField(Post, on_delete=models.CASCADE, primary_key=True)
-    comments = models.BigIntegerField(default=0)
-    score = models.BigIntegerField(default=1)
-    upvotes = models.BigIntegerField(default=1)
-    downvotes = models.BigIntegerField(default=0)
-    published = models.DateTimeField(auto_now_add=True)
-    newest_comment_time_necro = models.DateTimeField(null=True, editable=False)
-    newest_comment_time = models.DateTimeField(null=True, editable=False)
-    featured_community = models.BooleanField(default=False)
-    featured_local = models.BooleanField(default=False)
-    hot_rank = models.FloatField(default=0.0)
-    hot_rank_active = models.FloatField(default=0.0)
-    controversy_rank = models.FloatField(default=0.0)
-    scaled_rank = models.FloatField(default=0.0)
+class SubmissionCount(TimeStampedModel):
+    class Types(models.IntegerChoices):
+        POST = (1, "Post")
+        COMMENT = (2, "Comment")
+        PRIVATE_MESSAGE = (3, "Private Message")
 
-
-class PersonPostAggregates(models.Model):
-    person = models.ForeignKey(Person, models.CASCADE)
-    post = models.ForeignKey(Post, models.CASCADE)
-    read_comments = models.BigIntegerField(default=0)
-    published = models.DateTimeField(auto_now_add=True)
+    reference = models.ForeignKey(
+        Reference, related_name="submission_counts", on_delete=models.CASCADE
+    )
+    type = models.SmallIntegerField(choices=Types.choices)
+    total = models.BigIntegerField(default=0)
+    replies = models.IntegerField(default=0)
+    latest_reply = models.DateTimeField(null=True)
 
     class Meta:
-        unique_together = ("person", "post")
-
-
-class PersonAggregates(models.Model):
-    person = models.OneToOneField(
-        Person, related_name="counts", on_delete=models.CASCADE, primary_key=True
-    )
-    post_count = models.PositiveIntegerField(default=0)
-    post_score = models.IntegerField(default=0)
-    comment_count = models.PositiveIntegerField(default=0)
-    comment_score = models.IntegerField(default=0)
-
-
-class SiteReportedStatistics(models.Model):
-    site = models.OneToOneField(
-        Site, related_name="statistics", on_delete=models.CASCADE, primary_key=True
-    )
-    users = models.PositiveIntegerField(default=0)
-    posts = models.PositiveIntegerField(default=0)
-    comments = models.PositiveIntegerField(default=0)
-    communities = models.PositiveIntegerField(default=0)
-    users_active_day = models.PositiveIntegerField(default=0)
-    users_active_week = models.PositiveIntegerField(default=0)
-    users_active_month = models.PositiveIntegerField(default=0)
-    users_active_half_year = models.PositiveIntegerField(default=0)
+        unique_together = ("reference", "type")
 
 
 __all__ = (
-    "CommentAggregates",
-    "CommunityAggregates",
-    "PostAggregates",
-    "PersonAggregates",
-    "PersonPostAggregates",
-    "SiteReportedStatistics",
+    "FollowerCount",
+    "RankingScore",
+    "ReactionCount",
+    "SubmissionCount",
+    "UserActivity",
 )

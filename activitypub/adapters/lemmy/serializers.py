@@ -220,26 +220,68 @@ class LocalSiteRateLimitSerializer(serializers.ModelSerializer):
         read_only_fields = ("published", "updated")
 
 
-class SiteAggregatesSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = models.SiteReportedStatistics
-        fields = (
-            "site_id",
-            "users",
-            "posts",
-            "comments",
-            "communities",
-            "users_active_day",
-            "users_active_week",
-            "users_active_month",
-            "users_active_half_year",
-        )
+class SiteAggregatesSerializer(serializers.Serializer):
+    site_id = IdentityField(source="object_id", read_only=True)
+    users = serializers.SerializerMethodField()
+    posts = serializers.SerializerMethodField()
+    comments = serializers.SerializerMethodField()
+    communities = serializers.SerializerMethodField()
+    users_active_day = serializers.SerializerMethodField()
+    users_active_week = serializers.SerializerMethodField()
+    users_active_month = serializers.SerializerMethodField()
+    users_active_half_year = serializers.SerializerMethodField()
+
+    def get_users(self, obj):
+        return ActorContext.objects.filter(
+            reference__domain=obj.reference.domain,
+            type__in=[ActorContext.Types.PERSON, ActorContext.Types.SERVICE],
+        ).count()
+
+    def get_communities(self, obj):
+        return ActorContext.objects.filter(
+            reference__domain=obj.reference.domain,
+            type=ActorContext.Types.GROUP,
+        ).count()
+
+    def get_posts(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.POST
+        ).first()
+        return submission.total if submission else 0
+
+    def get_comments(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.total if submission else 0
+
+    def _get_user_activity(self, obj):
+        try:
+            return obj.reference.user_activity_report
+        except models.UserActivity.DoesNotExist:
+            return None
+
+    def get_users_active_day(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_day if activity else 0
+
+    def get_users_active_week(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_week if activity else 0
+
+    def get_users_active_month(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_month if activity else 0
+
+    def get_users_active_half_year(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_half_year if activity else 0
 
 
 class SiteViewSerializer(LemmyModelSerializer):
     site = SiteSerializer(source="*")
     local_site = LocalSiteSerializer(read_only=True)
-    counts = SiteAggregatesSerializer(source="statistics", read_only=True)
+    counts = SiteAggregatesSerializer(source="*", read_only=True)
 
     class Meta:
         model = models.Site
@@ -307,19 +349,27 @@ class PersonSerializer(LemmyModelSerializer):
         )
 
 
-class PersonAggregatesSerializer(serializers.ModelSerializer):
-    person_id = IdentityField(source="object_id")
-    post_count = serializers.IntegerField(default=0, read_only=True)
-    comment_count = serializers.IntegerField(default=0, read_only=True)
+class PersonAggregatesSerializer(serializers.Serializer):
+    person_id = IdentityField(source="object_id", read_only=True)
+    post_count = serializers.SerializerMethodField()
+    comment_count = serializers.SerializerMethodField()
 
-    class Meta:
-        model = models.PersonAggregates
-        fields = ("person_id", "post_count", "comment_count")
+    def get_post_count(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.POST
+        ).first()
+        return submission.total if submission else 0
+
+    def get_comment_count(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.total if submission else 0
 
 
 class AdminSerializer(serializers.ModelSerializer):
     person = PersonSerializer(source="*")
-    counts = PersonAggregatesSerializer()
+    counts = PersonAggregatesSerializer(source="*")
     is_admin = serializers.BooleanField(default=False, read_only=True)
 
 
@@ -698,24 +748,72 @@ class CreateCommunitySerializer(LemmyModelSerializer):
         return community
 
 
-class CommunityAggregatesSerializer(serializers.ModelSerializer):
-    community_id = IdentityField(source="community.object_id")
+class CommunityAggregatesSerializer(serializers.Serializer):
+    community_id = IdentityField(source="object_id", read_only=True)
+    subscribers = serializers.SerializerMethodField()
+    subscribers_local = serializers.SerializerMethodField()
+    posts = serializers.SerializerMethodField()
+    comments = serializers.SerializerMethodField()
+    published = serializers.DateTimeField(source="as2.published", read_only=True)
+    users_active_day = serializers.SerializerMethodField()
+    users_active_week = serializers.SerializerMethodField()
+    users_active_month = serializers.SerializerMethodField()
+    users_active_half_year = serializers.SerializerMethodField()
+    hot_rank = serializers.SerializerMethodField()
 
-    class Meta:
-        model = models.CommunityAggregates
-        fields = (
-            "community_id",
-            "subscribers",
-            "posts",
-            "comments",
-            "published",
-            "users_active_day",
-            "users_active_week",
-            "users_active_month",
-            "users_active_half_year",
-            "hot_rank",
-            "subscribers_local",
-        )
+    def _get_follower_count(self, obj):
+        try:
+            return obj.reference.follower_count
+        except models.FollowerCount.DoesNotExist:
+            return None
+
+    def get_subscribers(self, obj):
+        follower_count = self._get_follower_count(obj)
+        return follower_count.total if follower_count else 0
+
+    def get_subscribers_local(self, obj):
+        follower_count = self._get_follower_count(obj)
+        return follower_count.local if follower_count else 0
+
+    def get_posts(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.POST
+        ).first()
+        return submission.total if submission else 0
+
+    def get_comments(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.total if submission else 0
+
+    def _get_user_activity(self, obj):
+        try:
+            return obj.reference.user_activity_report
+        except models.UserActivity.DoesNotExist:
+            return None
+
+    def get_users_active_day(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_day if activity else 0
+
+    def get_users_active_week(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_week if activity else 0
+
+    def get_users_active_month(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_month if activity else 0
+
+    def get_users_active_half_year(self, obj):
+        activity = self._get_user_activity(obj)
+        return activity.active_half_year if activity else 0
+
+    def get_hot_rank(self, obj):
+        ranking = obj.reference.rankings.filter(
+            type=models.RankingScore.Types.HOT
+        ).first()
+        return ranking.score if ranking else 0.0
 
 
 class CommunityViewSerializer(serializers.Serializer):
@@ -724,7 +822,7 @@ class CommunityViewSerializer(serializers.Serializer):
     """
 
     community = CommunitySerializer(source="*")
-    counts = CommunityAggregatesSerializer(source="communityaggregates", read_only=True)
+    counts = CommunityAggregatesSerializer(source="*", read_only=True)
     subscribed = serializers.SerializerMethodField()
     blocked = serializers.BooleanField(default=False, read_only=True)
 
@@ -806,25 +904,66 @@ class PostSerializer(LemmyModelSerializer):
         read_only_fields = fields
 
 
-class PostAggregatesSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = models.PostAggregates
-        fields = (
-            "post_id",
-            "comments",
-            "score",
-            "upvotes",
-            "downvotes",
-            "published",
-            "newest_comment_time_necro",
-            "newest_comment_time",
-            "featured_community",
-            "featured_local",
-            "hot_rank",
-            "hot_rank_active",
-            "controversy_rank",
-            "scaled_rank",
-        )
+class PostAggregatesSerializer(serializers.Serializer):
+    post_id = IdentityField(source="object_id", read_only=True)
+    comments = serializers.SerializerMethodField()
+    score = serializers.SerializerMethodField()
+    upvotes = serializers.SerializerMethodField()
+    downvotes = serializers.SerializerMethodField()
+    published = serializers.DateTimeField(source="as2.published", read_only=True)
+    newest_comment_time = serializers.SerializerMethodField()
+    featured_community = serializers.BooleanField(read_only=True)
+    featured_local = serializers.BooleanField(read_only=True)
+    hot_rank = serializers.SerializerMethodField()
+    hot_rank_active = serializers.SerializerMethodField()
+    controversy_rank = serializers.SerializerMethodField()
+    scaled_rank = serializers.SerializerMethodField()
+
+    def _get_reaction_count(self, obj):
+        try:
+            return obj.reference.reaction_count
+        except models.ReactionCount.DoesNotExist:
+            return None
+
+    def get_score(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.score if reaction else 0
+
+    def get_upvotes(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.upvotes if reaction else 0
+
+    def get_downvotes(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.downvotes if reaction else 0
+
+    def get_comments(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.total if submission else 0
+
+    def get_newest_comment_time(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.latest_reply if submission else None
+
+    def _get_ranking(self, obj, ranking_type):
+        ranking = obj.reference.rankings.filter(type=ranking_type).first()
+        return ranking.score if ranking else 0.0
+
+    def get_hot_rank(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.HOT)
+
+    def get_hot_rank_active(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.ACTIVE)
+
+    def get_controversy_rank(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.CONTROVERSY)
+
+    def get_scaled_rank(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.SCALED)
 
 
 class PostViewSerializer(serializers.Serializer):
@@ -835,7 +974,7 @@ class PostViewSerializer(serializers.Serializer):
     post = PostSerializer(source="*")
     creator = PersonSerializer(read_only=True)
     community = CommunitySerializer(read_only=True)
-    counts = PostAggregatesSerializer(source="postaggregates", read_only=True)
+    counts = PostAggregatesSerializer(source="*", read_only=True)
     subscribed = serializers.CharField(default="NotSubscribed", read_only=True)
     saved = serializers.BooleanField(default=False, read_only=True)
     read = serializers.BooleanField(default=False, read_only=True)
@@ -910,19 +1049,49 @@ class CommentSerializer(LemmyModelSerializer):
         read_only_fields = fields
 
 
-class CommentAggregatesSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = models.CommentAggregates
-        fields = (
-            "comment_id",
-            "score",
-            "upvotes",
-            "downvotes",
-            "published",
-            "child_count",
-            "hot_rank",
-            "controversy_rank",
-        )
+class CommentAggregatesSerializer(serializers.Serializer):
+    comment_id = IdentityField(source="object_id", read_only=True)
+    score = serializers.SerializerMethodField()
+    upvotes = serializers.SerializerMethodField()
+    downvotes = serializers.SerializerMethodField()
+    published = serializers.DateTimeField(source="as2.published", read_only=True)
+    child_count = serializers.SerializerMethodField()
+    hot_rank = serializers.SerializerMethodField()
+    controversy_rank = serializers.SerializerMethodField()
+
+    def _get_reaction_count(self, obj):
+        try:
+            return obj.reference.reaction_count
+        except models.ReactionCount.DoesNotExist:
+            return None
+
+    def get_score(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.score if reaction else 0
+
+    def get_upvotes(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.upvotes if reaction else 0
+
+    def get_downvotes(self, obj):
+        reaction = self._get_reaction_count(obj)
+        return reaction.downvotes if reaction else 0
+
+    def get_child_count(self, obj):
+        submission = obj.reference.submission_counts.filter(
+            type=models.SubmissionCount.Types.COMMENT
+        ).first()
+        return submission.replies if submission else 0
+
+    def _get_ranking(self, obj, ranking_type):
+        ranking = obj.reference.rankings.filter(type=ranking_type).first()
+        return ranking.score if ranking else 0.0
+
+    def get_hot_rank(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.HOT)
+
+    def get_controversy_rank(self, obj):
+        return self._get_ranking(obj, models.RankingScore.Types.CONTROVERSY)
 
 
 class CommentViewSerializer(serializers.Serializer):
@@ -934,7 +1103,7 @@ class CommentViewSerializer(serializers.Serializer):
     creator = PersonSerializer(read_only=True)
     post = PostSerializer(read_only=True)
     community = CommunitySerializer(source="post.post_data.community", read_only=True)
-    counts = CommentAggregatesSerializer(source="commentaggregates", read_only=True)
+    counts = CommentAggregatesSerializer(source="*", read_only=True)
     subscribed = serializers.CharField(default="NotSubscribed", read_only=True)
     saved = serializers.BooleanField(default=False, read_only=True)
     creator_banned_from_community = serializers.BooleanField(default=False, read_only=True)

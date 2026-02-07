@@ -9,7 +9,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+
 ### Changed
+- (Lemmy Adapter) New aggregate models for tracking counts and rankings.
+  - `ReactionCount` for tracking upvotes/downvotes on content
+  - `RankingScore` for computing Hot, Active, Controversy, and Scaled rankings
+  - `UserActivity` for tracking active users over time periods
+  - `FollowerCount` for tracking subscriber counts (total and local)
+  - `SubmissionCount` for tracking post/comment counts per reference
+
 ### Fixed
 
 ## [0.2.0] - 2026-02-06

@@ -1,7 +1,7 @@
 from activitypub.adapters.lemmy.models.core import Comment, Community, Language, LemmyObject, Post
 from activitypub.core.contexts import AS2, SCHEMA
 from activitypub.core.models import ActivityContext
-from activitypub.projections import (
+from activitypub.core.projections import (
     ActivityProjection,
     ActorProjection,
     LanguageProjection,
