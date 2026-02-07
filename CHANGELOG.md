@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+### Changed
+### Fixed
+
+## [0.2.0] - 2026-02-06
+
+### Added
 - Integrated Lemmy Adapter API (optional) at activitypub.adapters.lemmy
 - Added OAuth support (optional) on activitypub.extras.oauth
   - Identity-scoped access tokens linking OAuth tokens to specific actors
