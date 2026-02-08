@@ -94,6 +94,9 @@ class BaseCollectionContext(AbstractCollectionContext):
 
         return CollectionItem.objects.create(order=new_item_order, item=item, collection=target)
 
+    class Meta:
+        ordering = ("reference__uri",)
+
 
 class CollectionItem(models.Model):
     MAX_ORDER_VALUE = sys.float_info.max
