@@ -80,6 +80,7 @@ class DomainAdmin(admin.ModelAdmin):
 class ActivityAdmin(ContextModelAdmin):
     list_display = ("uri", "actor", "object", "target", "type")
     list_filter = ("type",)
+    date_hierarchy = "published"
     actions = (actions.do_activities,)
     search_fields = ("reference__uri",)
 
@@ -174,6 +175,7 @@ class CollectionItemAdmin(admin.ModelAdmin):
 
 @admin.register(models.BaseAs2ObjectContext)
 class BaseAs2ObjectAdmin(admin.ModelAdmin):
+    date_hierarchy = "published"
     list_display = ("uri", "name", "content")
     list_filter = ("media_type",)
     search_fields = ("reference__uri", "name")
@@ -184,6 +186,7 @@ class BaseAs2ObjectAdmin(admin.ModelAdmin):
 
 @admin.register(models.ObjectContext)
 class ObjectAdmin(admin.ModelAdmin):
+    date_hierarchy = "published"
     list_display = ("uri", "type", "name", "content")
     list_filter = ("type", "media_type")
     search_fields = ("reference__uri", "name")
