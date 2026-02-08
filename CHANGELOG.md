@@ -25,6 +25,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `SubmissionCount` for tracking post/comment counts per reference
 
 ### Fixed
+ - add missing 'next' field to projections on Collection pages
 
 ## [0.2.0] - 2026-02-06
 

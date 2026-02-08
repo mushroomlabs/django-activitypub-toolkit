@@ -59,7 +59,7 @@ class EmbeddedCollectionPageProjection(BaseCollectionProjection):
     CONTEXT_MODEL = CollectionPageContext
 
     class Meta:
-        fields = (RDF.type, AS2.items, AS2.orderedItems, AS2.totalItems)
+        fields = (RDF.type, AS2.items, AS2.orderedItems, AS2.totalItems, AS2.next)
 
 
 class CollectionProjection(BaseCollectionProjection):
