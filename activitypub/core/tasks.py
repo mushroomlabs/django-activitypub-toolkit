@@ -79,7 +79,7 @@ def process_incoming_notification(notification_id):
             processor.process_incoming(document.data)
 
         # Load context models from the document
-        document.load()
+        document.load(sender=notification.sender)
         notification_accepted.send(notification=notification, sender=Notification)
         box = CollectionContext.objects.get(reference=notification.target)
         box.append(item=notification.resource)

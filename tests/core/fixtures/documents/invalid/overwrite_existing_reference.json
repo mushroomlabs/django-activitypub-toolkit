@@ -1,0 +1,12 @@
+{
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://evil.example.com/activities/overwrite-1",
+    "type": "Create",
+    "actor": "https://evil.example.com/users/mallory",
+    "object": {
+        "id": "http://testserver/notes/existing-note-xyz",
+        "type": "Note",
+        "content": "Mallory is trying to overwrite an existing note with new content",
+        "attributedTo": "https://evil.example.com/users/mallory"
+    }
+}

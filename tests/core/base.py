@@ -24,7 +24,7 @@ def with_document_file(path, base_folder=TEST_DOCUMENTS_FOLDER):
             with open(full_path) as f:
                 document_data = json.load(f)
                 document = LinkedDataDocument.make(document_data)
-                document.load()
+                document.load(sender=document.reference)
                 new_args = args + (document,)
                 return function_at_test(*new_args, **kw)
 

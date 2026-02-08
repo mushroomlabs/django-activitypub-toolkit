@@ -1,0 +1,7 @@
+{
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://evil.example.com/activities/actor-mismatch-1",
+    "type": "Follow",
+    "actor": "http://testserver/users/bob",
+    "object": "http://testserver/users/alice"
+}

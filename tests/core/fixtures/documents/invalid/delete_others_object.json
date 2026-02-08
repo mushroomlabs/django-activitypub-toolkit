@@ -1,0 +1,7 @@
+{
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://evil.example.com/activities/hijack-delete-1",
+    "type": "Delete",
+    "actor": "https://evil.example.com/users/mallory",
+    "object": "http://testserver/notes/bobs-note-to-delete"
+}

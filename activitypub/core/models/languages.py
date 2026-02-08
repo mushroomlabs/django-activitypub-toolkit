@@ -138,7 +138,8 @@ class Language(AbstractContextModel):
         return f"{self.name} ({self.code})"
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
+        # Language references are internal, no authority check needed
         return reference.uri.startswith(cls.URI_PREFIX)
 
     @classmethod

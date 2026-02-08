@@ -43,7 +43,7 @@ After processing blank nodes, the toolkit extracts all unique subject URIs from 
 
 With the graph parsed and references created, the toolkit walks through each reference and determines which context models should extract data from it. This happens through the autoloaded context models configured in your settings.
 
-For each reference, the toolkit asks each context model whether it should handle that reference. The `should_handle_reference()` method examines the graph to see if relevant predicates exist. `ObjectContext` might look for an `as:content` predicate. `ActorContext` might look for `as:inbox` and `as:outbox` predicates.
+For each reference, the toolkit asks each context model whether it should handle that reference. The `should_handle_reference()` method examines the graph to see if relevant predicates exist and receives the `source` reference that initiated the load, enabling authority checks.
 
 Context models that recognize the reference call `load_from_graph()` to extract their data. This method walks through the model's `LINKED_DATA_FIELDS` mapping, which associates Django field names with RDF predicates.
 
@@ -95,6 +95,18 @@ If parsing into an RDF graph fails, `load()` raises a ValueError. This might hap
 If `should_handle_reference()` determines that a reference doesn't match a context model's criteria, that context model simply doesn't process the reference. Other context models might still process it. A resource that looks like an Actor but lacks required fields might fail to create an `ActorContext` but successfully create a basic `ObjectContext`.
 
 These failures are localized. One context model's failure doesn't prevent other context models from processing their data. One document's failure doesn't affect other documents. The system degrades gracefully, storing what it can and skipping what it can't interpret.
+
+## Security Validation Overview
+
+The toolkit validates incoming JSON‑LD documents using a layered approach:
+
+* **Document loading flow** – `LinkedDataDocument.load(sender)` creates the document, then `Reference.load_context_models(g, source)` calls each context model’s `should_handle_reference(g, reference, source)`. `clean_graph(g, reference, source)` performs skolemisation of blank nodes and local URIs before `load_from_graph` extracts fields.
+* **Authority model** – `Reference.has_authority_over(other)` defines when a source can act on a target (blank nodes, self, local vs remote authority). Context models use this to enforce that the actor sending the activity controls any `as:attributedTo` claims.
+* **S2S vs C2S** – In server‑to‑server (Inbox) the toolkit accepts the request (`202 Accepted`) but filters out unauthorized data. In client‑to‑server (Outbox) a validation failure results in a rejection (`400/403`).
+* **Attack vectors prevented** – actor spoofing, attributedTo impersonation, object ID squatting, and unauthorized update/delete.
+* **Validation layers** – view‑level checks (domain block, HTTP signatures), `should_handle_reference` authority checks, `clean_graph` transformations, and business‑logic checks in `Activity.do()`.
+
+These safeguards ensure only well‑formed, authorised data is persisted while allowing graceful handling of malformed activity streams.
 
 ## Designing Your Context Models
 

@@ -1,0 +1,12 @@
+{
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://evil.example.com/activities/hijack-update-1",
+    "type": "Update",
+    "actor": "https://evil.example.com/users/mallory",
+    "object": {
+        "id": "http://testserver/notes/bobs-note-999",
+        "type": "Note",
+        "content": "Mallory replaced Bob's content with this malicious text",
+        "attributedTo": "http://testserver/users/bob"
+    }
+}

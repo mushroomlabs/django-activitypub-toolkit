@@ -161,8 +161,10 @@ class MastodonNoteContext(AbstractContextModel):
     voters_count = models.IntegerField(null=True, blank=True)
 
     @classmethod
-    def should_handle_reference(cls, g, reference):
-        """Check if this is a Mastodon Note by type + Mastodon-specific fields."""
+    def should_handle_reference(cls, g, reference, source):
+        """Check if this is a Mastodon Note by type + Mastodon-specific fields.
+        The `source` reference is the actor that sent the activity and is used for authority checks.
+        """
         subject_uri = rdflib.URIRef(reference.uri)
 
         # Must be a Note type (handled by AS2 context)

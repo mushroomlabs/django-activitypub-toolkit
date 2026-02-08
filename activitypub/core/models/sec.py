@@ -135,7 +135,9 @@ class SecV1Context(AbstractContextModel):
         return keypair
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference=Reference):
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
+        if not source.has_authority_over(reference):
+            return False
         owner = reference.get_value(g, SECv1.owner)
         return owner is not None
 

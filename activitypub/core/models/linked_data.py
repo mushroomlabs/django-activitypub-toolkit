@@ -13,7 +13,7 @@ from django.db.models import BooleanField, Case, Exists, OuterRef, Q, Value, Whe
 from django.urls import reverse
 from model_utils.choices import Choices
 from model_utils.fields import MonitorField
-from model_utils.managers import InheritanceManager
+from model_utils.managers import InheritanceManager, QueryManager
 from model_utils.models import StatusModel, TimeStampedModel
 from pyld import jsonld
 
@@ -159,6 +159,8 @@ class Reference(TimeStampedModel, StatusModel):
     resolved_at = MonitorField(monitor="status", null=True, when=["resolved"])
     failed_at = MonitorField(monitor="status", null=True, when=["failed"])
     objects = ReferenceManager()
+    remote = QueryManager(domain__local=False)
+    local = QueryManager(domain__local=True)
 
     @property
     def is_local(self):
@@ -202,8 +204,42 @@ class Reference(TimeStampedModel, StatusModel):
     def get_by_context(self, context_model: type["AbstractContextModel"]):
         return context_model.objects.filter(reference=self).first()
 
-    def get_value(self, g: rdflib, predicate):
+    def get_value(self, g: rdflib.Graph, predicate):
         return g.value(self.as_rdf, predicate)
+
+    def load_context_models(self, g: rdflib.Graph, source: "Reference"):
+        for context_model in app_settings.CONTEXT_MODELS:
+            if context_model.should_handle_reference(g=g, reference=self, source=source):
+                context_model.clean_graph(g=g, reference=self, source=source)
+                context_model.load_from_graph(g=g, reference=self)
+
+        reference_loaded.send_robust(reference=self, graph=g, sender=self.__class__)
+
+    def has_authority_over(self, object: "Reference") -> bool:
+        """
+        Check if this reference can be trusted as authoritative over `object`
+        """
+
+        # Blank nodes do not have an owner, so anyone can control them.
+        if object.is_blank_node:
+            return True
+
+        # references are authoritative over themselves
+        if self == object:
+            return True
+
+        # They must have a domain, otherwise we can not establish authority
+        if self.domain is None:
+            return False
+
+        # Local references are controlled by the server, so they have
+        # no authority over anything (except themselves)
+        if self.domain.local:
+            return False
+
+        # If the references come from the same domain, we accept that
+        # any data update as authoritative
+        return self.domain == object.domain
 
     @transaction.atomic()
     def resolve(self, force=False):
@@ -233,7 +269,7 @@ class Reference(TimeStampedModel, StatusModel):
                     self.document, _ = LinkedDataDocument.objects.update_or_create(
                         reference=self, defaults={"data": document_data}
                     )
-                    self.document.load()
+                    self.document.load(sender=self)
             except DocumentResolutionError:
                 logger.exception(f"failed to resolve {self.uri}")
                 self.status = self.STATUS.failed
@@ -281,74 +317,20 @@ class LinkedDataDocument(models.Model):
     resolvable = models.BooleanField(default=True)
     data = models.JSONField()
 
-    def has_authority_over_reference(self, reference: Reference) -> bool:
-        if self.reference == reference:
-            return True
-
-        if self.reference.domain is None:
-            return False
-
-        if self.reference.domain.local:
-            return False
-
-        return self.reference.domain == reference.domain
-
-    def load(self):
+    def load(self, sender: Reference):
         # Generates a RDF graph out of the JSON-LD document,
-        # skolemizes it (generates stable names for unnamed nodes),
         # creates Reference entries for every subject in the graph and
-        # then calls ContextModelClass.load_from_graph(self.reference, graph)
-        # for every reference that is has a trusted domain (ini relation to the document)
-
-        def skolemize(blank_node):
-            # We would like to have a deterministic identifier for blank nodes,
-            # this function calculates murmurhash3(node_id + document uri), then passes that for
-            # Reference.generate_skolem
-
-            node_uid = f"{blank_node}:{self.reference.uri}"
-            hashed = mmh3.hash128(node_uid.encode())
-
-            return Reference.generate_skolem(hashed)
+        # then calls reference.load_context_models(graph)
+        # for every reference that is has a trusted domain (in relation to the document)
 
         try:
             assert self.data is not None
             g = LinkedDataDocument.get_graph(self.data)
-            blank_node_map = {}
-            new_triples = []
-
-            for s, p, o in list(g):
-                if isinstance(s, rdflib.BNode):
-                    if s not in blank_node_map:
-                        blank_node_map[s] = skolemize(s)
-                    s = blank_node_map[s]
-                if isinstance(o, rdflib.BNode):
-                    if o not in blank_node_map:
-                        blank_node_map[o] = skolemize(o)
-
-                    o = blank_node_map[o]
-                new_triples.append((s, p, o))
-
-            g.remove((None, None, None))
-            for triple in new_triples:
-                g.add(triple)
 
             references = [Reference.make(uri=str(uri)) for uri in set(g.subjects())]
-            authorized_references = [
-                r for r in references if self.has_authority_over_reference(r) or r.is_blank_node
-            ]
 
-            for ref in authorized_references:
-                context_models = [
-                    ctx
-                    for ctx in app_settings.CONTEXT_MODELS
-                    if ctx.should_handle_reference(g=g, reference=ref)
-                ]
-                for context_model in context_models:
-                    context_model.load_from_graph(g=g, reference=ref)
-
-                reference_loaded.send_robust(
-                    document=self, reference=ref, graph=g, sender=self.__class__
-                )
+            for ref in references:
+                ref.load_context_models(g=g, source=sender)
 
             document_loaded.send_robust(document=self, sender=self.__class__)
 
@@ -357,11 +339,57 @@ class LinkedDataDocument(models.Model):
 
     @staticmethod
     def get_graph(data):
+        def skolemize(blank_node, identifier):
+            # We would like to have a deterministic identifier for blank nodes,
+            # this function calculates murmurhash3(node_id + document uri), then passes that for
+            # Reference.generate_skolem
+
+            node_uid = f"{blank_node}:{identifier}"
+            hashed = mmh3.hash128(node_uid.encode())
+
+            return Reference.generate_skolem(hashed)
+
+        def should_skolemize(value):
+            if isinstance(value, rdflib.BNode):
+                return True
+            if isinstance(value, rdflib.URIRef):
+                uri = str(value)
+                try:
+                    domain = Domain.make(uri)
+                    if domain.local:
+                        # Local domain URI - skolemize if it doesn't exist
+                        return not Reference.objects.filter(uri=uri).exists()
+                except InvalidDomainError:
+                    pass
+            return False
+
         try:
             doc_id = data["id"]
             parsed_data = rdflib.parser.PythonInputSource(data, doc_id)
             g = rdflib.Graph(identifier=doc_id)
-            return g.parse(parsed_data, format="json-ld")
+            g.parse(parsed_data, format="json-ld")
+            blank_node_map = {}
+            new_triples = []
+
+            for s, p, o in list(g):
+                if should_skolemize(s):
+                    if s not in blank_node_map:
+                        blank_node_map[s] = skolemize(s, doc_id)
+                    s = blank_node_map[s]
+
+                if should_skolemize(o):
+                    if o not in blank_node_map:
+                        blank_node_map[o] = skolemize(o, doc_id)
+                    o = blank_node_map[o]
+
+                new_triples.append((s, p, o))
+
+            g.remove((None, None, None))
+            for triple in new_triples:
+                g.add(triple)
+
+            return g
+
         except KeyError:
             raise ValueError("Failed to get graph identifier")
 
@@ -410,8 +438,18 @@ class AbstractContextModel(models.Model):
         raise NotImplementedError("Subclasses need to implement this method")
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
-        return True
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
+        return source.has_authority_over(reference)
+
+    @classmethod
+    def clean_graph(cls, g: rdflib.Graph, reference: Reference, source: Reference):
+        """
+        Sanitize the graph before loading - generate named references for blank nodes,
+        remove or modify data that the source shouldn't control.
+
+        Subclasses should override this to add context-specific cleaning rules.
+        """
+        pass
 
     @classmethod
     def load_from_graph(cls, g: rdflib.Graph, reference: Reference):

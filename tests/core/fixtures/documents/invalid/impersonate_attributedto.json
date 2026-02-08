@@ -1,0 +1,12 @@
+{
+    "@context": "https://www.w3.org/ns/activitystreams",
+    "id": "https://evil.example.com/activities/impersonate-1",
+    "type": "Create",
+    "actor": "https://evil.example.com/users/mallory",
+    "object": {
+        "id": "https://evil.example.com/notes/fake-note-from-bob",
+        "type": "Note",
+        "content": "This note claims to be from Bob but was created by Mallory",
+        "attributedTo": "http://testserver/users/bob"
+    }
+}

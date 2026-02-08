@@ -87,6 +87,12 @@ class ActivityTestCase(BaseTestCase):
     @use_nodeinfo("https://remote.example.com", "nodeinfo/mastodon.json")
     @use_nodeinfo("http://testserver", "nodeinfo/testserver.json")
     def test_can_deserialize_inbox_message(self):
+        # Set up the local actor that will be followed
+        local_actor = factories.ActorFactory(
+            preferred_username="bob",
+            reference__domain=self.local_instance.domain,
+        )
+
         reference = Reference.make(
             "https://remote.example.com/0cc0a50f-9043-4d9b-b82a-ab3cd13ab906"
         )
@@ -97,11 +103,11 @@ class ActivityTestCase(BaseTestCase):
                 "id": "https://remote.example.com/0cc0a50f-9043-4d9b-b82a-ab3cd13ab906",
                 "type": "Follow",
                 "actor": "https://remote.example.com/users/alice",
-                "object": "http://testserver/users/bob",
+                "object": local_actor.uri,
                 "@context": "https://www.w3.org/ns/activitystreams",
             },
         )
-        message.load()
+        message.load(sender=reference)
 
         activity = reference.get_by_context(Activity)
         self.assertEqual(
@@ -113,7 +119,7 @@ class ActivityTestCase(BaseTestCase):
             "did not create reference for actor",
         )
         self.assertIsNotNone(
-            Reference.objects.filter(uri="http://testserver/users/bob").first(),
+            Reference.objects.filter(uri=local_actor.uri).first(),
             "did not create reference for object",
         )
 

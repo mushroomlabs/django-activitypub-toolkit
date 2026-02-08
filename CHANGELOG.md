@@ -9,8 +9,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Security validation framework for JSON-LD document processing via `should_handle_reference(g, reference, source)`
+- Skolemization of non-existent local URIs to prevent ID squatting attacks
 
 ### Changed
+- `should_handle_reference` now receives `source` parameter for authority validation
+- `ObjectContext` validates `attributedTo` claims against source authority
+- `ActivityContext` validates Create/Update/Delete activities for C2S authorization
+- S2S (inbox) accepts requests but filters unauthorized content; C2S (outbox) rejects unauthorized requests
 - (Lemmy Adapter) New aggregate models for tracking counts and rankings.
   - `ReactionCount` for tracking upvotes/downvotes on content
   - `RankingScore` for computing Hot, Active, Controversy, and Scaled rankings

@@ -282,7 +282,7 @@ class LemmyCommunityContext(AbstractContextModel):
     moderators = ReferenceField()
 
     @classmethod
-    def should_handle_reference(cls, g, reference):
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
         """Check if this is a Lemmy Community by type + Lemmy-specific properties."""
         subject_uri = rdflib.URIRef(reference.uri)
 

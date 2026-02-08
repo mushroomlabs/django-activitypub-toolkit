@@ -6,18 +6,19 @@ from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.response import Response
 
+from .. import tasks
 from ..contexts import AS2
 from ..decorators import calculate_digest, collect_signature
 from ..models import (
     ActivityContext,
     ActorContext,
+    CollectionContext,
     Domain,
     HttpSignatureProof,
     LinkedDataDocument,
     Notification,
     Reference,
 )
-from ..tasks import process_incoming_notification
 from .discovery import get_domain
 from .linked_data import LinkedDataModelView
 
@@ -44,7 +45,18 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
         reference = self.get_object()
         if is_an_inbox(reference):
             logger.debug(f"{reference} is marked as an inbox")
-            return Response(status=status.HTTP_401_UNAUTHORIZED)
+            if not self.request.user.is_authenticated:
+                return Response(
+                    "Authentication required for accessing inboxes",
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            actors = ActorContext.objects.filter(identity__user=self.request.user)
+            if not actors.filter(inbox=reference).exists():
+                return Response(
+                    f"{reference.uri} is not owned by {self.request.user}",
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         return super().get(*args, **kw)
 
     def _post_inbox(self, reference: Reference):
@@ -70,6 +82,13 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
                     f"Domain from {actor_reference} is blocked", status=status.HTTP_403_FORBIDDEN
                 )
 
+            # The activity's source (its ID domain) must have authority over the actor
+            if not activity_reference.has_authority_over(actor_reference):
+                return Response(
+                    f"Activity {activity_reference.uri} has no authority over actor {actor_uri}",
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             notification = Notification.objects.create(
                 sender=actor_reference, target=reference, resource=activity_reference
             )
@@ -78,7 +97,9 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
                     notification=notification, http_message_signature=self.request.signature
                 )
             LinkedDataDocument.objects.create(reference=activity_reference, data=document)
-            process_incoming_notification.delay_on_commit(notification_id=str(notification.id))
+            tasks.process_incoming_notification.delay_on_commit(
+                notification_id=str(notification.id)
+            )
 
             return Response(status=status.HTTP_202_ACCEPTED)
         except rdflib.plugins.shared.jsonld.errors.JSONLDException as exc:
@@ -112,22 +133,38 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
 
             actor_uri = activity_reference.get_value(g=g, predicate=AS2.actor)
 
-            assert actor_uri is not None, "Can not determine actor in activity"
-            actor_reference = Reference.make(actor_uri)
+            if actor_uri is None:
+                raise AssertionError("Can not determine actor in activity")
 
-            # FIXME: This is a lazy approach to process the document.
-            # We should not create documents for data we control.
-            notification = Notification.objects.create(
-                sender=actor_reference, target=reference, resource=activity_reference
-            )
+            Reference.make(actor_uri)
 
-            if self.request.signature:
-                HttpSignatureProof.objects.create(
-                    notification=notification, http_message_signature=self.request.signature
+            processable_subjects = [
+                s
+                for s in g.subjects()
+                if any(
+                    [
+                        str(s).startswith(Reference.SKOLEM_BASE_URI),
+                        Reference.objects.filter(uri=str(s), domain__local=True).exists(),
+                    ]
                 )
+            ]
 
-            LinkedDataDocument.objects.create(reference=activity_reference, data=document)
-            process_incoming_notification(notification_id=str(notification.id))
+            for subject_uri in processable_subjects:
+                subject_ref = Reference.make(uri=str(subject_uri))
+                # For C2S, use the activity reference as source since it's local
+                # and has authority over itself and embedded objects
+                subject_ref.load_context_models(g=g, source=activity_reference)
+
+            activity = activity_reference.get_by_context(ActivityContext)
+
+            if activity is None:
+                raise AssertionError("Could not extract process activity")
+
+            outbox = CollectionContext.make(reference, type=CollectionContext.Types.ORDERED)
+            outbox.append(item=activity.reference)
+
+            tasks.process_standard_activity_flows.delay(activity_uri=activity.reference.uri)
+            tasks.post_activity.delay(activity.reference.uri)
 
             return Response(
                 status=status.HTTP_201_CREATED, headers={"Location": activity_reference.uri}
