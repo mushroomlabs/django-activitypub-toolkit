@@ -555,11 +555,24 @@ class Report(LemmyObject):
     )
     resolved_on = models.DateTimeField(null=True, blank=True)
 
+    as2 = RelatedContextField(ActivityContext)
+
     @property
     def resolved(self):
         return self.resolved_by is not None
 
-    as2 = RelatedContextField(ActivityContext)
+    @classmethod
+    def resolve(cls, reference: Reference):
+        as2 = reference.get_by_context(ActivityContext)
+
+        if as2 is None:
+            return
+
+        if as2.type != ActivityContext.Types.FLAG:
+            return
+
+        cls.objects.get_or_create(reference=reference)
+        return
 
 
 # Site

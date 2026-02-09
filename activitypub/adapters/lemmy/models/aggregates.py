@@ -63,7 +63,17 @@ class RankingScore(TimeStampedModel):
         pass
 
     def _calculate_controversy(self):
-        pass
+        try:
+            reaction = self.reference.reaction_count
+        except Reference.reaction_count.RelatedObjectDoesNotExist:
+            return 0.0
+
+        if reaction.upvotes <= 0 or reaction.downvotes <= 0:
+            return 0.0
+
+        total = reaction.upvotes + reaction.downvotes
+        # Higher score when votes are more evenly split
+        return total / (abs(total - reaction.downvotes * 2) + 1)
 
     def _calculate_scaled(self):
         pass
@@ -87,28 +97,27 @@ class FollowerCount(TimeStampedModel):
     local = models.BigIntegerField(default=0)
 
 
-class SubmissionCount(TimeStampedModel):
-    class Types(models.IntegerChoices):
-        POST = (1, "Post")
-        COMMENT = (2, "Comment")
-        PRIVATE_MESSAGE = (3, "Private Message")
-
-    reference = models.ForeignKey(
-        Reference, related_name="submission_counts", on_delete=models.CASCADE
+class ReplyCount(TimeStampedModel):
+    reference = models.OneToOneField(
+        Reference, related_name="reply_count", on_delete=models.CASCADE
     )
-    type = models.SmallIntegerField(choices=Types.choices)
-    total = models.BigIntegerField(default=0)
     replies = models.IntegerField(default=0)
     latest_reply = models.DateTimeField(null=True)
 
-    class Meta:
-        unique_together = ("reference", "type")
+
+class SubmissionCount(TimeStampedModel):
+    reference = models.OneToOneField(
+        Reference, related_name="submission_count", on_delete=models.CASCADE
+    )
+    posts = models.BigIntegerField(default=0)
+    comments = models.IntegerField(default=0)
 
 
 __all__ = (
     "FollowerCount",
     "RankingScore",
     "ReactionCount",
+    "ReplyCount",
     "SubmissionCount",
     "UserActivity",
 )

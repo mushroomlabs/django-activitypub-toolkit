@@ -23,13 +23,11 @@ def ranking_subquery(ranking_type):
     )
 
 
-def submission_count_subquery(submission_type, field="total"):
-    """Create a subquery to get submission count for a specific type."""
+def reply_count_subquery(field="replies"):
+    """Create a subquery to get reply count."""
     return Coalesce(
         Subquery(
-            models.SubmissionCount.objects.filter(
-                reference=OuterRef("reference"), type=submission_type
-            ).values(field)[:1]
+            models.ReplyCount.objects.filter(reference=OuterRef("reference")).values(field)[:1]
         ),
         Value(0),
     )
@@ -161,15 +159,13 @@ class PostFilter(LemmyFilterSet):
             return queryset.order_by(published_path)
 
         if value == SortOrderTypes.MOST_COMMENTS:
-            return queryset.annotate(
-                comment_count=submission_count_subquery(models.SubmissionCount.Types.COMMENT)
-            ).order_by("-comment_count")
+            return queryset.annotate(comment_count=reply_count_subquery()).order_by(
+                "-comment_count"
+            )
 
         if value == SortOrderTypes.NEW_COMMENTS:
             return queryset.annotate(
-                newest_comment=submission_count_subquery(
-                    models.SubmissionCount.Types.COMMENT, field="latest_reply"
-                )
+                newest_comment=reply_count_subquery(field="latest_reply")
             ).order_by("-newest_comment")
 
         ranking_types = {
@@ -180,9 +176,9 @@ class PostFilter(LemmyFilterSet):
         }
 
         if value in ranking_types:
-            return queryset.annotate(
-                rank_score=ranking_subquery(ranking_types[value])
-            ).order_by("-rank_score")
+            return queryset.annotate(rank_score=ranking_subquery(ranking_types[value])).order_by(
+                "-rank_score"
+            )
 
         time_filters = {
             SortOrderTypes.TOP_HOUR: timedelta(hours=1),
@@ -199,10 +195,14 @@ class PostFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
-                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
-                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
-            ).order_by("-vote_score")
+            return (
+                queryset.filter(**{f"{published_path}__gte": cutoff})
+                .annotate(
+                    vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                    - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+                )
+                .order_by("-vote_score")
+            )
 
         if value == SortOrderTypes.TOP_ALL:
             return queryset.annotate(
@@ -312,9 +312,9 @@ class CommentFilter(LemmyFilterSet):
         }
 
         if value in ranking_types:
-            return queryset.annotate(
-                rank_score=ranking_subquery(ranking_types[value])
-            ).order_by("-rank_score")
+            return queryset.annotate(rank_score=ranking_subquery(ranking_types[value])).order_by(
+                "-rank_score"
+            )
 
         time_filters = {
             SortOrderTypes.TOP_HOUR: timedelta(hours=1),
@@ -331,10 +331,14 @@ class CommentFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
-                vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
-                - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
-            ).order_by("-vote_score")
+            return (
+                queryset.filter(**{f"{published_path}__gte": cutoff})
+                .annotate(
+                    vote_score=Coalesce(F("reference__reaction_count__upvotes"), Value(0))
+                    - Coalesce(F("reference__reaction_count__downvotes"), Value(0))
+                )
+                .order_by("-vote_score")
+            )
 
         if value == SortOrderTypes.TOP_ALL:
             return queryset.annotate(
@@ -403,9 +407,13 @@ class CommunityFilter(LemmyFilterSet):
 
         if value in time_filters:
             cutoff = now - time_filters[value]
-            return queryset.filter(**{f"{published_path}__gte": cutoff}).annotate(
-                subscriber_count=Coalesce(F("reference__follower_count__total"), Value(0))
-            ).order_by("-subscriber_count")
+            return (
+                queryset.filter(**{f"{published_path}__gte": cutoff})
+                .annotate(
+                    subscriber_count=Coalesce(F("reference__follower_count__total"), Value(0))
+                )
+                .order_by("-subscriber_count")
+            )
 
         if value == SortOrderTypes.TOP_ALL:
             return queryset.annotate(

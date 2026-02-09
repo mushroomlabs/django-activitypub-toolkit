@@ -5,13 +5,14 @@ from django.db.models import F
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from activitypub.core.models import ActivityContext, ActorContext, CollectionContext
-from activitypub.core.signals import reference_loaded
+from activitypub.core.models import ActivityContext, ActorContext, CollectionContext, Domain
+from activitypub.core.signals import activity_done, reference_loaded
 
 from .models.aggregates import (
     FollowerCount,
     RankingScore,
     ReactionCount,
+    ReplyCount,
     SubmissionCount,
     UserActivity,
 )
@@ -25,7 +26,6 @@ from .models.core import (
     UserProfile,
     UserSettings,
 )
-from .tasks import process_activity
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -60,12 +60,7 @@ def on_person_created_create_aggregates_record(sender, **kw):
 
     if kw["created"]:
         FollowerCount.objects.get_or_create(reference=person.reference)
-        SubmissionCount.objects.get_or_create(
-            reference=person.reference, type=SubmissionCount.Types.POST
-        )
-        SubmissionCount.objects.get_or_create(
-            reference=person.reference, type=SubmissionCount.Types.COMMENT
-        )
+        SubmissionCount.objects.get_or_create(reference=person.reference)
 
 
 @receiver(post_save, sender=Person)
@@ -97,6 +92,7 @@ def on_community_created_create_aggregates_record(sender, **kw):
 
     if kw["created"]:
         FollowerCount.objects.get_or_create(reference=community.reference)
+        SubmissionCount.objects.get_or_create(reference=community.reference)
         UserActivity.objects.get_or_create(reference=community.reference)
 
 
@@ -106,9 +102,7 @@ def on_post_created_create_aggregates_record(sender, **kw):
 
     if kw["created"]:
         ReactionCount.objects.get_or_create(reference=post.reference)
-        SubmissionCount.objects.get_or_create(
-            reference=post.reference, type=SubmissionCount.Types.POST
-        )
+        ReplyCount.objects.get_or_create(reference=post.reference)
         for ranking_type in RankingScore.Types:
             RankingScore.objects.get_or_create(type=ranking_type, reference=post.reference)
 
@@ -119,17 +113,14 @@ def on_comment_created_update_aggregates(sender, **kw):
 
     if kw["created"]:
         ReactionCount.objects.get_or_create(reference=comment.reference)
-        SubmissionCount.objects.get_or_create(
-            reference=comment.reference, type=SubmissionCount.Types.COMMENT
-        )
+        ReplyCount.objects.get_or_create(reference=comment.reference)
         for ranking_type in RankingScore.Types:
             RankingScore.objects.get_or_create(type=ranking_type, reference=comment.reference)
 
-        SubmissionCount.objects.update_or_create(
+        ReplyCount.objects.update_or_create(
             reference=comment.post.reference,
-            type=SubmissionCount.Types.COMMENT,
             defaults={"replies": F("replies") + 1, "latest_reply": comment.as2.published},
-            create_defaults={"replies": 1, "type": SubmissionCount.Types.COMMENT},
+            create_defaults={"replies": 1},
         )
 
 
@@ -139,16 +130,133 @@ def on_site_created_create_aggregates_record(sender, **kw):
 
     if kw["created"]:
         UserActivity.objects.get_or_create(reference=site.reference)
-        SubmissionCount.objects.get_or_create(
-            reference=site.reference, type=SubmissionCount.Types.POST
-        )
+        SubmissionCount.objects.get_or_create(reference=site.reference)
+
+
+@receiver(activity_done)
+def on_vote_update_aggregates(sender, **kw):
+    activity = kw["activity"]
+
+    if activity.type not in [ActivityContext.Types.LIKE, ActivityContext.Types.DISLIKE]:
+        return
+
+    if activity.object is None:
+        return
+
+    reaction_count, _ = ReactionCount.objects.get_or_create(reference=activity.object)
+
+    if activity.type == ActivityContext.Types.LIKE:
+        reaction_count.upvotes += 1
+    else:
+        reaction_count.downvotes += 1
+    reaction_count.save()
+
+    ranking_types = [RankingScore.Types.TOP, RankingScore.Types.CONTROVERSY]
+    for ranking in RankingScore.objects.filter(reference=activity.object, type__in=ranking_types):
+        ranking.calculate()
+        ranking.save()
+
+
+@receiver(activity_done)
+def on_flag_create_report(sender, **kw):
+    activity = kw["activity"]
+
+    if activity.type != ActivityContext.Types.FLAG:
+        return
+
+    Report.objects.get_or_create(reference=activity.reference)
+
+
+@receiver(activity_done)
+def on_block_update_person(sender, **kw):
+    activity = kw["activity"]
+
+    if activity.type != ActivityContext.Types.BLOCK:
+        return
+
+    if activity.actor is None or activity.object is None:
+        return
+
+    person = Person.objects.filter(reference=activity.actor).first()
+    if person is None:
+        return
+
+    community = Community.objects.filter(reference=activity.object).first()
+    if community is not None:
+        person.blocked_communities.add(community)
+        return
+
+    domain = Domain.objects.filter(name=activity.object.domain.name).first()
+    if domain is not None:
+        person.blocked_instances.add(domain)
+
+
+@receiver(activity_done)
+def on_undo_revert_action(sender, **kw):
+    activity = kw["activity"]
+
+    if activity.type != ActivityContext.Types.UNDO:
+        return
+
+    if activity.object is None:
+        return
+
+    original = activity.object.get_by_context(ActivityContext)
+    if original is None:
+        return
+
+    match original.type:
+        case ActivityContext.Types.LIKE | ActivityContext.Types.DISLIKE:
+            _undo_vote(original)
+        case ActivityContext.Types.BLOCK:
+            _undo_block(original)
+
+
+def _undo_vote(original: ActivityContext):
+    if original.object is None:
+        return
+
+    try:
+        reaction_count = ReactionCount.objects.get(reference=original.object)
+    except ReactionCount.DoesNotExist:
+        return
+
+    if original.type == ActivityContext.Types.LIKE:
+        reaction_count.upvotes = max(0, reaction_count.upvotes - 1)
+    else:
+        reaction_count.downvotes = max(0, reaction_count.downvotes - 1)
+
+    reaction_count.save()
+
+    ranking_types = [RankingScore.Types.TOP, RankingScore.Types.CONTROVERSY]
+    for ranking in RankingScore.objects.filter(reference=original.object, type__in=ranking_types):
+        ranking.calculate()
+        ranking.save()
+
+
+def _undo_block(original: ActivityContext):
+    if original.actor is None or original.object is None:
+        return
+
+    person = Person.objects.filter(reference=original.actor).first()
+    if person is None:
+        return
+
+    community = Community.objects.filter(reference=original.object).first()
+    if community is not None:
+        person.blocked_communities.remove(community)
+        return
+
+    domain = Domain.objects.filter(name=original.object.domain.name).first()
+    if domain is not None:
+        person.blocked_instances.remove(domain)
 
 
 @receiver(reference_loaded)
 def on_reference_loaded_create_lemmy_objects(sender, **kw):
     reference = kw["reference"]
 
-    for lemmy_model in [Community, Comment, Post, Person, Site, Report]:
+    for lemmy_model in [Community, Comment, Post, Person, Site]:
         lemmy_model.resolve(reference)
 
 
@@ -162,5 +270,9 @@ __all__ = (
     "on_post_created_create_aggregates_record",
     "on_comment_created_update_aggregates",
     "on_site_created_create_aggregates_record",
+    "on_vote_update_aggregates",
+    "on_flag_create_report",
+    "on_block_update_person",
+    "on_undo_revert_action",
     "on_reference_loaded_create_lemmy_objects",
 )

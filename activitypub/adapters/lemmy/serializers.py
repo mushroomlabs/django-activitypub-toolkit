@@ -244,16 +244,16 @@ class SiteAggregatesSerializer(serializers.Serializer):
         ).count()
 
     def get_posts(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.POST
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.posts
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
     def get_comments(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.comments
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
     def _get_user_activity(self, obj):
         try:
@@ -355,16 +355,16 @@ class PersonAggregatesSerializer(serializers.Serializer):
     comment_count = serializers.SerializerMethodField()
 
     def get_post_count(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.POST
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.posts
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
     def get_comment_count(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.comments
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
 
 class AdminSerializer(serializers.ModelSerializer):
@@ -776,16 +776,16 @@ class CommunityAggregatesSerializer(serializers.Serializer):
         return follower_count.local if follower_count else 0
 
     def get_posts(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.POST
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.posts
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
     def get_comments(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.submission_count.comments
+        except models.SubmissionCount.DoesNotExist:
+            return 0
 
     def _get_user_activity(self, obj):
         try:
@@ -938,16 +938,16 @@ class PostAggregatesSerializer(serializers.Serializer):
         return reaction.downvotes if reaction else 0
 
     def get_comments(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.total if submission else 0
+        try:
+            return obj.reference.reply_count.replies
+        except models.ReplyCount.DoesNotExist:
+            return 0
 
     def get_newest_comment_time(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.latest_reply if submission else None
+        try:
+            return obj.reference.reply_count.latest_reply
+        except models.ReplyCount.DoesNotExist:
+            return None
 
     def _get_ranking(self, obj, ranking_type):
         ranking = obj.reference.rankings.filter(type=ranking_type).first()
@@ -1078,10 +1078,10 @@ class CommentAggregatesSerializer(serializers.Serializer):
         return reaction.downvotes if reaction else 0
 
     def get_child_count(self, obj):
-        submission = obj.reference.submission_counts.filter(
-            type=models.SubmissionCount.Types.COMMENT
-        ).first()
-        return submission.replies if submission else 0
+        try:
+            return obj.reference.reply_count.replies
+        except models.ReplyCount.DoesNotExist:
+            return 0
 
     def _get_ranking(self, obj, ranking_type):
         ranking = obj.reference.rankings.filter(type=ranking_type).first()
