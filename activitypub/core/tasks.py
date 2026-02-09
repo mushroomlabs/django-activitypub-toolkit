@@ -7,6 +7,7 @@ from django.db import transaction
 from .contexts import AS2
 from .exceptions import (
     DocumentPublishingError,
+    DocumentValidationError,
     DropMessage,
     UnauthenticatedPublisher,
     UnprocessableJsonLd,
@@ -86,7 +87,8 @@ def process_incoming_notification(notification_id):
         return notification.results.create(result=NotificationProcessResult.Types.OK)
     except CollectionContext.DoesNotExist:
         return notification.results.create(result=NotificationProcessResult.Types.BAD_TARGET)
-    except UnprocessableJsonLd:
+    except (UnprocessableJsonLd, DocumentValidationError) as exc:
+        logger.warning(f"Invalid Document in notification: {exc}")
         return notification.results.create(result=NotificationProcessResult.Types.BAD_REQUEST)
     except DropMessage:
         return notification.results.create(result=NotificationProcessResult.Types.DROPPED)

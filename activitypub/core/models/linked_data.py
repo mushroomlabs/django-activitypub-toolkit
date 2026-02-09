@@ -17,7 +17,12 @@ from model_utils.managers import InheritanceManager, QueryManager
 from model_utils.models import StatusModel, TimeStampedModel
 from pyld import jsonld
 
-from ..exceptions import DocumentResolutionError, InvalidDomainError, ReferenceRedirect
+from ..exceptions import (
+    DocumentResolutionError,
+    DocumentValidationError,
+    InvalidDomainError,
+    ReferenceRedirect,
+)
 from ..settings import app_settings
 from ..signals import document_loaded, reference_loaded
 from .fields import ReferenceField
@@ -210,39 +215,12 @@ class Reference(TimeStampedModel, StatusModel):
     def get_value(self, g: rdflib.Graph, predicate):
         return g.value(self.as_rdf, predicate)
 
-    def load_context_models(self, g: rdflib.Graph, source: "Reference"):
+    def load_context_models(self, g: rdflib.Graph):
         for context_model in app_settings.CONTEXT_MODELS:
-            if context_model.should_handle_reference(g=g, reference=self, source=source):
-                context_model.clean_graph(g=g, reference=self, source=source)
+            if context_model.should_handle_reference(g=g, reference=self):
                 context_model.load_from_graph(g=g, reference=self)
 
         reference_loaded.send_robust(reference=self, graph=g, sender=self.__class__)
-
-    def has_authority_over(self, object: "Reference") -> bool:
-        """
-        Check if this reference can be trusted as authoritative over `object`
-        """
-
-        # Blank nodes do not have an owner, so anyone can control them.
-        if object.is_blank_node:
-            return True
-
-        # references are authoritative over themselves
-        if self == object:
-            return True
-
-        # They must have a domain, otherwise we can not establish authority
-        if self.domain is None:
-            return False
-
-        # Local references are controlled by the server, so they have
-        # no authority over anything (except themselves)
-        if self.domain.local:
-            return False
-
-        # If the references come from the same domain, we accept that
-        # any data update as authoritative
-        return self.domain == object.domain
 
     @transaction.atomic()
     def resolve(self, force=False):
@@ -321,78 +299,114 @@ class LinkedDataDocument(models.Model):
     data = models.JSONField()
 
     def load(self, sender: Reference):
-        # Generates a RDF graph out of the JSON-LD document,
-        # creates Reference entries for every subject in the graph and
-        # then calls reference.load_context_models(graph)
-        # for every reference that is has a trusted domain (in relation to the document)
 
         try:
-            assert self.data is not None
+            if self.data is None:
+                raise AssertionError("No data in document to load")
+
+            if sender.domain is None:
+                raise AssertionError("We can not validate the origin of the document")
+
+            # generates a RDF graph out of the JSON-LD document. This might contain untrusted data
             g = LinkedDataDocument.get_graph(self.data)
 
+            # sanitizes it (remove triples where the sender has no
+            # authority over the subject). This is a pure authorization check
+            LinkedDataDocument.sanitize_graph(g=g, domain=sender.domain)
+
+            # Validate graph - this checks context-specific business rules
+            for context_model in app_settings.CONTEXT_MODELS:
+                context_model.validate_graph(g=g, owner=sender)
+
+            # We assume from here that all data is valid and trusted
+            # Collect references after sanitization (new URIs may have been added)
             references = [Reference.make(uri=str(uri)) for uri in set(g.subjects())]
 
             for ref in references:
-                ref.load_context_models(g=g, source=sender)
+                ref.load_context_models(g=g)
 
             document_loaded.send_robust(document=self, sender=self.__class__)
+        except (KeyError, AssertionError) as exc:
+            raise DocumentValidationError(f"Invalid document: {exc}")
 
-        except (KeyError, AssertionError):
-            raise ValueError("Failed to load document")
+    @staticmethod
+    def sanitize_graph(g: rdflib.Graph, domain: Domain):
+        """
+        Sanitize an RDF graph by:
+        1. Skolemizing blank nodes into local references
+        2. Dropping triples where subject.domain != domain (except blank nodes)
+
+        This ensures only authoritative data is loaded - domains can only
+        provide data about resources they control.
+        """
+
+        # Step 1: Skolemize blank nodes
+        blank_node_map = {}
+        new_triples = []
+
+        for s, p, o in g:
+            new_s = s
+            new_o = o
+
+            # Skolemize subject if it's a blank node
+            if isinstance(s, rdflib.BNode):
+                if s not in blank_node_map:
+                    node_uid = f"{s}:{g.identifier}"
+                    hashed = mmh3.hash128(node_uid.encode())
+                    blank_node_map[s] = Reference.generate_skolem(hashed)
+                new_s = blank_node_map[s]
+
+            # Skolemize object if it's a blank node
+            if isinstance(o, rdflib.BNode):
+                if o not in blank_node_map:
+                    node_uid = f"{o}:{g.identifier}"
+                    hashed = mmh3.hash128(node_uid.encode())
+                    blank_node_map[o] = Reference.generate_skolem(hashed)
+                new_o = blank_node_map[o]
+
+            new_triples.append((new_s, p, new_o))
+
+        # Replace graph with skolemized triples
+        g.remove((None, None, None))
+        for triple in new_triples:
+            g.add(triple)
+
+        # Step 2: Filter by domain - keep only triples about domain's resources
+        triples_to_remove = []
+
+        for s, p, o in g:
+            subject_uri = str(s)
+
+            # Keep blank nodes (skolemized URIs)
+            if subject_uri.startswith(Reference.SKOLEM_BASE_URI):
+                continue
+
+            # Check if subject belongs to the source domain
+            try:
+                subject_domain = Domain.make(subject_uri)
+                if subject_domain != domain:
+                    # Subject is from different domain - drop this triple
+                    triples_to_remove.append((s, p, o))
+            except InvalidDomainError:
+                # Can't determine domain - drop it to be safe
+                triples_to_remove.append((s, p, o))
+
+        # Remove unauthorized triples
+        for triple in triples_to_remove:
+            g.remove(triple)
 
     @staticmethod
     def get_graph(data):
-        def skolemize(blank_node, identifier):
-            # We would like to have a deterministic identifier for blank nodes,
-            # this function calculates murmurhash3(node_id + document uri), then passes that for
-            # Reference.generate_skolem
-
-            node_uid = f"{blank_node}:{identifier}"
-            hashed = mmh3.hash128(node_uid.encode())
-
-            return Reference.generate_skolem(hashed)
-
-        def should_skolemize(value):
-            if isinstance(value, rdflib.BNode):
-                return True
-            if isinstance(value, rdflib.URIRef):
-                uri = str(value)
-                try:
-                    domain = Domain.make(uri)
-                    if domain.local:
-                        # Local domain URI - skolemize if it doesn't exist
-                        return not Reference.objects.filter(uri=uri).exists()
-                except InvalidDomainError:
-                    pass
-            return False
-
+        """
+        Parse JSON-LD data into an RDF graph.
+        Returns the raw graph without any modifications.
+        """
         try:
             doc_id = data["id"]
             parsed_data = rdflib.parser.PythonInputSource(data, doc_id)
             g = rdflib.Graph(identifier=doc_id)
             g.parse(parsed_data, format="json-ld")
-            blank_node_map = {}
-            new_triples = []
-
-            for s, p, o in list(g):
-                if should_skolemize(s):
-                    if s not in blank_node_map:
-                        blank_node_map[s] = skolemize(s, doc_id)
-                    s = blank_node_map[s]
-
-                if should_skolemize(o):
-                    if o not in blank_node_map:
-                        blank_node_map[o] = skolemize(o, doc_id)
-                    o = blank_node_map[o]
-
-                new_triples.append((s, p, o))
-
-            g.remove((None, None, None))
-            for triple in new_triples:
-                g.add(triple)
-
             return g
-
         except KeyError:
             raise ValueError("Failed to get graph identifier")
 
@@ -441,16 +455,26 @@ class AbstractContextModel(models.Model):
         raise NotImplementedError("Subclasses need to implement this method")
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        return source.has_authority_over(reference)
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
+        """
+        Determine if this context model should handle data for the given reference.
+        Should only check type/content matching, not authority/security.
+        """
+        return False
 
     @classmethod
-    def clean_graph(cls, g: rdflib.Graph, reference: Reference, source: Reference):
+    def validate_graph(cls, g: rdflib.Graph, owner: Reference):
         """
-        Sanitize the graph before loading - generate named references for blank nodes,
-        remove or modify data that the source shouldn't control.
+        Validate business logic rules for this context model.
 
-        Subclasses should override this to add context-specific cleaning rules.
+        Args:
+            g: The RDF graph to validate
+            owner: The reference that owns/controls this data (e.g., authenticated actor)
+
+        Raises:
+            AssertionError if validation fails
+
+        Subclasses should override to add context-specific validation.
         """
         pass
 
@@ -619,6 +643,9 @@ class Notification(models.Model):
             self.sender.resolve(force=fetch_missing_keys)
         for proof in self.proofs.select_subclasses():
             proof.verify(fetch_missing_keys=fetch_missing_keys and is_remote)
+
+    class Meta:
+        ordering = ("resource__uri",)
 
 
 class NotificationProcessResult(models.Model):

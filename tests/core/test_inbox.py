@@ -536,9 +536,8 @@ class InboxSecurityTestCase(TransactionTestCase):
     @with_remote_reference("https://evil.example.com/users/mallory", "standard/actor.alice.json")
     def test_update_of_object_not_owned_by_actor_has_no_effect(self):
         """
-        S2S: Update activity where the actor doesn't own the object has no effect.
-        Attack vector: Remote actor tries to update content owned by someone else.
-        The activity is processed but the update is not applied.
+        Attack: Remote actor tries to update content owned by someone else.
+        The request is accepted but silently discarded
         """
         # Create a note owned by Bob (local)
         bob_note = ObjectFactory(
@@ -568,7 +567,6 @@ class InboxSecurityTestCase(TransactionTestCase):
             content_type="application/ld+json",
         )
 
-        # Request is accepted
         self.assertEqual(response.status_code, 202)
 
         # Verify the note wasn't modified
@@ -580,7 +578,6 @@ class InboxSecurityTestCase(TransactionTestCase):
     @with_remote_reference("https://evil.example.com/users/mallory", "standard/actor.alice.json")
     def test_delete_of_object_not_owned_by_actor_has_no_effect(self):
         """
-        S2S: Delete activity where the actor doesn't own the object has no effect.
         Attack vector: Remote actor tries to delete content owned by someone else.
         The activity is processed but the delete is not executed.
         """
@@ -608,7 +605,7 @@ class InboxSecurityTestCase(TransactionTestCase):
             content_type="application/ld+json",
         )
 
-        # View accepts and queues for async processing
+        # requested is accepted but ignored
         self.assertEqual(response.status_code, 202)
 
         # Verify the note still exists (the delete action is not executed)
@@ -667,9 +664,8 @@ class InboxSecurityTestCase(TransactionTestCase):
     @with_remote_reference("https://evil.example.com/users/mallory", "standard/actor.alice.json")
     def test_create_with_attributedto_impersonation_not_loaded(self):
         """
-        S2S: Create activity with mismatched attributedTo is accepted but object not loaded.
-        Attack vector: Remote actor creates content claiming it's from someone else.
-        The request is accepted but the object with wrong attributedTo is not loaded.
+        Attack: Remote actor creates content claiming it's from someone else.
+        The request should be accepted, but we do not process it
         """
         # Mallory creates a note claiming it's from Bob
         create_activity = {

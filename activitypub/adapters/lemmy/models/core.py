@@ -93,9 +93,7 @@ class LemmyContextModel(AbstractContextModel):
         return ObjectContext.generate_reference(domain=domain)
 
     @classmethod
-    def should_handle_reference(cls, g: Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g: Graph, reference: Reference):
         is_removal_activity = reference.get_value(g, RDF.type) in [AS2.Block, AS2.Delete]
         has_remove = reference.get_value(g, LEMMY.removeData) is not None
         lemmy_predicates = (

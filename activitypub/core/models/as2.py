@@ -152,9 +152,7 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     )
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
         type = reference.get_value(g, predicate=RDF.type)
         return type is not None and str(type) in cls.Types.values
 
@@ -195,9 +193,7 @@ class LinkContext(AbstractContextModel):
     )
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
         has_href = reference.get_value(g, predicate=AS2.href) is not None
 
         if has_href:
@@ -213,10 +209,7 @@ class BaseAs2ObjectContext(AbstractAs2ObjectContext):
     objects = InheritanceManager()
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
-
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
         has_href = reference.get_value(g, predicate=AS2.href) is not None
 
         if has_href:
@@ -247,27 +240,33 @@ class ObjectContext(BaseAs2ObjectContext):
     type = models.CharField(max_length=128, choices=Types.choices, null=True, blank=True)
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not super().should_handle_reference(g, reference, source):
-            return False
+    def validate_graph(cls, g: rdflib.Graph, owner: Reference):
+        """
+        S2S validation: Prevent impersonation attacks.
 
-        attributed_to = g.value(rdflib.URIRef(reference.uri), AS2.attributedTo)
+        For remote sources, ensure objects don't claim to be attributed to
+        actors from different domains.
+        """
+        # Only validate for S2S (remote sources)
+        if not owner.domain or owner.domain.local:
+            return
 
-        if attributed_to is not None:
-            attributed_to_ref = Reference.make(str(attributed_to))
+        # Check all objects with attributedTo
+        for obj_uri in g.subjects(AS2.attributedTo, None):
+            attributed_to = g.value(obj_uri, AS2.attributedTo)
+            if attributed_to is not None:
+                obj_ref = Reference.make(str(obj_uri))
+                attributed_to_ref = Reference.make(str(attributed_to))
 
-            # The source must have authority over the attributedTo claim
-            if not source.has_authority_over(attributed_to_ref):
-                return False
-
-            # For C2S (local source), additionally validate attributedTo matches actor
-            if source.is_local:
-                source_uri = rdflib.URIRef(source.uri)
-                actor_uri = g.value(source_uri, AS2.actor)
-                if actor_uri is not None and str(attributed_to) != str(actor_uri):
-                    return False
-
-        return True
+                # attributedTo must be from same domain as object or source domain
+                if attributed_to_ref.domain and attributed_to_ref.domain not in [
+                    obj_ref.domain,
+                    owner.domain,
+                ]:
+                    raise AssertionError(
+                        f"Impersonation attempt: object {obj_uri} claims attributedTo {attributed_to} "
+                        f"from different domain"
+                    )
 
     @classmethod
     def generate_reference(cls, domain):
@@ -301,9 +300,7 @@ class EndpointContext(AbstractContextModel):
     shared_inbox = models.URLField(max_length=512, null=True, blank=True)
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
         predicates = cls.LINKED_DATA_FIELDS.values()
         values = [reference.get_value(g=g, predicate=predicate) for predicate in predicates]
         return any([v is not None for v in values])
@@ -316,11 +313,10 @@ class SourceContentContext(AbstractContextModel):
     media_type = models.CharField(max_length=300, null=True, blank=True)
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
-        is_embedded = reference.uri != str(g.identifier)
-        return is_embedded and reference.get_value(g, predicate=AS2.content) is not None
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
+        return (
+            reference.is_blank_node and reference.get_value(g, predicate=AS2.content) is not None
+        )
 
 
 class ActorContext(BaseAs2ObjectContext):
@@ -527,61 +523,71 @@ class ActivityContext(BaseAs2ObjectContext):
         return Reference.make(uri)
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not super().should_handle_reference(g, reference, source):
-            return False
+    def validate_graph(cls, g: rdflib.Graph, owner: Reference):
+        """
+        Validate C2S business logic rules for activities.
 
-        subject_uri = rdflib.URIRef(reference.uri)
-        activity_type = g.value(subject_uri, RDF.type)
-        actor_uri = g.value(subject_uri, AS2.actor)
+        Args:
+            g: The RDF graph to validate
+            owner: The authenticated actor posting to their outbox
 
-        # For C2S Create activities, validate the object's attributedTo matches actor
-        if source.is_local and activity_type == AS2.Create:
-            object_uri = g.value(subject_uri, AS2.object)
-            if object_uri is not None:
+        Raises:
+            AssertionError if validation fails
+        """
+        # Validate Create activities
+        for activity_uri in g.subjects(RDF.type, AS2.Create):
+            actor_uri = g.value(activity_uri, AS2.actor)
+            object_uri = g.value(activity_uri, AS2.object)
+
+            if object_uri is None:
+                continue
+
+            # If object is a blank node, generate a proper ID for it
+            if str(object_uri).startswith(Reference.SKOLEM_BASE_URI):
+                new_object_ref = ObjectContext.generate_reference(domain=owner.domain)
+                new_object_uri = rdflib.URIRef(new_object_ref.uri)
+
+                # Replace all occurrences of the blank node with the new URI
+                triples_to_update = []
+                for s, p, o in g:
+                    new_s = new_object_uri if s == object_uri else s
+                    new_o = new_object_uri if o == object_uri else o
+                    if new_s != s or new_o != o:
+                        triples_to_update.append(((s, p, o), (new_s, p, new_o)))
+
+                for old_triple, new_triple in triples_to_update:
+                    g.remove(old_triple)
+                    g.add(new_triple)
+
+                object_uri = new_object_uri
+
+            # Ensure attributedTo matches actor
+            if actor_uri is not None:
                 attributed_to = g.value(object_uri, AS2.attributedTo)
-                if attributed_to is not None and actor_uri is not None:
-                    if str(attributed_to) != str(actor_uri):
-                        return False
+                if attributed_to is not None and str(attributed_to) != str(actor_uri):
+                    raise AssertionError(
+                        f"Object attributedTo ({attributed_to}) does not match actor ({actor_uri})"
+                    )
 
-        # For C2S Delete/Update activities, validate actor owns the object
-        if source.is_local and activity_type in (AS2.Delete, AS2.Update):
-            object_uri = g.value(subject_uri, AS2.object)
-            if object_uri is not None and actor_uri is not None:
-                # Check if the object exists and is attributed to the actor
+        # Validate Update/Delete activities - actor must own the object
+        for activity_type in (AS2.Update, AS2.Delete):
+            for activity_uri in g.subjects(RDF.type, activity_type):
+                actor_uri = g.value(activity_uri, AS2.actor)
+                object_uri = g.value(activity_uri, AS2.object)
+
+                if object_uri is None or actor_uri is None:
+                    continue
+
                 actor_ref = Reference.objects.filter(uri=str(actor_uri)).first()
                 if actor_ref is None:
-                    return False
+                    raise AssertionError(f"Actor {actor_uri} not found")
+
                 actor_owns_object = ObjectContext.objects.filter(
                     reference__uri=str(object_uri),
                     attributed_to=actor_ref,
                 ).exists()
                 if not actor_owns_object:
-                    return False
-
-        return True
-
-    @classmethod
-    def clean_graph(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        subject_uri = rdflib.URIRef(reference.uri)
-
-        # For Create activities, generate named reference for skolemized objects
-        activity_type = g.value(subject_uri, RDF.type)
-        if activity_type == AS2.Create and source.domain:
-            object_uri = g.value(subject_uri, AS2.object)
-            if object_uri and str(object_uri).startswith(Reference.SKOLEM_BASE_URI):
-                # Generate a proper named reference for the object
-                new_ref = ObjectContext.generate_reference(source.domain)
-                new_uri = rdflib.URIRef(new_ref.uri)
-
-                # Replace all triples with the old skolem URI
-                for s, p, o in list(g.triples((object_uri, None, None))):
-                    g.remove((s, p, o))
-                    g.add((new_uri, p, o))
-
-                for s, p, o in list(g.triples((None, None, object_uri))):
-                    g.remove((s, p, o))
-                    g.add((s, p, new_uri))
+                    raise AssertionError(f"Actor {actor_uri} does not own object {object_uri}")
 
 
 class QuestionContext(AbstractContextModel):
@@ -601,9 +607,7 @@ class QuestionContext(AbstractContextModel):
         return str(AS2.Question)
 
     @classmethod
-    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference, source: Reference):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g: rdflib.Graph, reference: Reference):
         type = reference.get_value(g, predicate=RDF.type)
         return type is not None and type == AS2.Question
 

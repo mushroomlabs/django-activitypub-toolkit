@@ -9,23 +9,38 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Security validation framework for JSON-LD document processing via `should_handle_reference(g, reference, source)`
-- Skolemization of non-existent local URIs to prevent ID squatting attacks
+- Domain-based authority validation with clear separation of concerns
+- `LinkedDataDocument.sanitize_graph()` for domain filtering and blank node skolemization
+- `AbstractContextModel.validate_graph()` for context-specific validation
+- `DocumentValidationError` exception for invalid documents
+- C2S validation: generates proper IDs for blank node objects in Create activities
+- S2S validation: prevents impersonation attacks via attributedTo domain checks
 
 ### Changed
-- `should_handle_reference` now receives `source` parameter for authority validation
-- `ObjectContext` validates `attributedTo` claims against source authority
-- `ActivityContext` validates Create/Update/Delete activities for C2S authorization
-- S2S (inbox) accepts requests but filters unauthorized content; C2S (outbox) rejects unauthorized requests
-- (Lemmy Adapter) New aggregate models for tracking counts and rankings.
+- **BREAKING**: `should_handle_reference()` signature changed to `(g, reference)` - removed `source` parameter
+- **BREAKING**: Removed `Reference.trusts` ManyToManyField and `Reference.has_authority_over()` method
+- Refactored validation architecture with three distinct phases:
+  1. **Sanitization** (`sanitize_graph`): Domain filtering + skolemization (universal)
+  2. **Validation** (`validate_graph`): Security and business logic checks (context-specific)
+  3. **Type Matching** (`should_handle_reference`): Pure type/content matching (assumes validated data)
+- `LinkedDataDocument.load()` now validates all documents and rejects invalid content completely
+- S2S inbox accepts requests (202) but rejects invalid documents during async processing
+- C2S outbox validates synchronously and returns 400 for invalid requests
+- `should_handle_reference()` default implementation now returns `False` instead of `True`
+- (Lemmy Adapter) New aggregate models for tracking counts and rankings:
   - `ReactionCount` for tracking upvotes/downvotes on content
   - `RankingScore` for computing Hot, Active, Controversy, and Scaled rankings
   - `UserActivity` for tracking active users over time periods
   - `FollowerCount` for tracking subscriber counts (total and local)
   - `SubmissionCount` for tracking post/comment counts per reference
 
+### Removed
+- `Reference.trusts` ManyToManyField (domain-based authority replaces trust relationships)
+- `Reference.has_authority_over()` method (replaced by domain filtering in `sanitize_graph`)
+- Authority/security checks from `should_handle_reference()` implementations
+
 ### Fixed
- - add missing 'next' field to projections on Collection pages
+- Add missing 'next' field to projections on Collection pages
 
 ## [0.2.0] - 2026-02-06
 

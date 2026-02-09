@@ -234,3 +234,100 @@ class OutboxSecurityTestCase(TransactionTestCase):
         self.assertTrue(
             models.ObjectContext.objects.filter(reference=alice_note.reference).exists()
         )
+
+
+@override_settings(
+    FEDERATION={
+        "DEFAULT_URL": "http://testserver",
+        "FORCE_INSECURE_HTTP": True,
+        "REJECT_FOLLOW_REQUEST_CHECKS": [],
+    },
+    ALLOWED_HOSTS=["testserver"],
+)
+class C2SCreateActivityTestCase(TransactionTestCase):
+    """Test C2S Create activities with embedded objects"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.domain = DomainFactory(scheme="http", name="testserver", local=True)
+        self.actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
+        CollectionFactory(reference=self.actor.outbox, type=models.CollectionContext.Types.ORDERED)
+        self.identity = IdentityFactory(actor=self.actor)
+
+    def test_create_activity_without_ids_generates_references(self):
+        """
+        C2S: Create activity and embedded object without IDs should get
+        server-generated IDs and the object should be properly loaded.
+        """
+        self.client.force_authenticate(user=self.identity.user)
+
+        # Activity and object have no IDs - server should generate them
+        create_activity = {
+            "type": "Create",
+            "actor": "http://testserver/users/bob",
+            "object": {
+                "type": "Note",
+                "content": "Hello, world!",
+                "attributedTo": "http://testserver/users/bob",
+            },
+            "@context": "https://www.w3.org/ns/activitystreams",
+        }
+
+        response = self.client.post(
+            "/users/bob/outbox",
+            data=json.dumps(create_activity),
+            content_type="application/ld+json",
+        )
+
+        self.assertEqual(
+            response.status_code,
+            201,
+            f"Create activity should succeed, got {response.status_code}: {response.content}",
+        )
+
+        # Get the Location header which should contain the activity URI
+        activity_uri = response.headers.get("Location")
+        self.assertIsNotNone(activity_uri, "Response should include Location header")
+        self.assertTrue(
+            activity_uri.startswith("http://testserver/"),
+            f"Activity URI should be on local domain: {activity_uri}",
+        )
+        self.assertNotIn(
+            "/.well-known/genid/",
+            activity_uri,
+            "Activity URI should not be a blank node",
+        )
+
+        # Verify activity was created with proper reference
+        activity_ref = models.Reference.objects.filter(uri=activity_uri).first()
+        self.assertIsNotNone(activity_ref, f"Activity reference should exist: {activity_uri}")
+
+        activity = models.ActivityContext.objects.filter(reference=activity_ref).first()
+        self.assertIsNotNone(activity, "ActivityContext should be loaded")
+        self.assertEqual(activity.type, str(models.ActivityContext.Types.CREATE))
+
+        # Verify object was created with proper reference (not blank node)
+        self.assertIsNotNone(activity.object, "Activity should have object reference")
+        self.assertFalse(
+            activity.object.is_blank_node,
+            f"Object should have named reference, got: {activity.object.uri}",
+        )
+        self.assertTrue(
+            activity.object.uri.startswith("http://testserver/"),
+            f"Object URI should be on local domain: {activity.object.uri}",
+        )
+
+        # Verify ObjectContext was properly loaded
+        object_context = models.ObjectContext.objects.filter(reference=activity.object).first()
+        self.assertIsNotNone(
+            object_context,
+            f"ObjectContext should be loaded for object: {activity.object.uri}",
+        )
+        self.assertEqual(object_context.type, models.ObjectContext.Types.NOTE)
+        self.assertEqual(object_context.content, "Hello, world!")
+
+        # Verify attributedTo is set correctly
+        self.assertTrue(
+            object_context.attributed_to.filter(uri=self.actor.reference.uri).exists(),
+            "Object should be attributed to the actor",
+        )

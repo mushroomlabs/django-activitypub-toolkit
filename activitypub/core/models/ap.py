@@ -32,6 +32,9 @@ class Actor(ActorContext):
 
         followers_collection = self.followers.get_by_context(CollectionContext)
 
+        if followers_collection is None:
+            return Reference.objects.none()
+
         actors = Actor.objects.filter(reference__in=followers_collection.referenced_items)
 
         actors_with_inboxes = actors.annotate(

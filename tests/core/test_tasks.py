@@ -42,6 +42,10 @@ class CeleryConfigurationTestCase(TestCase):
 class NotificationProcessingTestCase(BaseTestCase):
     def setUp(self):
         self.domain = DomainFactory(scheme="http", name="testserver", local=True, port=80)
+        self.remote_domain = DomainFactory(
+            scheme="https", name="remote.example.com", local=False, port=443
+        )
+
         self.actor = ActorFactory(preferred_username="bob", reference__domain=self.domain)
 
     @httpretty.activate
@@ -56,10 +60,12 @@ class NotificationProcessingTestCase(BaseTestCase):
                 "object": "http://testserver/users/bob",
                 "@context": "https://www.w3.org/ns/activitystreams",
             },
-            reference__uri="https://remote.example.com/users/alice/follow/test-activity/",
+            reference__path="/users/alice/follow/test-activity/",
+            reference__domain=self.remote_domain,
         )
         message = NotificationFactory(
-            sender__uri="https://remote.example.com/users/alice",
+            sender__path="/users/alice",
+            sender__domain=self.remote_domain,
             target=self.actor.inbox,
             resource=document.reference,
         )

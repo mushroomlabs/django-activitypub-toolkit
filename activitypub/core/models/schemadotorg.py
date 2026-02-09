@@ -31,9 +31,7 @@ class SchemaLanguageContext(AbstractContextModel):
         return self.LanguageCodes.get_value(self.identifier)
 
     @classmethod
-    def should_handle_reference(cls, g, reference, source):
-        if not source.has_authority_over(reference):
-            return False
+    def should_handle_reference(cls, g, reference):
         return reference.get_value(g, predicate=SCHEMA.identifier) is not None
 
 

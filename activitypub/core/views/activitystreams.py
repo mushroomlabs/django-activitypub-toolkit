@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from .. import tasks
+from ..settings import app_settings
 from ..contexts import AS2
 from ..decorators import calculate_digest, collect_signature
 from ..models import (
@@ -82,10 +83,10 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
                     f"Domain from {actor_reference} is blocked", status=status.HTTP_403_FORBIDDEN
                 )
 
-            # The activity's source (its ID domain) must have authority over the actor
-            if not activity_reference.has_authority_over(actor_reference):
+            # The activity's domain must match the actor's domain to prevent spoofing
+            if activity_reference.domain != actor_reference.domain:
                 return Response(
-                    f"Activity {activity_reference.uri} has no authority over actor {actor_uri}",
+                    f"Activity domain {activity_reference.domain} does not match actor domain {actor_reference.domain}",
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
@@ -136,24 +137,18 @@ class ActivityPubObjectDetailView(LinkedDataModelView):
             if actor_uri is None:
                 raise AssertionError("Can not determine actor in activity")
 
-            Reference.make(actor_uri)
+            actor_ref = Reference.make(actor_uri)
 
-            processable_subjects = [
-                s
-                for s in g.subjects()
-                if any(
-                    [
-                        str(s).startswith(Reference.SKOLEM_BASE_URI),
-                        Reference.objects.filter(uri=str(s), domain__local=True).exists(),
-                    ]
-                )
-            ]
+            # remove triples where subjects are not from authoritative domains
+            LinkedDataDocument.sanitize_graph(g, reference.domain)
 
-            for subject_uri in processable_subjects:
+            # Validate C2S business logic
+            ActivityContext.validate_graph(g, actor_ref)
+
+            # Load data for all subjects in the sanitized graph
+            for subject_uri in set(g.subjects()):
                 subject_ref = Reference.make(uri=str(subject_uri))
-                # For C2S, use the activity reference as source since it's local
-                # and has authority over itself and embedded objects
-                subject_ref.load_context_models(g=g, source=activity_reference)
+                subject_ref.load_context_models(g=g)
 
             activity = activity_reference.get_by_context(ActivityContext)
 
