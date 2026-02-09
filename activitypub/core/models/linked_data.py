@@ -114,6 +114,9 @@ class Domain(TimeStampedModel):
         if not parsed.hostname:
             raise InvalidDomainError(f"{uri} does not have a FQDN")
 
+        if parsed.scheme not in Domain.SchemeTypes:
+            raise InvalidDomainError(f"{parsed.scheme} is not a supported scheme")
+
         match (parsed.scheme, parsed.port):
             case ("http", None):
                 port = 80
