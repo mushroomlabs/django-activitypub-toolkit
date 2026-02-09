@@ -636,6 +636,9 @@ class NotificationProcessResult(models.Model):
     result = models.PositiveSmallIntegerField(db_index=True, choices=Types.choices)
     created = models.DateTimeField(auto_now_add=True)
 
+    def __str__(self):
+        return f"Notification {self.notification_id}: {self.get_result_display()}"
+
 
 class NotificationIntegrityProof(models.Model):
     notification = models.ForeignKey(Notification, related_name="proofs", on_delete=models.CASCADE)
