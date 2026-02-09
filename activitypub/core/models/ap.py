@@ -29,9 +29,10 @@ class Actor(ActorContext):
 
     @property
     def followers_inboxes(self):
-        actors = Actor.objects.filter(
-            reference__in_collections__collection__reference=self.followers
-        )
+
+        followers_collection = self.followers.get_by_context(CollectionContext)
+
+        actors = Actor.objects.filter(reference__in=followers_collection.referenced_items)
 
         actors_with_inboxes = actors.annotate(
             shared_inbox=F("endpoints__activitypub_endpointcontext_context__shared_inbox")

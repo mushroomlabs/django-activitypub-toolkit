@@ -59,6 +59,13 @@ class BaseCollectionContext(AbstractCollectionContext):
         return qs.select_related("item").order_by(order_key)
 
     @property
+    def referenced_items(self):
+        # Gets the queryset of references that are part of the
+        # container, without any specific order
+        qs = self._get_item_queryset()
+        return Reference.objects.filter(id__in=qs.values("item"))
+
+    @property
     def highest_order_value(self):
         return self.collection_items.aggregate(highest=Max("order")).get("highest") or 0
 
@@ -74,7 +81,7 @@ class BaseCollectionContext(AbstractCollectionContext):
         return self
 
     def contains(self, item: Reference):
-        return self.collection_items.filter(item=item).exists()
+        return self.referenced_items.filter(id=item.id).exists()
 
     def remove(self, item: Reference):
         self.collection_items.filter(item=item).delete()

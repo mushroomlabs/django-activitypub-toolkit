@@ -82,7 +82,7 @@ class ActivityAdmin(ContextModelAdmin):
     list_filter = ("type",)
     date_hierarchy = "published"
     actions = (actions.do_activities,)
-    search_fields = ("reference__uri",)
+    search_fields = ("reference__uri", "object__uri")
 
     def actor(self, obj):
         return obj.actor
