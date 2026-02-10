@@ -161,9 +161,10 @@ class MastodonNoteContext(AbstractContextModel):
     voters_count = models.IntegerField(null=True, blank=True)
 
     @classmethod
-    def should_handle_reference(cls, g, reference, source):
-        """Check if this is a Mastodon Note by type + Mastodon-specific fields.
-        The `source` reference is the actor that sent the activity and is used for authority checks.
+    def should_handle_reference(cls, g, reference):
+        """Check if this is a Mastodon Note by type + Mastodon‑specific fields.
+        The method now only decides whether the reference belongs to the Mastodon vocabulary.
+        Security checks belong in ``validate_graph`` where the ``source`` reference is provided.
         """
         subject_uri = rdflib.URIRef(reference.uri)
 
@@ -172,7 +173,7 @@ class MastodonNoteContext(AbstractContextModel):
         if type_val != AS2.Note:
             return False
 
-        # Must have Mastodon-specific properties to confirm it's from Mastodon
+        # Must have at least one Mastodon‑specific property to be considered a Mastodon Note
         mastodon_fields = (
             g.value(subject=subject_uri, predicate=MASTODON.sensitive) or
             g.value(subject=subject_uri, predicate=MASTODON.atomUri) or

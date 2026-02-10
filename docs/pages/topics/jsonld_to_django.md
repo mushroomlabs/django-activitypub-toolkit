@@ -21,16 +21,11 @@ document_data = {
 }
 
 doc = LinkedDataDocument.make(document_data)
-```
+    # Load the document, passing the source Reference that performed the request
+    # (Inbox: remote actor; Outbox: local actor). This triggers sanitisation,
+    # validation, and finally type‑matching.
+    doc.load(sender)
 
-The `make()` method handles the Reference creation internally. If a document with that URI already exists, it updates the stored data rather than creating a duplicate. This idempotent behavior means you can safely reprocess documents without accumulating redundant records.
-
-## Parsing the RDF Graph
-
-The stored document must be transformed into an RDF graph so the toolkit can extract structured data. The `load()` method triggers this transformation using the rdflib library. It parses the JSON-LD into a graph of triples, each representing a subject-predicate-object statement.
-
-```python
-doc.load()
 ```
 
 This single method call orchestrates several complex operations. First, it converts the JSON-LD document into an RDF graph. The graph represents every statement in the document as triples. A note's content becomes a triple with the note's URI as subject, the content predicate as relation, and the content text as object.
@@ -84,17 +79,25 @@ This design assumes that reading data is far more common than writing data. You 
 
 The tradeoff is that the initial processing has significant overhead. For high-volume inboxes, consider processing notifications asynchronously through background tasks. The inbox view accepts the document, creates the notification record, and returns immediately. A worker process handles the parsing and context model population.
 
-## When Things Go Wrong
+### Error handling
 
-Not all JSON-LD documents are well-formed. Remote servers might send invalid data, missing required fields, or references to nonexistent resources. The toolkit handles common failure modes gracefully.
+When validation fails the toolkit raises ``DocumentValidationError``.  Views should catch this exception and return the appropriate HTTP status:
 
-If a document lacks an `id` field, `LinkedDataDocument.make()` raises a ValueError. The document cannot be stored because there's no URI to associate it with. The calling code should catch this and respond appropriately, typically by rejecting the request.
+```python
+from activitypub.core.models import DocumentValidationError
 
-If parsing into an RDF graph fails, `load()` raises a ValueError. This might happen with malformed JSON-LD or documents that violate JSON-LD syntax rules. The document record persists with its raw data, allowing manual inspection, but no context models get populated.
+def inbox_view(request):
+    try:
+        # …parse and load the document, passing the sender Reference…
+        doc.load(sender)
+    except DocumentValidationError as exc:
+        # S2S: always return 202 Accepted; the error is logged internally
+        return HttpResponse(status=202)
+    # Normal processing continues here …
+```
 
-If `should_handle_reference()` determines that a reference doesn't match a context model's criteria, that context model simply doesn't process the reference. Other context models might still process it. A resource that looks like an Actor but lacks required fields might fail to create an `ActorContext` but successfully create a basic `ObjectContext`.
+The same pattern is used for outbox handling, but the view should return ``400`` or ``403`` when validation fails because the request originates from a client.
 
-These failures are localized. One context model's failure doesn't prevent other context models from processing their data. One document's failure doesn't affect other documents. The system degrades gracefully, storing what it can and skipping what it can't interpret.
 
 ## Security Validation Overview
 

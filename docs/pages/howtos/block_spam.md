@@ -1,255 +1,141 @@
-# Block Spam or Malicious Servers
+# Block Spam and Malicious Servers
 
-This guide shows you how to block domains and servers that send unwanted or malicious ActivityPub activities.
+This guide shows you how to block domains and filter unwanted content in your federated application.
 
-## Domain Blocking
+## Block a Domain
 
-Block entire domains to prevent any federation with them:
+Block a domain to reject all activities from it:
 
 ```python
 from activitypub.core.models import Domain
 
-# Block a domain
-blocked_domain = Domain.objects.create(
-    name="spam.example",
-    local=False,
-    blocked=True
-)
+domain = Domain.objects.get(name="spam.example")
+domain.blocked = True
+domain.save()
 ```
 
-Once blocked, the toolkit will automatically reject all incoming activities from actors on that domain.
+The toolkit automatically rejects activities from blocked domains with a 403 Forbidden response at the inbox level.
 
-## Check Domain Status
+## Filter Content Before Processing
 
-Query blocked domains:
+Create a document processor to reject activities based on content:
 
 ```python
-# Get all blocked domains
-blocked_domains = Domain.objects.filter(blocked=True)
+import logging
 
-# Check if a specific domain is blocked
-domain = Domain.objects.get(name="suspicious.example")
-if domain.blocked:
-    print("Domain is blocked")
+import rdflib
+
+from activitypub.core.contexts import AS2
+from activitypub.core.exceptions import DropMessage
+from activitypub.core.models import LinkedDataDocument
+from activitypub.core.processors import DocumentProcessor
+
+logger = logging.getLogger(__name__)
+
+
+class SpamFilterProcessor(DocumentProcessor):
+    def process_incoming(self, document):
+        if not document:
+            return
+
+        try:
+            g = LinkedDataDocument.get_graph(document)
+            subject_uri = rdflib.URIRef(document["id"])
+
+            obj_uri = g.value(subject=subject_uri, predicate=AS2.object)
+            if obj_uri:
+                content = g.value(subject=obj_uri, predicate=AS2.content)
+                if content and 'spam' in str(content).lower():
+                    logger.info(f"Dropping spam activity {document['id']}")
+                    raise DropMessage("Spam content detected")
+        except (KeyError, AssertionError):
+            pass
 ```
 
-## Block Domains in Admin
-
-Use Django admin to manage blocked domains:
+Register in settings:
 
 ```python
-# In admin.py
-from django.contrib import admin
-from activitypub.core.models import Domain
-
-@admin.register(Domain)
-class DomainAdmin(admin.ModelAdmin):
-    list_display = ('name', 'local', 'blocked')
-    list_filter = ('local', 'blocked')
-    search_fields = ('name',)
-```
-
-## Automatic Blocking
-
-Implement automatic blocking based on activity patterns:
-
-```python
-from activitypub.core.signals import activity_received
-
-@receiver(activity_received)
-def check_for_spam(sender, activity, **kwargs):
-    """Automatically block domains that send spam."""
-    sender_domain = activity.sender.domain
-
-    # Check for spam patterns
-    if is_spam_activity(activity):
-        sender_domain.blocked = True
-        sender_domain.save()
-        logger.warning(f"Blocked domain {sender_domain.name} for spam")
-```
-
-## Content-Based Blocking
-
-Block activities based on content:
-
-```python
-def should_block_activity(activity):
-    """Check if activity should be blocked."""
-    obj = activity.object.get_by_context(ObjectContext)
-
-    # Block based on content
-    if obj and 'spam' in obj.content.lower():
-        return True
-
-    # Block based on actor reputation
-    if activity.actor.domain.blocked:
-        return True
-
-    return False
-
-@receiver(activity_processed)
-def block_spam_activities(sender, activity, **kwargs):
-    if should_block_activity(activity):
-        # Don't process the activity
-        return
-    # Process normally
-```
-
-## Rate Limiting
-
-Implement rate limiting to prevent abuse:
-
-```python
-from django.core.cache import cache
-
-def check_rate_limit(domain_name, max_requests=100, window=3600):
-    """Check if domain has exceeded rate limit."""
-    cache_key = f"domain_requests_{domain_name}"
-    request_count = cache.get(cache_key, 0)
-
-    if request_count >= max_requests:
-        return False  # Block
-
-    cache.set(cache_key, request_count + 1, window)
-    return True
-
-@receiver(activity_received)
-def rate_limit_domains(sender, activity, **kwargs):
-    domain_name = activity.sender.domain.name
-
-    if not check_rate_limit(domain_name):
-        activity.sender.domain.blocked = True
-        activity.sender.domain.save()
-        logger.warning(f"Rate limited and blocked domain {domain_name}")
-```
-
-## User-Level Blocking
-
-Allow users to block specific actors:
-
-```python
-class UserBlock(models.Model):
-    """User-specific blocks."""
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    blocked_actor = models.ForeignKey(Reference, on_delete=models.CASCADE)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-@receiver(activity_processed)
-def filter_blocked_actors(sender, activity, **kwargs):
-    """Filter out activities from user-blocked actors."""
-    # Check if any local user has blocked this actor
-    blocked_by_users = UserBlock.objects.filter(
-        blocked_actor=activity.actor
-    ).exists()
-
-    if blocked_by_users:
-        # Don't deliver to blocked users
-        return
-```
-
-## Moderation Queue
-
-Implement a moderation queue for suspicious activities:
-
-```python
-class ModerationQueue(models.Model):
-    """Activities requiring moderation."""
-    activity_reference = models.OneToOneField(Reference, on_delete=models.CASCADE)
-    reason = models.CharField(max_length=200)
-    moderator = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
-    approved = models.BooleanField(null=True)  # True=approved, False=rejected, None=pending
-    created_at = models.DateTimeField(auto_now_add=True)
-
-@receiver(activity_processed)
-def moderate_suspicious_activities(sender, activity, **kwargs):
-    if is_suspicious(activity):
-        ModerationQueue.objects.create(
-            activity_reference=activity.reference,
-            reason="Suspicious content"
-        )
-        # Don't process until moderated
-        return
-
-    # Process normally
-```
-
-## Server-Level Blocking
-
-Block at the server level for extreme cases:
-
-```python
-# Block all activities from a server
 FEDERATION = {
-    # ... other settings ...
-    'BLOCKED_SERVERS': [
-        'badserver.example',
-        'spamnetwork.org',
+    'DOCUMENT_PROCESSORS': [
+        'activitypub.core.processors.ActorDeletionDocumentProcessor',
+        'activitypub.core.processors.CompactJsonLdDocumentProcessor',
+        'yourapp.processors.SpamFilterProcessor',
     ],
 }
 ```
 
-## Monitoring and Alerts
+Document processors run before activities are parsed. Raising `DropMessage` prevents further processing.
 
-Set up monitoring for blocked domains:
+## Automatically Block Domains
 
-```python
-def send_block_alert(domain):
-    """Send alert when domain is blocked."""
-    # Send email, Slack notification, etc.
-    send_notification(
-        f"Domain {domain.name} has been blocked",
-        f"Reason: {domain.block_reason}"
-    )
-
-# Extend Domain model
-class Domain(models.Model):
-    # ... existing fields ...
-    block_reason = models.TextField(blank=True)
-
-    def block(self, reason=""):
-        self.blocked = True
-        self.block_reason = reason
-        self.save()
-        send_block_alert(self)
-```
-
-## Unblocking Domains
-
-Provide a way to unblock domains:
+Use signal handlers to automatically block domains based on patterns:
 
 ```python
-def unblock_domain(domain_name):
-    """Unblock a previously blocked domain."""
-    try:
-        domain = Domain.objects.get(name=domain_name, blocked=True)
-        domain.blocked = False
-        domain.block_reason = ""
+import logging
+from datetime import timedelta
+
+from django.dispatch import receiver
+from django.utils import timezone
+
+from activitypub.core.models import Activity
+from activitypub.core.signals import activity_done
+
+logger = logging.getLogger(__name__)
+
+
+@receiver(activity_done)
+def auto_block_spam_domains(sender, activity, **kwargs):
+    if not activity.actor or not activity.actor.domain:
+        return
+
+    domain = activity.actor.domain
+
+    if domain.blocked:
+        return
+
+    # Check for excessive posting (more than 100 activities per hour)
+    recent_count = Activity.objects.filter(
+        actor__domain=domain,
+        published__gte=timezone.now() - timedelta(hours=1)
+    ).count()
+
+    if recent_count > 100:
+        domain.blocked = True
         domain.save()
-        logger.info(f"Unblocked domain {domain_name}")
-    except Domain.DoesNotExist:
-        logger.warning(f"Domain {domain_name} not found or not blocked")
+        logger.warning(f"Auto-blocked domain {domain.name} for excessive posting")
 ```
 
-## Best Practices
+Register in your app's `apps.py`:
 
-- **Start permissive**: Block only when necessary
-- **Monitor patterns**: Look for abuse trends
-- **Document reasons**: Keep records of why domains were blocked
-- **Regular review**: Periodically review and unblock legitimate domains
-- **User control**: Allow users to block individual actors
-- **Graduated response**: Use warnings before blocking
+```python
+from django.apps import AppConfig
 
-## Testing Blocks
 
-Test that blocking works:
+class YourAppConfig(AppConfig):
+    name = 'yourapp'
 
-```bash
-# Try to send activity from blocked domain
-curl -X POST http://localhost:8000/users/username/inbox \
-  -H "Content-Type: application/activity+json" \
-  -d '{"type": "Like", "actor": "https://blocked.example/user", ...}'
-
-# Should receive rejection
+    def ready(self):
+        import yourapp.handlers
 ```
 
-Blocking helps maintain a healthy federated community while protecting your users from spam and abuse.
+## Understanding the Architecture
+
+The toolkit provides three levels for moderation:
+
+1. **Inbox view** - Checks `domain.blocked` before creating notifications (returns 403)
+2. **Document processors** - Filter before parsing (raise `DropMessage`)
+3. **Signal handlers** - React after processing (for automatic blocking)
+
+**Note**: In signal handlers, `activity.actor` is a `Reference` object, not a full `ActorContext`. See [Reference and Context Architecture](../topics/reference_context_architecture.md) for details.
+
+## When to Use Each Approach
+
+- **Manual blocking** - Use Django admin or management commands
+- **Content filtering** - Use document processors to raise `DropMessage`
+- **Automatic blocking** - Use `activity_done` signal handlers to analyze patterns
+
+## Further Reading
+
+- [Content Moderation Tutorial](../tutorials/content_moderation.md) - Build a complete moderation system
+- [Handle Incoming Activities](handle_incoming_activities.md) - Work with signals
+- [Reference and Context Architecture](../topics/reference_context_architecture.md) - Understand References vs Contexts

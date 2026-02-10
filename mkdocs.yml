@@ -18,6 +18,7 @@ nav:
       - Creating Custom Context Models: tutorials/creating_custom_context_models.md
       - Handling Incoming Activities: tutorials/handling_incoming_activities.md
       - Publishing to the Fediverse: tutorials/publishing_to_fediverse.md
+      - Content Moderation and Spam Prevention: tutorials/content_moderation.md
       - Integrating with your existing Django project: tutorials/integration_with_existing_project.md
       - Using it as a Standalone ActivityPub API Server: tutorials/standalone.md
 
