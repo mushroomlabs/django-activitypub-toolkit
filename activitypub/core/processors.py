@@ -2,7 +2,7 @@ import logging
 
 import rdflib
 
-from .contexts import AS2, RDF
+from .contexts import AS2, AS2_CONTEXT, RDF, SEC_V1_CONTEXT
 from .exceptions import DropMessage
 from .models import Actor, LinkedDataDocument
 
@@ -50,6 +50,15 @@ class ActorDeletionDocumentProcessor(DocumentProcessor):
             raise DropMessage
         except (KeyError, AssertionError):
             pass
+
+
+class ContextCompatibilityDocumentProcessor(DocumentProcessor):
+    def process_outgoing(self, document: dict | None):
+        if not document:
+            return
+
+        if document["@context"] == SEC_V1_CONTEXT.url:
+            document["@context"] = [AS2_CONTEXT.url, SEC_V1_CONTEXT.url]
 
 
 class CompactJsonLdDocumentProcessor(DocumentProcessor):
