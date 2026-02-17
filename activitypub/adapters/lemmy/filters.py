@@ -169,15 +169,16 @@ class PostFilter(LemmyFilterSet):
             ).order_by("-newest_comment")
 
         ranking_types = {
-            SortOrderTypes.ACTIVE: models.RankingScore.Types.ACTIVE,
-            SortOrderTypes.HOT: models.RankingScore.Types.HOT,
-            SortOrderTypes.CONTROVERSIAL: models.RankingScore.Types.CONTROVERSY,
-            SortOrderTypes.SCALED: models.RankingScore.Types.SCALED,
+            SortOrderTypes.ACTIVE: (models.RankingScore.Types.ACTIVE, "_ranked_active"),
+            SortOrderTypes.HOT: (models.RankingScore.Types.HOT, "_ranked_hot"),
+            SortOrderTypes.CONTROVERSIAL: (models.RankingScore.Types.CONTROVERSY, "_ranked_controversy"),
+            SortOrderTypes.SCALED: (models.RankingScore.Types.SCALED, "_ranked_scaled"),
         }
 
         if value in ranking_types:
-            return queryset.annotate(rank_score=ranking_subquery(ranking_types[value])).order_by(
-                "-rank_score"
+            ranking_type, attr_name = ranking_types[value]
+            return queryset.annotate(**{attr_name: ranking_subquery(ranking_type)}).order_by(
+                f"-{attr_name}"
             )
 
         time_filters = {

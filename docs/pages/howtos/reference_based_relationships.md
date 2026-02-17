@@ -306,6 +306,6 @@ Signal handlers use `sender=Model.field.through`. With `ReferenceField`:
 
 ## Next Steps
 
-- Read the [Reference-Based Relationships](../topics/reference_based_relationships.md) topic guide for deeper understanding
+- Read the [References and Context Models](../topics/reference_context_architecture.md) topic guide for deeper understanding
 - Explore [Handling Incoming Activities](handle_incoming_activities.md) for processing federated content
 - Learn about [Sending Activities](send_activities.md) to publish content to the Fediverse

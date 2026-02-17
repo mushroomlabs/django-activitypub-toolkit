@@ -9,6 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `ContextAwareQuerySet` and `ContextAwareManager`: queryset/manager classes that rewrite
+  `RelatedContextField` names (e.g. `as2`, `lemmy`) into their ORM join paths, enabling
+  `filter()`, `exclude()`, `order_by()`, `annotate()`, `values()`, and `values_list()` to
+  reference context fields directly. `with_contexts(*names)` prefetches context rows via
+  `select_related` and populates a per-instance cache that eliminates N+1 queries on iteration.
+  `ContextAwareInheritanceQuerySet` / `ContextAwareInheritanceManager` extend these with
+  `select_subclasses()` support for MTI models.
 - Domain-based authority validation with clear separation of concerns
 - `LinkedDataDocument.sanitize_graph()` for domain filtering and blank node skolemization
 - `AbstractContextModel.validate_graph()` for context-specific validation

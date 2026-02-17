@@ -26,6 +26,8 @@ database migrations required for the toolkit's models.
 
 **[Working with Reference-Based Relationships](reference_based_relationships.md)** - Use ReferenceField and RelatedContextField to work with federated data structures without requiring persistence.
 
+**[Query Context Data Efficiently](query_context_data.md)** - Use ContextAwareQuerySet to filter, order, and prefetch context fields without verbose join paths or N+1 queries.
+
 **[Federate Existing Content](federate_existing_content.md)** - Add
 federation capabilities to your existing Django models and content.
 

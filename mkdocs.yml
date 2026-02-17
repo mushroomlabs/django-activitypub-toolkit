@@ -44,6 +44,7 @@ nav:
       - Install the Toolkit: howtos/install_toolkit.md
       - Configure the Toolkit: howtos/configure_toolkit.md
       - Run Database Migrations: howtos/run_migrations.md
+      - Query Context Data Efficiently: howtos/query_context_data.md
       - Federate Existing Content: howtos/federate_existing_content.md
       - Handle Incoming Activities: howtos/handle_incoming_activities.md
       - Send Activities: howtos/send_activities.md

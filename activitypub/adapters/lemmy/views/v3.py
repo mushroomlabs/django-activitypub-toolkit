@@ -1,4 +1,4 @@
-from django.db.models import F, Value
+from django.db.models import F, Prefetch, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -550,7 +550,7 @@ class ListPostsView(LemmyListAPIView):
     Get / fetch posts, with various filters.
     """
 
-    queryset = models.Post.objects.all()
+    queryset = models.Post.objects.with_contexts("as2", "lemmy").all()
     serializer_class = serializers.PostViewSerializer
     filter_backends = [DjangoFilterBackend]
     filterset_class = filters.PostFilter
@@ -558,7 +558,20 @@ class ListPostsView(LemmyListAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return queryset.select_related("community")
+        return (
+            queryset.select_related(
+                "community",
+                "community__reference",
+                "reference__reaction_count",
+                "reference__reply_count",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "community__community_data",
+                    queryset=models.Community.objects.with_contexts("as2", "lemmy"),
+                )
+            )
+        )
 
 
 class PostLikeView(LemmyAPIView):

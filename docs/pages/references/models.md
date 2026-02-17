@@ -112,6 +112,24 @@ These models store ActivityStreams 2.0 vocabulary data attached to references.
     options:
       heading_level: 4
 
+### Context-Aware QuerySets
+
+::: activitypub.core.models.managers.ContextAwareQuerySet
+    options:
+      heading_level: 4
+
+::: activitypub.core.models.managers.ContextAwareManager
+    options:
+      heading_level: 4
+
+::: activitypub.core.models.managers.ContextAwareInheritanceQuerySet
+    options:
+      heading_level: 4
+
+::: activitypub.core.models.managers.ContextAwareInheritanceManager
+    options:
+      heading_level: 4
+
 ## Social Features
 
 ::: activitypub.core.models.FollowRequest

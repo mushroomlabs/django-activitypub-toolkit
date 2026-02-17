@@ -950,6 +950,15 @@ class PostAggregatesSerializer(serializers.Serializer):
             return None
 
     def _get_ranking(self, obj, ranking_type):
+        # Use annotated value from queryset when available (avoids per-post queries)
+        annotation = {
+            models.RankingScore.Types.HOT: "_ranked_hot",
+            models.RankingScore.Types.ACTIVE: "_ranked_active",
+            models.RankingScore.Types.CONTROVERSY: "_ranked_controversy",
+            models.RankingScore.Types.SCALED: "_ranked_scaled",
+        }.get(ranking_type)
+        if annotation is not None and hasattr(obj, annotation):
+            return getattr(obj, annotation) or 0.0
         ranking = obj.reference.rankings.filter(type=ranking_type).first()
         return ranking.score if ranking else 0.0
 

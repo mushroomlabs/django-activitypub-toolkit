@@ -7,7 +7,6 @@ import mmh3
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
-from model_utils.managers import InheritanceManager
 from model_utils.models import TimeStampedModel
 from rdflib import RDF, Graph
 from taggit.managers import TaggableManager
@@ -37,6 +36,7 @@ from activitypub.core.models import (
 )
 from activitypub.core.models import Language as BaseLanguage
 from activitypub.core.models.fields import RelatedContextField
+from activitypub.core.models.managers import ContextAwareInheritanceManager
 
 from ..choices import ListingTypes, PostListingModes, SortOrderTypes
 
@@ -135,7 +135,7 @@ class LemmyObject(models.Model):
         Reference, related_name="lemmy_%(class)ss", on_delete=models.CASCADE
     )
 
-    objects = InheritanceManager()
+    objects = ContextAwareInheritanceManager()
 
     as2 = RelatedContextField(ObjectContext)
     lemmy = RelatedContextField(LemmyContextModel)

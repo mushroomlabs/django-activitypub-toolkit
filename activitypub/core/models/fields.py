@@ -589,6 +589,25 @@ class ReferenceRelatedManager:
         return f"<ReferenceRelatedManager for {self.source_model.__name__}.{self.field.name}>"
 
 
+def _get_from_fields_cache(reference, ctx_class):
+    """Return a context model only if it is already in Django's fields_cache.
+
+    Checks ``_state.fields_cache`` at each step of the join path without
+    triggering any SQL query.  Used internally by ``ContextAwareQuerySet.__iter__``
+    to harvest select_related data at queryset evaluation time.
+    Returns ``None`` when any segment is absent.
+    """
+    join_path = get_context_join_path(ctx_class)
+    # join_path is "reference__<related_name>[__mti_child]"; strip leading segment
+    attr_path = join_path[len("reference__"):]
+    obj = reference
+    for part in attr_path.split("__"):
+        if not hasattr(obj, "_state") or part not in obj._state.fields_cache:
+            return None
+        obj = obj._state.fields_cache[part]
+    return obj
+
+
 class ContextProxy:
     def __init__(self, reference, context_class):
         object.__setattr__(self, "__reference", reference)
@@ -600,7 +619,13 @@ class ContextProxy:
         if object.__getattribute__(self, "__instance") is None:
             reference = object.__getattribute__(self, "__reference")
             ctx_class = object.__getattribute__(self, "__context_class")
-            context = reference.get_by_context(ctx_class) or ctx_class(reference=reference)
+            # Use the explicit prefetch cache set by ContextAwareQuerySet.__iter__
+            # when with_contexts() was used.  This is isolated from Django's normal
+            # field cache so it is never stale from create()/save() operations.
+            ctx_prefetch = getattr(reference, "_ctx_prefetch", {})
+            context = ctx_prefetch.get(ctx_class)
+            if context is None:
+                context = reference.get_by_context(ctx_class) or ctx_class(reference=reference)
             object.__setattr__(self, "__instance", context)
         return object.__getattribute__(self, "__instance")
 
@@ -645,6 +670,17 @@ class RelatedContextField:
         self.name = name
         self.cache_name = f"_cached_proxy_{name}"
 
+        # Register on the owner class, copying parent fields to avoid dict sharing
+        if "_related_context_fields" not in owner.__dict__:
+            parent_fields = {}
+            for parent in owner.__mro__[1:]:
+                if "_related_context_fields" in parent.__dict__:
+                    parent_fields = dict(parent._related_context_fields)
+                    break
+            owner._related_context_fields = parent_fields
+
+        owner._related_context_fields[name] = self
+
     def __get__(self, instance, owner=None):
         if instance is None:
             return self
@@ -657,4 +693,59 @@ class RelatedContextField:
         return getattr(instance, self.cache_name)
 
 
-__all__ = ("ReferenceField", "RelatedContextField")
+def get_context_join_path(context_class):
+    """Return the ORM traversal string to join from the owner model to the given context class.
+
+    Traverses reference → OneToOneField back-relation on the concrete ancestor, then adds
+    MTI pointer segments down to context_class if it is a multi-table inheritance child.
+    """
+    # Find the concrete ancestor that has `reference` as a local DB column.
+    # Abstract ancestors define the field, but the first concrete class owns the column.
+    reference_owner = None
+    for cls in context_class.__mro__:
+        if not hasattr(cls, "_meta") or cls._meta.abstract:
+            continue
+        if any(f.name == "reference" for f in cls._meta.local_fields):
+            reference_owner = cls
+            break
+
+    if reference_owner is None:
+        raise ValueError(f"{context_class} has no 'reference' field in its hierarchy")
+
+    field = reference_owner._meta.get_field("reference")
+    related_name = field.remote_field.related_name
+
+    # Django substitutes %(app_label)s/%(class)s on concrete classes, but
+    # the raw template may still be present if accessed on an abstract model.
+    if "%" in related_name:
+        related_name = related_name % {
+            "app_label": reference_owner._meta.app_label,
+            "class": reference_owner.__name__.lower(),
+        }
+
+    base_path = f"reference__{related_name}"
+
+    if context_class is reference_owner:
+        return base_path
+
+    # Build the MTI traversal from reference_owner down to context_class.
+    # Walk from child toward parent, collecting class names, then reverse.
+    mti_segments = []
+    current = context_class
+    while current is not reference_owner:
+        mti_segments.append(current.__name__.lower())
+        mti_parent = next(
+            (b for b in current.__bases__ if hasattr(b, "_meta") and not b._meta.abstract),
+            None,
+        )
+        if mti_parent is None:
+            raise ValueError(
+                f"Cannot find MTI path from {reference_owner.__name__} to {context_class.__name__}"
+            )
+        current = mti_parent
+
+    mti_segments.reverse()
+    return f"{base_path}__{'__'.join(mti_segments)}"
+
+
+__all__ = ("ReferenceField", "RelatedContextField", "get_context_join_path")
