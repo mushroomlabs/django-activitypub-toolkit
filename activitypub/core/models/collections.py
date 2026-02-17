@@ -87,10 +87,13 @@ class BaseCollectionContext(AbstractCollectionContext):
         self.collection_items.filter(item=item).delete()
 
     def append(self, item: Reference) -> "CollectionItem":
-        existing = CollectionItem.objects.filter(item=item, collection=self).first()
-
-        if existing is not None:
-            return existing
+        if self.contains(item):
+            return (
+                CollectionItem.objects.filter(item=item, collection=self).first()
+                or CollectionItem.objects.filter(
+                    item=item, collection__collectionpagecontext__part_of=self.reference
+                ).first()
+            )
 
         target = self._get_append_target()
         target_size = target.collection_items.count()
@@ -99,7 +102,15 @@ class BaseCollectionContext(AbstractCollectionContext):
         if new_item_order >= CollectionItem.MAX_ORDER_VALUE:
             new_item_order = (CollectionItem.MAX_ORDER_VALUE + new_item_order) / 2.0
 
-        return CollectionItem.objects.create(order=new_item_order, item=item, collection=target)
+        collection_item = CollectionItem.objects.create(
+            order=new_item_order, item=item, collection=target
+        )
+
+        # To make sure we can keep multiple items without losing track of created objects
+        if target != self:
+            self.refresh_from_db()
+
+        return collection_item
 
     class Meta:
         ordering = ("reference__uri",)
@@ -152,11 +163,20 @@ class CollectionContext(BaseCollectionContext):
 
     def _get_append_target(self):
         if not self.pages.exists():
-            return self
+            if self.collection_items.count() < CollectionPageContext.PAGE_SIZE:
+                return self
+            return self.make_page()
 
-        if self.last is not None:
-            last_page = self.last.get_by_context(CollectionPageContext)
-            return last_page._get_append_target()
+        if self.is_ordered:
+            # Ordered collections get items append to beginning, i.e, first page
+            if self.first is not None:
+                first_page = self.first.get_by_context(CollectionPageContext)
+                return first_page._get_append_target()
+        else:
+            # unordered collections get items append to end, i.e, last page
+            if self.last is not None:
+                last_page = self.last.get_by_context(CollectionPageContext)
+                return last_page._get_append_target()
 
         return self.make_page()
 
@@ -177,16 +197,27 @@ class CollectionContext(BaseCollectionContext):
             type=page_types.ORDERED if self.is_ordered else page_types.UNORDERED,
         )
 
-        if self.first is None:
+        is_first_page = self.first is None
+        if is_first_page:
+            for item in self.collection_items.all():
+                item.collection = new_page
+                item.save()
+            self.first = reference
+            self.last = reference
+            self.save()
+        elif self.is_ordered:
+            old_first = CollectionPageContext.objects.filter(reference=self.first).first()
+            new_page.next = self.first
+            if old_first:
+                old_first.previous = reference
+                old_first.save()
             self.first = reference
             self.save()
-
-        if self.last is not None:
-            last_page = CollectionPageContext.objects.filter(reference=self.last).first()
-            last_page.next = reference
-            new_page.previous = last_page.reference
-            last_page.save()
         else:
+            old_last = CollectionPageContext.objects.filter(reference=self.last).first()
+            old_last.next = reference
+            new_page.previous = self.last
+            old_last.save()
             self.last = reference
             self.save()
 
@@ -255,15 +286,8 @@ class CollectionPageContext(BaseCollectionContext):
         return self.type == self.Types.ORDERED
 
     def _get_append_target(self):
-        current_page = self
-
-        while (current_page and current_page.next) is not None:
-            current_page = CollectionPageContext.objects.filter(
-                reference=current_page.next
-            ).first()
-
-        if current_page.collection_items.count() < self.PAGE_SIZE:
-            return current_page
+        if self.collection_items.count() < self.PAGE_SIZE:
+            return self
 
         return self.part_of.get_by_context(CollectionContext).make_page()
 
