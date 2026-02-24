@@ -59,7 +59,7 @@ class EmbeddedCollectionPageProjection(BaseCollectionProjection):
     CONTEXT_MODEL = CollectionPageContext
 
     class Meta:
-        fields = (RDF.type, AS2.items, AS2.orderedItems, AS2.totalItems, AS2.next)
+        fields = (RDF.type, AS2.items, AS2.orderedItems, AS2.totalItems, AS2.prev, AS2.next)
 
 
 class CollectionProjection(BaseCollectionProjection):
@@ -80,7 +80,7 @@ class CollectionWithFirstPageProjection(BaseCollectionProjection):
         return None
 
     class Meta:
-        omit = (AS2.items, AS2.orderedItems, AS2.last)
+        omit = (AS2.items, AS2.orderedItems)
         overrides = {AS2.first: EmbeddedCollectionPageProjection}
 
 
