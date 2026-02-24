@@ -113,6 +113,7 @@ class SecV1ContextAdmin(ContextModelAdmin):
 class CollectionAdmin(admin.ModelAdmin):
     list_display = ("uri", "name", "type", "total_items")
     list_filter = ("type",)
+    search_fields = ("reference__uri",)
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -121,6 +122,7 @@ class CollectionAdmin(admin.ModelAdmin):
 @admin.register(models.CollectionPageContext)
 class CollectionPageAdmin(admin.ModelAdmin):
     list_display = ("uri", "name")
+    search_fields = ("reference__uri",)
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -128,37 +130,39 @@ class CollectionPageAdmin(admin.ModelAdmin):
 
 @admin.register(models.CollectionItem)
 class CollectionItemAdmin(admin.ModelAdmin):
-    list_display = ("get_collection", "get_collection_name", "get_item", "order")
+    list_display = ("get_collection_uri", "get_item", "get_item_type", "order")
     list_select_related = ("item",)
     search_fields = ("item__uri",)
+    ordering = ("collection__reference__uri", "order")
 
     def get_search_results(self, request, queryset, search_term):
         pages = models.CollectionPageContext.objects.filter(part_of__uri=search_term).values_list(
             "id", flat=True
         )
-
-        queryset = queryset.order_by("order")
-
         if pages:
-            queryset = models.CollectionItem.objects.filter(
-                container_object_id__in=pages
-            ).order_by("order")
+            queryset = models.CollectionItem.objects.filter(collection__in=pages).order_by("order")
             return queryset, False
 
         collection = models.CollectionContext.objects.filter(reference__uri=search_term).first()
         if collection:
-            queryset = models.CollectionItem.objects.filter(
-                container_object_id=collection.id
-            ).order_by("order")
+            queryset = models.CollectionItem.objects.filter(collection_id=collection.id)
             return queryset, False
 
         return super().get_search_results(request, queryset, search_term)
 
-    @admin.display(description="Collection")
     def get_collection(self, obj):
-        return (
-            BaseCollectionContext.objects.filter(id=obj.collection_id).select_subclasses().first()
+        collection = (
+            BaseCollectionContext.objects.filter(id=obj.collection_id)
+            .select_subclasses()
+            .select_related("reference")
+            .first()
         )
+        return collection
+
+    @admin.display(description="URI")
+    def get_collection_uri(self, obj):
+        collection = self.get_collection(obj)
+        return collection.reference.uri
 
     @admin.display(description="Collection Name")
     def get_collection_name(self, obj):
@@ -168,6 +172,15 @@ class CollectionItemAdmin(admin.ModelAdmin):
     @admin.display(description="Item")
     def get_item(self, obj):
         return obj.item.uri
+
+    @admin.display(description="Item Type")
+    def get_item_type(self, obj):
+        as2_object = (
+            models.BaseAs2ObjectContext.objects.filter(reference=obj.item)
+            .select_subclasses()
+            .first()
+        )
+        return as2_object and as2_object.type
 
     def has_change_permission(self, request, obj=None):
         return False

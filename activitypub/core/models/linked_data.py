@@ -536,9 +536,11 @@ class AbstractContextModel(models.Model):
         # "FOR UPDATE cannot be applied to the nullable side of an
         # outer join". So let's first create the object, then update the values.
 
-        obj = cls.make(reference=reference)
-        cls.objects.filter(reference=reference).update(**attrs)
-        obj.refresh_from_db()
+        if cls.objects.filter(reference=reference).exists():
+            cls.objects.filter(reference=reference).update(**attrs)
+            obj = cls.objects.filter(reference=reference).first()
+        else:
+            obj = cls.objects.create(reference=reference, **attrs)
 
         # Handle reference FKs after save
 

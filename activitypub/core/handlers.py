@@ -1,5 +1,6 @@
 import logging
 
+from django.db.models import Q
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -8,7 +9,7 @@ from . import tasks
 from .exceptions import RejectedFollowRequest
 from .models.ap import ActivityPubServer, Actor, FollowRequest
 from .models.as2 import ActivityContext, BaseAs2ObjectContext, ObjectContext
-from .models.collections import CollectionContext
+from .models.collections import CollectionContext, CollectionItem, CollectionPageContext
 from .models.linked_data import Domain, LinkedDataDocument, Notification
 from .settings import app_settings
 from .signals import document_loaded, notification_accepted, reference_field_changed
@@ -138,12 +139,65 @@ def on_notification_accepted_process_standard_flows(sender, **kw):
 
     tasks.process_standard_activity_flows(activity_uri=notification.resource.uri)
 
+    sender = notification.sender.get_by_context(Actor)
+    activity = notification.resource.get_by_context(ActivityContext)
+
+    if sender is None:
+        return
+
+    if activity is None:
+        return
+
+    local_ref_q = Q(reference__domain__local=True)
+    to_q = Q(reference__in=activity.to.all())
+    cc_q = Q(reference__in=activity.cc.all())
+    bto_q = Q(reference__in=activity.bto.all())
+    bcc_q = Q(reference__in=activity.bcc.all())
+
+    send_to_followers = (
+        sender.followers is not None
+        and CollectionContext.objects.filter(
+            Q(reference=sender.followers) & (to_q | cc_q | bto_q | bcc_q)
+        ).exists()
+    )
+
+    target_actors = Actor.objects.filter(local_ref_q & (to_q | cc_q | bto_q | bcc_q))
+
+    if send_to_followers:
+        collection_items = CollectionItem.objects.filter(item=notification.sender)
+        pages = CollectionPageContext.objects.filter(collection_items__in=collection_items)
+        collections = CollectionContext.objects.filter(
+            Q(collection_items__in=collection_items) | Q(reference__in=pages.values("part_of"))
+        )
+
+        follower_actors = Actor.objects.filter(
+            following__in=collections.values("reference")
+        ).distinct()
+    else:
+        follower_actors = Actor.objects.none()
+
+    direct_addressing_q = Q(reference__in=target_actors.values("reference"))
+    following_address_q = Q(reference__in=follower_actors.values("reference"))
+    actors = Actor.objects.filter(direct_addressing_q | following_address_q)
+
+    inbox_references = actors.values("inbox")
+    inboxes = CollectionContext.objects.filter(reference__in=inbox_references)
+
+    for inbox in inboxes.iterator():
+        inbox.append(item=notification.resource)
+
 
 @receiver(document_loaded, sender=LinkedDataDocument)
 def on_lemmy_activity_document_loaded_mark_unresolvable(sender, **kw):
     try:
         doc = kw["document"]
-        if doc.reference.domain.instance.software_family != ActivityPubServer.Software.LEMMY:
+        instance, created = ActivityPubServer.objects.get_or_create(
+            domain_id=doc.reference.domain_id
+        )
+        if created:
+            instance.get_nodeinfo()
+
+        if instance.software_family != ActivityPubServer.Software.LEMMY:
             # Not a Lemmy server
             return
 

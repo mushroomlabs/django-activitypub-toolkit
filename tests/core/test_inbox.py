@@ -2,6 +2,7 @@ import json
 import re
 
 import httpretty
+from django.db.models import Q
 from django.test import TransactionTestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -12,7 +13,9 @@ from activitypub.core.factories import (
     CollectionFactory,
     DomainFactory,
     ObjectFactory,
+    ReferenceFactory,
 )
+from activitypub.core.signals import notification_accepted
 from tests.core.base import (
     silence_notifications,
     use_nodeinfo,
@@ -727,4 +730,294 @@ class InboxSecurityTestCase(TransactionTestCase):
             response.status_code,
             [400, 401, 403],
             f"Should reject activity with spoofed actor, got {response.status_code}",
+        )
+
+
+@override_settings(
+    FEDERATION={
+        "DEFAULT_URL": "http://testserver",
+        "FORCE_INSECURE_HTTP": True,
+        "REJECT_FOLLOW_REQUEST_CHECKS": [],
+    },
+    ALLOWED_HOSTS=["testserver"],
+)
+class TestSharedInboxDelivery(TransactionTestCase):
+    """Tests for routing activities from a shared inbox to individual actor inboxes.
+
+    Tests the handler on_notification_accepted_process_standard_flows by directly
+    creating notifications and firing notification_accepted, bypassing HTTP/view layer.
+
+    Setup:
+    - Alice and Bob are local actors, each with their own inbox.
+    - Both have EndpointContext entries pointing to the same shared inbox.
+    - Charlie (remote-a) is followed by Alice.
+    - David (remote-b) is followed by Bob.
+    - Eve (evil) is not followed by anyone.
+    """
+
+    def setUp(self):
+        self.domain = DomainFactory(scheme="http", name="testserver", local=True)
+
+        # Shared inbox reference and collection
+        self.shared_inbox_ref = ReferenceFactory(domain=self.domain, path="/inbox")
+        CollectionFactory(reference=self.shared_inbox_ref)
+
+        # EndpointContext entries for server endpoints (shared inbox, proxy, etc)
+        server_endpoints_ref = ReferenceFactory(domain=self.domain)
+        models.EndpointContext.objects.create(
+            reference=server_endpoints_ref, shared_inbox=str(self.shared_inbox_ref.uri)
+        )
+
+        # Alice - local actor with own inbox
+        self.alice = ActorFactory(preferred_username="alice", reference__domain=self.domain)
+        CollectionFactory(reference=self.alice.inbox)
+
+        # Bob - local actor with own inbox
+        self.bob = ActorFactory(preferred_username="bob", reference__domain=self.domain)
+        CollectionFactory(reference=self.bob.inbox)
+        self.alice.endpoints = server_endpoints_ref
+        self.alice.save()
+
+        self.bob.endpoints = server_endpoints_ref
+        self.bob.save()
+
+        # Remote actors
+        charlie_domain = DomainFactory(scheme="https", name="remote-a.example.com")
+        self.charlie = ActorFactory(preferred_username="charlie", reference__domain=charlie_domain)
+
+        david_domain = DomainFactory(scheme="https", name="remote-b.example.com")
+        self.david = ActorFactory(preferred_username="david", reference__domain=david_domain)
+
+        eve_domain = DomainFactory(scheme="https", name="evil.example.com")
+        self.eve = ActorFactory(preferred_username="eve", reference__domain=eve_domain)
+
+        # Follow relationships: alice follows charlie, bob follows david.
+        # Nobody follows eve.
+        self._establish_follow(self.alice, self.charlie)
+        self._establish_follow(self.bob, self.david)
+
+    def _establish_follow(self, follower, followed):
+        """Populate followers/following collections directly (no signals)."""
+        models.CollectionContext.make(followed.followers).append(item=follower.reference)
+        models.CollectionContext.make(follower.following).append(item=followed.reference)
+
+    def _create_activity_addressed_to(self, sender_actor, addressed_to):
+        """Create an ActivityContext with proper addressing and return its reference."""
+        activity = ActivityFactory(
+            type=models.ActivityContext.Types.CREATE, actor=sender_actor.reference
+        )
+        # Add addressing
+        for recipient in addressed_to:
+            activity.to.add(recipient)
+        return activity.reference
+
+    def _fire_notification(self, sender_actor, resource_ref):
+        """Create a Notification targeting the shared inbox and fire notification_accepted."""
+        notification = models.Notification(
+            sender=sender_actor.reference, target=self.shared_inbox_ref, resource=resource_ref
+        )
+        notification.save()
+        notification_accepted.send(notification=notification, sender=models.Notification)
+        return notification
+
+    def _get_inbox(self, actor):
+        return models.CollectionContext.objects.get(reference=actor.inbox)
+
+    # ── Delivery to individual inboxes ──
+
+    def test_activity_to_shared_inbox_placed_in_alice_inbox(self):
+        """An activity addressed to Alice should appear in Alice's inbox."""
+        activity_ref = self._create_activity_addressed_to(self.charlie, [self.alice.reference])
+        self._fire_notification(self.charlie, activity_ref)
+
+        self.assertTrue(
+            self._get_inbox(self.alice).contains(activity_ref),
+            "Activity addressed to Alice should appear in Alice's inbox",
+        )
+
+    def test_activity_to_shared_inbox_placed_in_bob_inbox(self):
+        """An activity addressed to Bob should appear in Bob's inbox."""
+        activity_ref = self._create_activity_addressed_to(self.charlie, [self.bob.reference])
+        self._fire_notification(self.charlie, activity_ref)
+
+        self.assertTrue(
+            self._get_inbox(self.bob).contains(activity_ref),
+            "Activity addressed to Bob should appear in Bob's inbox",
+        )
+
+    def test_activity_addressed_to_both_actors_delivered_to_both(self):
+        """An activity addressed to both Alice and Bob should be delivered to both."""
+        activity_ref = self._create_activity_addressed_to(
+            self.charlie, [self.alice.reference, self.bob.reference]
+        )
+        self._fire_notification(self.charlie, activity_ref)
+
+        self.assertTrue(
+            self._get_inbox(self.alice).contains(activity_ref),
+            "Activity addressed to Alice should be in Alice's inbox",
+        )
+        self.assertTrue(
+            self._get_inbox(self.bob).contains(activity_ref),
+            "Activity addressed to Bob should be in Bob's inbox",
+        )
+
+    # ── Multiple remote actors ──
+
+    def test_activities_from_different_remote_actors_both_delivered(self):
+        """Activities from charlie and david addressed to both alice and bob
+        should be placed in both inboxes."""
+        charlie_activity = self._create_activity_addressed_to(
+            self.charlie, [self.alice.reference, self.bob.reference]
+        )
+        david_activity = self._create_activity_addressed_to(
+            self.david, [self.alice.reference, self.bob.reference]
+        )
+
+        self._fire_notification(self.charlie, charlie_activity)
+        self._fire_notification(self.david, david_activity)
+
+        alice_inbox = self._get_inbox(self.alice)
+        bob_inbox = self._get_inbox(self.bob)
+
+        self.assertTrue(
+            alice_inbox.contains(charlie_activity),
+            "Charlie's activity should be in Alice's inbox",
+        )
+        self.assertTrue(
+            alice_inbox.contains(david_activity),
+            "David's activity should be in Alice's inbox",
+        )
+        self.assertTrue(
+            bob_inbox.contains(charlie_activity),
+            "Charlie's activity should be in Bob's inbox",
+        )
+        self.assertTrue(
+            bob_inbox.contains(david_activity),
+            "David's activity should be in Bob's inbox",
+        )
+
+    # ── Duplicate handling ──
+
+    def test_duplicate_notification_does_not_duplicate_inbox_items(self):
+        """Firing notification_accepted twice with the same resource should
+        not create duplicate entries in individual inboxes."""
+        activity_ref = self._create_activity_addressed_to(self.charlie, [self.alice.reference])
+
+        self._fire_notification(self.charlie, activity_ref)
+        self._fire_notification(self.charlie, activity_ref)
+
+        alice_inbox = self._get_inbox(self.alice)
+        item_count = (
+            models.CollectionItem.objects.filter(item=activity_ref)
+            .filter(
+                Q(collection=alice_inbox)
+                | Q(collection__collectionpagecontext__part_of=alice_inbox.reference)
+            )
+            .count()
+        )
+
+        self.assertEqual(item_count, 1, "Activity should appear exactly once in Alice's inbox")
+
+    # ── Security: Malicious actor (Eve) ──
+
+    def test_eve_activity_not_in_alice_inbox_when_not_followed(self):
+        """Eve (not followed by anyone) sends to the shared inbox. Her activity
+        should NOT appear in Alice's individual inbox."""
+        eve_activity = ReferenceFactory(domain=self.eve.reference.domain)
+        self._fire_notification(self.eve, eve_activity)
+
+        self.assertFalse(
+            self._get_inbox(self.alice).contains(eve_activity),
+            "Eve's unsolicited activity should NOT appear in Alice's inbox",
+        )
+
+    def test_eve_activity_not_in_bob_inbox_when_not_followed(self):
+        """Eve (not followed by anyone) sends to the shared inbox. Her activity
+        should NOT appear in Bob's individual inbox."""
+        eve_activity = ReferenceFactory(domain=self.eve.reference.domain)
+        self._fire_notification(self.eve, eve_activity)
+
+        self.assertFalse(
+            self._get_inbox(self.bob).contains(eve_activity),
+            "Eve's unsolicited activity should NOT appear in Bob's inbox",
+        )
+
+    def test_eve_activity_addressed_to_alice_does_reach_alice(self):
+        """Even though Eve is not followed, if she directly addresses Alice,
+        the activity should reach Alice's inbox (direct addressing works)."""
+        eve_activity = self._create_activity_addressed_to(self.eve, [self.alice.reference])
+        self._fire_notification(self.eve, eve_activity)
+
+        self.assertTrue(
+            self._get_inbox(self.alice).contains(eve_activity),
+            "Eve's activity directly addressed to Alice should reach Alice's inbox",
+        )
+
+    def test_eve_activity_not_in_inboxes_even_with_many_notifications(self):
+        """Eve sends multiple activities. None should end up in individual inboxes."""
+        activities = [ReferenceFactory(domain=self.eve.reference.domain) for _ in range(3)]
+        for activity_ref in activities:
+            self._fire_notification(self.eve, activity_ref)
+
+        alice_inbox = self._get_inbox(self.alice)
+        bob_inbox = self._get_inbox(self.bob)
+
+        for activity_ref in activities:
+            self.assertFalse(
+                alice_inbox.contains(activity_ref),
+                f"Eve's activity {activity_ref.uri} should NOT be in Alice's inbox",
+            )
+            self.assertFalse(
+                bob_inbox.contains(activity_ref),
+                f"Eve's activity {activity_ref.uri} should NOT be in Bob's inbox",
+            )
+
+    # ── Actors without shared inbox should not be affected ──
+
+    def test_actor_without_endpoint_context_not_affected(self):
+        """A local actor without an EndpointContext pointing to the shared inbox
+        should NOT receive activities sent to that shared inbox."""
+        carol = ActorFactory(
+            preferred_username="carol",
+            reference__domain=self.domain,
+        )
+        CollectionFactory(reference=carol.inbox)
+        # Carol has no EndpointContext → no shared_inbox association
+
+        activity_ref = ReferenceFactory(domain=self.charlie.reference.domain)
+        self._fire_notification(self.charlie, activity_ref)
+
+        carol_inbox = models.CollectionContext.objects.get(reference=carol.inbox)
+        self.assertFalse(
+            carol_inbox.contains(activity_ref),
+            "Carol (no shared inbox endpoint) should NOT receive the activity",
+        )
+
+    def test_actor_with_different_shared_inbox_not_affected(self):
+        """A local actor whose EndpointContext points to a DIFFERENT shared inbox
+        should NOT receive activities sent to the original shared inbox."""
+        other_shared_inbox = ReferenceFactory(domain=self.domain, path="/other-inbox")
+        CollectionFactory(reference=other_shared_inbox)
+
+        carol = ActorFactory(
+            preferred_username="carol",
+            reference__domain=self.domain,
+        )
+        CollectionFactory(reference=carol.inbox)
+
+        carol_ep_ref = ReferenceFactory(domain=self.domain, path="/users/carol/endpoints")
+        models.EndpointContext.objects.create(
+            reference=carol_ep_ref,
+            shared_inbox=str(other_shared_inbox.uri),
+        )
+        carol.endpoints = carol_ep_ref
+        carol.save()
+
+        activity_ref = ReferenceFactory(domain=self.charlie.reference.domain)
+        self._fire_notification(self.charlie, activity_ref)
+
+        carol_inbox = models.CollectionContext.objects.get(reference=carol.inbox)
+        self.assertFalse(
+            carol_inbox.contains(activity_ref),
+            "Carol (different shared inbox) should NOT receive the activity",
         )

@@ -125,6 +125,9 @@ class CollectionItem(models.Model):
     order = models.FloatField(default=0.0)
     created = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ("item", "collection")
+
 
 class CollectionContext(BaseCollectionContext):
     class Types(models.TextChoices):

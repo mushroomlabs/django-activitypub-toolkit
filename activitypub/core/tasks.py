@@ -73,7 +73,8 @@ def resolve_reference(uri, force=True):
 def process_incoming_notification(notification_id):
     try:
         notification = Notification.objects.get(id=notification_id)
-        notification.authenticate(fetch_missing_keys=True)
+        if not notification.is_verified:
+            notification.authenticate(fetch_missing_keys=True)
         document = LinkedDataDocument.objects.get(reference=notification.resource)
 
         for processor in app_settings.DOCUMENT_PROCESSORS:
@@ -82,8 +83,6 @@ def process_incoming_notification(notification_id):
         # Load context models from the document
         document.load(sender=notification.sender)
         notification_accepted.send(notification=notification, sender=Notification)
-        box = CollectionContext.objects.get(reference=notification.target)
-        box.append(item=notification.resource)
         return notification.results.create(result=NotificationProcessResult.Types.OK)
     except CollectionContext.DoesNotExist:
         return notification.results.create(result=NotificationProcessResult.Types.BAD_TARGET)
