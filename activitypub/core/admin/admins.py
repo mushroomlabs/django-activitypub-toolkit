@@ -140,12 +140,16 @@ class CollectionItemAdmin(admin.ModelAdmin):
             "id", flat=True
         )
         if pages:
-            queryset = models.CollectionItem.objects.filter(collection__in=pages).order_by("order")
+            queryset = models.CollectionItem.objects.filter(collection__in=pages).order_by(
+                "collection__reference__uri", "order"
+            )
             return queryset, False
 
         collection = models.CollectionContext.objects.filter(reference__uri=search_term).first()
         if collection:
-            queryset = models.CollectionItem.objects.filter(collection_id=collection.id)
+            queryset = models.CollectionItem.objects.filter(collection_id=collection.id).order_by(
+                "collection__reference__uri", "order"
+            )
             return queryset, False
 
         return super().get_search_results(request, queryset, search_term)
