@@ -139,6 +139,11 @@ def on_notification_accepted_process_standard_flows(sender, **kw):
 
     tasks.process_standard_activity_flows(activity_uri=notification.resource.uri)
 
+
+@receiver(notification_accepted, sender=Notification)
+def on_notification_accepted_deliver_to_inboxes(sender, **kw):
+    notification = kw["notification"]
+
     sender = notification.sender.get_by_context(Actor)
     activity = notification.resource.get_by_context(ActivityContext)
 
@@ -219,6 +224,7 @@ __all__ = (
     "on_follow_request_received_check_policies",
     "on_follow_request_created_post_activity",
     "on_notification_accepted_process_standard_flows",
+    "on_notification_accepted_deliver_to_inboxes",
     "on_notification_created_send_to_target",
     "on_lemmy_activity_document_loaded_mark_unresolvable",
     "set_default_port_for_domain",
