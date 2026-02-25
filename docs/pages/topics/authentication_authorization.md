@@ -362,6 +362,74 @@ class OutboxView(APIView):
 
 This protection prevents remote actors from posting to local actor outboxes, even if they present valid HTTP signatures. Only authenticated local users who control the actor can write to protected collections.
 
+## Authenticated Proxy Access
+
+The toolkit provides authenticated proxy access for fetching remote ActivityPub resources. This is useful for C2S (Client-to-Server) implementations that need to retrieve remote data but cannot sign HTTP requests (such as browser-based clients or applications without access to private keys).
+
+The `RemoteReferenceProxyView` allows authenticated local users to fetch remote JSON-LD documents through your server. Instead of the client making a direct request to the remote server (which might not respond due to CORS or missing signature requirements), the client authenticates to your server and requests the remote resource through the proxy endpoint.
+
+### How It Works
+
+The view uses Django authentication rather than HTTP Signatures. When a user is authenticated to your server, they can fetch any remote resource (local resources return 404 to prevent proxying your own resources):
+
+```python
+# URL: GET /remote/<uri>
+# Example: GET /remote/https%3A%2F%2Fremote.example%2Fusers%2Fbob
+
+# In a C2S client
+const response = await fetch('/remote/https%3A%2F%2Fremote.example%2Fusers%2Fbob', {
+    headers: {
+        'Authorization': 'Bearer ' + oauthToken,
+        'Accept': 'application/activity+json'
+    }
+});
+const actor = await response.json();
+// Returns full JSON-LD document from stored LinkedDataDocument
+```
+
+### Key Characteristics
+
+- **Authentication type:** Django authentication (session, token, or OAuth)
+- **Resource filtering:** Only remote resources allowed (local resources return 404)
+- **Resolution behavior:** Only returns stored LinkedDataDocuments (no transient HTTP resolution)
+- **Use case:** C2S clients fetching remote data without needing to sign HTTP requests
+- **Not for:** Resolving transient activities (use direct resolution instead)
+
+### Comparison with Standard Views
+
+| Aspect | Standard View | Proxy View |
+|--------|--------------|------------|
+| Authentication | HTTP Signatures | Django auth |
+| Signing requirement | Private key required | No signing needed |
+| Resource type | Local only | Remote only |
+| Resolution | Transient (HTTP fetch) | Stored documents only |
+| Best for | S2S communication | C2S communication |
+
+### Implementation
+
+The view is implemented as a subclass of `LinkedDataModelView` with an overridden `get_object()` method:
+
+```python
+class RemoteReferenceProxyView(LinkedDataModelView):
+    permission_classes = (IsAuthenticated,)
+
+    def get_object(self):
+        uri = self.request.path
+        return get_object_or_404(Reference, uri=uri, domain__local=False)
+```
+
+The URL configuration in your application:
+
+```python
+from activitypub.core.views import RemoteReferenceProxyView
+
+urlpatterns = [
+    path('remote/<path:resource>', RemoteReferenceProxyView.as_view(), name='proxy-remote-object'),
+]
+```
+
+The view automatically handles JSON-LD serialization and returns the full compacted JSON-LD document from the stored LinkedDataDocument. This ensures the client receives complete ActivityPub-compatible data without needing to handle the resolution process.
+
 ## Multi-Tenancy and Per-Actor Keys
 
 Systems hosting multiple independent actors might want each actor to have their own keypair rather than sharing a single server keypair. This provides better isolation and makes key rotation simpler.

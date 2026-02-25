@@ -93,3 +93,19 @@ When a user on your server follows someone on a remote server, both servers stor
 This separation between internal representation and external protocol is what Django ActivityPub Toolkit leverages. You model your application's data using Django models optimized for your use case. The toolkit handles translating between those models and the JSON-LD documents that ActivityPub requires.
 
 Understanding the graph model helps you reason about what data exists in the Fediverse, how it relates to your application's data, and what operations make sense when building on top of this shared infrastructure.
+
+## Fetching Remote Resources
+
+The toolkit provides authenticated proxy access through `RemoteReferenceProxyView` for scenarios where clients cannot directly fetch remote resources. This is particularly useful for:
+
+- **Browser-based clients**: CORS restrictions may prevent direct HTTP requests to remote servers
+- **C2S implementations**: Clients without access to private keys cannot sign ActivityPub HTTP requests
+- **Simplified architecture**: Authentication via session/token instead of HTTP signatures
+
+The proxy endpoint (`/remote/<uri>`) returns stored LinkedDataDocuments for remote resources. This approach trades immediate freshness (no transient resolution) for broader accessibility and simplified authentication.
+
+## Summary
+
+ActivityPub's foundation in Linked Data principles enables decentralized, interoperable social networking. The graph model provides a flexible foundation for extending vocabularies, while JSON-LD bridges readability with semantic precision.
+
+Understanding these fundamentals helps you appreciate how Django ActivityPub Toolkit bridges your Django models with the broader ActivityPub ecosystem. The toolkit handles the translation between your application's data structures and the JSON-LD documents required by the protocol, letting you focus on building features.

@@ -408,7 +408,55 @@ def safe_notification_handler(sender, activity, **kwargs):
         # Don't raise - let other handlers continue
 ```
 
-Failed notifications remain in the database with their error status recorded in `NotificationProcessResult`. You can inspect them for debugging or implement retry logic if appropriate.
+
+## C2S Patterns with Proxy Access
+
+For C2S (Client-to-Server) implementations that need to fetch remote ActivityPub resources, the `RemoteReferenceProxyView` provides authenticated proxy access. This is particularly useful for browser-based clients or applications that cannot sign HTTP requests.
+
+The proxy endpoint is available at `GET /remote/<uri>` where `<uri>` is the percent-encoded URI of the remote resource:
+
+```python
+# URL pattern: remote/<path:resource>
+# Example: GET /remote/https%3A%2F%2Fremote.example%2Fusers%2Fbob
+```
+
+**Authentication:** Django authentication (session, token, or OAuth) instead of HTTP signatures.
+
+**Behavior:**
+- Only returns remote resources (returns 404 for local resources)
+- Only serves data from stored LinkedDataDocuments
+- No transient HTTP resolution occurs
+
+**Best for:** C2S applications needing to display remote ActivityPub data without implementing signature-based authentication.
+
+**Not for:** Resolving transient activities (use direct resolution instead).
+
+### Example: CORS-Friendly Remote Resource Fetching
+
+```javascript
+// Browser-based C2S client
+async function fetchRemoteActor(actorUri) {
+    try {
+        const response = await fetch('/remote/' + encodeURIComponent(actorUri), {
+            headers: {
+                'Authorization': 'Bearer ' + oauthToken,
+                'Accept': 'application/activity+json'
+            }
+        });
+        
+        if (response.ok) {
+            const actor = await response.json();
+            // Returns full JSON-LD document
+            console.log(actor);
+            return actor;
+        }
+    } catch (error) {
+        console.error('Failed to fetch remote actor:', error);
+    }
+}
+```
+
+This approach works around CORS restrictions and the need for private key access, making it ideal for browser-based ActivityPub clients.
 
 ## Summary
 

@@ -17,3 +17,5 @@ This section provides technical reference documentation for Django ActivityPub T
 **[Serializers](serializers.md)** - NodeInfo serializer for server metadata discovery.
 
 **[Settings](settings.md)** - Configuration options and customization settings.
+
+**[Views](views.md)** - API views for serving ActivityPub resources, including core views for object detail, proxy access, and discovery endpoints.

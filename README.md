@@ -44,7 +44,7 @@ Add to your Django settings:
 ```python
 INSTALLED_APPS = [
     # ... your other apps
-    'activitypub',
+    'activitypub.core',
 ]
 
 FEDERATION = {

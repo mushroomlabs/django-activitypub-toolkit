@@ -95,10 +95,12 @@ AS2_CONTEXT = Context(
 ```
 
 Each `Context` has four fields:
-- `url`: The URL where the context document can be fetched
-- `document`: The JSON-LD context document as a Python dict
-- `namespace`: An RDF namespace for creating URIs (optional)
-- `content_type`: HTTP content type, defaults to "application/ld+json"
+
+  - `url`: The URL where the context document can be fetched
+  - `document`: The JSON-LD context document as a Python dict
+  - `namespace`: An RDF namespace for creating URIs (optional)
+  - `content_type`: HTTP content type, defaults to "application/ld+json"
+
 
 **Important**: While namespaces are used for RDF bookkeeping, context models are organized by object type rather than namespace. A single context model handles all fields for a specific kind of object (like "Lemmy Community"), regardless of which namespaces those fields come from.
 

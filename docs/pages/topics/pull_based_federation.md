@@ -230,6 +230,27 @@ work with whatever vocabulary matters to your application. Resolution
 is explicit and controllable. You decide what data to cache and when
 to fetch fresh copies.
 
+### Proxy-Based Resource Fetching
+
+For C2S (Client-to-Server) implementations, the `RemoteReferenceProxyView` provides authenticated proxy access for fetching remote resources. This is particularly useful when:
+
+- Browser-based clients cannot sign HTTP requests
+- Clients lack access to private keys required for ActivityPub signatures
+- Remote servers don't serve their resources directly
+
+The proxy endpoint allows authenticated users to fetch any remote resource by URI:
+
+```python
+# URL pattern: remote/<path:resource>
+# Example: GET /remote/https%3A%2F%2Fremote.example%2Fposts%2F123
+```
+
+The view requires Django authentication (session, token, or OAuth) rather than HTTP signatures. It only returns remote resources (local resources return 404) and only serves data from stored LinkedDataDocuments—no transient HTTP resolution occurs. This makes it perfect for C2S implementations that need to display remote ActivityPub data without implementing signature-based authentication.
+
+Compare this to direct resolution: when your server needs a resource it doesn't have cached, it typically stores a `Reference` and lets the `HttpDocumentResolver` fetch and store the JSON-LD document. The proxy view assumes the document is already stored and provides authenticated access to it.
+
+### Building ON the Graph
+
 The result is an application that participates in the Fediverse
 without trying to replicate it entirely—a client of the social graph
 rather than a silo maintaining its own copy.
