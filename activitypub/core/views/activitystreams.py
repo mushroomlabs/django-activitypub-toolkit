@@ -7,7 +7,6 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from .. import tasks
-from ..settings import app_settings
 from ..contexts import AS2
 from ..decorators import calculate_digest, collect_signature
 from ..models import (

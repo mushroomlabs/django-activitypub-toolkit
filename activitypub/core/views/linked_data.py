@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -56,3 +57,23 @@ class LinkedDataModelView(APIView):
             processor.process_outgoing(document)
 
         return Response(document)
+
+
+class RemoteReferenceProxyView(LinkedDataModelView):
+    """
+    A view to allow authenticated users to get data from remote
+    resources. Useful to let C2S implementations to fetch data from
+    other servers that do not serve their resources directly:
+
+     - do not resolve transient activities
+     - add authorized fetch (the client does not own the keys, so can not sign requests)
+    """
+
+    permission_classes = (IsAuthenticated,)
+
+    def get_object(self):
+        uri = self.kwargs["resource"]
+        return get_object_or_404(Reference, uri=uri, domain__local=False)
+
+
+__all__ = ("LinkedDataModelView", "RemoteReferenceProxyView")

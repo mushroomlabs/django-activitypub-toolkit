@@ -1,7 +1,7 @@
 from django.db.models import F, Manager, QuerySet
 from model_utils.managers import InheritanceManager, InheritanceQuerySet
 
-from .fields import get_context_join_path, _get_from_fields_cache
+from .fields import _get_from_fields_cache, get_context_join_path
 
 
 class ContextAwareQuerySet(QuerySet):

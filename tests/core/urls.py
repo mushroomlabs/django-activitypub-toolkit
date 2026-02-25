@@ -5,6 +5,7 @@ from activitypub.core.views import (
     HostMeta,
     NodeInfo,
     NodeInfo20,
+    RemoteReferenceProxyView,
     Webfinger,
 )
 
@@ -14,5 +15,6 @@ urlpatterns = (
     path(".well-known/host-meta", HostMeta.as_view(), name="host-meta"),
     path("nodeinfo/2.0", NodeInfo20.as_view(), name="nodeinfo20"),
     path("nodeinfo/2.0.json", NodeInfo20.as_view(), name="nodeinfo20-json"),
+    path("remote/<path:resource>", RemoteReferenceProxyView.as_view(), name="proxy-remote-object"),
     path("<path:resource>", ActivityPubObjectDetailView.as_view(), name="activitypub-resource"),
 )
