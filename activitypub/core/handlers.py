@@ -189,6 +189,7 @@ def on_notification_accepted_deliver_to_inboxes(sender, **kw):
     inboxes = CollectionContext.objects.filter(reference__in=inbox_references)
 
     for inbox in inboxes.iterator():
+        logger.debug(f"Appending {notification.resource} to {inbox.reference.uri}")
         inbox.append(item=notification.resource)
 
 

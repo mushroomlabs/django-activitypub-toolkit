@@ -21,6 +21,7 @@ from ..exceptions import (
     DocumentResolutionError,
     DocumentValidationError,
     InvalidDomainError,
+    ReferenceGone,
     ReferenceRedirect,
 )
 from ..settings import app_settings
@@ -62,6 +63,7 @@ class ReferenceManager(models.Manager):
         )
         return qs.annotate(
             dereferenceable=Case(
+                When(Q(status=Reference.STATUS.voided), then=Value(False)),
                 # Local or skolemized references are not dereferenceable
                 When(
                     Q(domain__local=True) | Q(uri__startswith=self.model.SKOLEM_BASE_URI),
@@ -149,7 +151,7 @@ class Reference(TimeStampedModel, StatusModel):
 
     SKOLEM_BASE_URI = "urn:uuid:"
 
-    STATUS = Choices("unknown", "resolved", "redirected", "failed")
+    STATUS = Choices("unknown", "resolved", "redirected", "failed", "voided")
 
     uri = models.CharField(max_length=2083, unique=True)
     domain = models.ForeignKey(
@@ -166,6 +168,7 @@ class Reference(TimeStampedModel, StatusModel):
     redirected_at = MonitorField(monitor="status", null=True, when=["redirected"])
     resolved_at = MonitorField(monitor="status", null=True, when=["resolved"])
     failed_at = MonitorField(monitor="status", null=True, when=["failed"])
+    voided_at = MonitorField(monitor="status", null=True, when=["voided"])
     objects = ReferenceManager()
     remote = QueryManager(domain__local=False)
     local = QueryManager(domain__local=True)
@@ -181,6 +184,10 @@ class Reference(TimeStampedModel, StatusModel):
     @property
     def is_resolved(self):
         return self.status == self.STATUS.resolved
+
+    @property
+    def is_voided(self):
+        return self.status == self.STATUS.voided
 
     @property
     def is_dereferenceable(self):
@@ -259,6 +266,9 @@ class Reference(TimeStampedModel, StatusModel):
                 if exc.redirect_uri:
                     self.redirects_to = Reference.make(exc.redirect_uri)
                     self.redirects_to.resolve()
+            except ReferenceGone as exc:
+                logger.warning(str(exc))
+                self.status = self.STATUS.voided
             else:
                 return
             finally:
@@ -566,7 +576,7 @@ class AbstractContextModel(models.Model):
         abstract = True
 
 
-class Notification(models.Model):
+class Notification(TimeStampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     sender = models.ForeignKey(
         Reference, related_name="notifications_sent", on_delete=models.CASCADE

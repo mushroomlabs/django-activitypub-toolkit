@@ -67,7 +67,7 @@ class AppSettings:
 
         default_document_resolvers = {
             "activitypub.core.resolvers.ContextUriResolver",
-            "activitypub.core.resolvers.HttpDocumentResolver",
+            "activitypub.core.resolvers.SignedHttpRequestResolver",
         }
         extra_document_resolvers = {}
 

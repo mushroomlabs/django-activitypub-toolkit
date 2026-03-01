@@ -233,8 +233,10 @@ class LinkAdmin(admin.ModelAdmin):
 
 @admin.register(models.Notification)
 class NotificationAdmin(admin.ModelAdmin):
+    date_hierarchy = "created"
     list_display = (
         "get_resource",
+        "created",
         "get_sender",
         "get_target",
         "get_activity_type",
@@ -256,6 +258,7 @@ class NotificationAdmin(admin.ModelAdmin):
         actions.process_notifications,
         actions.force_process_notifications,
     )
+    ordering = ("-created",)
 
     @admin.display(description="Resource")
     def get_resource(self, obj):

@@ -26,6 +26,10 @@ class DocumentValidationError(Exception):
     pass
 
 
+class ReferenceGone(Exception):
+    pass
+
+
 class ReferenceRedirect(Exception):
     def __init__(self, message, redirect_uri=None):
         super().__init__(self, message)

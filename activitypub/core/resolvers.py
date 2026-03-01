@@ -1,10 +1,14 @@
+import logging
 from urllib.parse import urljoin, urlparse
 
 import requests
 
-from activitypub.core.exceptions import DocumentResolutionError, ReferenceRedirect
+from activitypub.core.exceptions import DocumentResolutionError, ReferenceGone, ReferenceRedirect
 from activitypub.core.models import ActivityPubServer, Domain, SecV1Context
 from activitypub.core.settings import app_settings
+
+
+logger = logging.getLogger(__name__)
 
 
 def is_context_or_namespace_url(uri):
@@ -38,13 +42,7 @@ class HttpDocumentResolver(BaseDocumentResolver):
 
         return uri.startswith("http://") or uri.startswith("https://")
 
-    def resolve(self, uri):
-        domain = Domain.get_default()
-        server, _ = ActivityPubServer.objects.get_or_create(domain=domain)
-
-        signing_key = (
-            server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
-        )
+    def resolve(self, uri, signing_key=None):
         auth = signing_key and signing_key.signed_request_auth
 
         original_domain = urlparse(uri).netloc
@@ -58,6 +56,9 @@ class HttpDocumentResolver(BaseDocumentResolver):
                 auth=auth,
                 allow_redirects=False,
             )
+
+            if response.status_code == 410:
+                raise ReferenceGone(f"{uri_to_fetch} return 410 Gone")
 
             if response.is_redirect:
                 location = response.headers.get("Location")
@@ -104,3 +105,19 @@ class HttpDocumentResolver(BaseDocumentResolver):
             return document
         except (requests.JSONDecodeError, requests.HTTPError, requests.ConnectionError) as exc:
             raise DocumentResolutionError from exc
+
+
+class SignedHttpRequestResolver(HttpDocumentResolver):
+    def resolve(self, uri, signing_key=None):
+        if signing_key is None:
+            domain = Domain.get_default()
+            server, _ = ActivityPubServer.objects.get_or_create(domain=domain)
+
+            signing_key = (
+                server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
+            )
+
+        logger.info(
+            f"Making authenticated fetch request with key from {signing_key.owner.first()}"
+        )
+        return super().resolve(uri, signing_key=signing_key)

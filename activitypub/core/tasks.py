@@ -152,6 +152,7 @@ def post_activity(activity_uri):
         assert actor is not None, f"Activity {activity.uri} has no actor"
         assert actor.reference.is_local, f"Activity {activity.uri} is not from a local actor"
         for inbox in actor.followers_inboxes:
+            logger.debug(f"Sending notification {actor.reference} -> {inbox}")
             Notification.objects.create(
                 resource=activity.reference, sender=actor.reference, target=inbox
             )
