@@ -76,6 +76,21 @@ class DomainAdmin(admin.ModelAdmin):
         return False
 
 
+@admin.register(models.EndpointContext)
+class EndpointContextAdmin(admin.ModelAdmin):
+    list_display = ("uri", "get_actor", "shared_inbox")
+    search_fields = (
+        "reference__uri",
+        "reference__actor_endpoints__reference__uri",
+    )
+    readonly_fields = ("reference",)
+
+    @admin.display(description="Actor")
+    def get_actor(self, obj):
+        actor = models.ActorContext.objects.filter(endpoints=obj.reference).first()
+        return actor and actor.reference.uri
+
+
 @admin.register(models.Activity)
 class ActivityAdmin(ContextModelAdmin):
     list_display = ("uri", "actor", "object", "target", "type")
