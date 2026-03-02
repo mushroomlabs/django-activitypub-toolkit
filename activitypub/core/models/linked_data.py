@@ -191,7 +191,8 @@ class Reference(TimeStampedModel, StatusModel):
 
     @property
     def is_dereferenceable(self):
-        # check if model is coming from queryset and has annotated 'dereferenceable' field
+        # check if model is coming from queryset and has annotated
+        # 'dereferenceable' field
         if not hasattr(self, "dereferenceable"):
             parsed = urlparse(self.uri)
             has_fragment = parsed.scheme in ("http", "https") and parsed.fragment
@@ -200,7 +201,13 @@ class Reference(TimeStampedModel, StatusModel):
             if hasattr(self, "document"):
                 resolvable_document = self.document.resolvable
             self.dereferenceable = not any(
-                [self.is_local, self.is_blank_node, has_fragment, not resolvable_document]
+                [
+                    self.is_voided,
+                    self.is_blank_node,
+                    self.is_local,
+                    has_fragment,
+                    not resolvable_document,
+                ]
             )
         return self.dereferenceable
 
