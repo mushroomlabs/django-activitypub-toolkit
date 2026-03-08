@@ -140,7 +140,7 @@ class ObjectProjection(ReferenceProjection):
             AS2.likes: CollectionWithTotalProjection,
             AS2.shares: CollectionWithTotalProjection,
         }
-        embed = (AS2.oneOf, AS2.anyOf)
+        embed = (AS2.oneOf, AS2.anyOf, AS2.attachment, AS2.url)
 
 
 class QuestionProjection(ObjectProjection):
