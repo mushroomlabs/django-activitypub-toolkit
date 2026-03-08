@@ -43,6 +43,11 @@ class HttpDocumentResolver(BaseDocumentResolver):
         return uri.startswith("http://") or uri.startswith("https://")
 
     def resolve(self, uri, signing_key=None):
+        if signing_key is not None:
+            logger.info(
+                f"Making authenticated fetch request with key from {signing_key.owner.first()}"
+            )
+
         auth = signing_key and signing_key.signed_request_auth
 
         original_domain = urlparse(uri).netloc
@@ -116,8 +121,4 @@ class SignedHttpRequestResolver(HttpDocumentResolver):
             signing_key = (
                 server.actor and SecV1Context.valid.filter(owner=server.actor.reference).first()
             )
-
-        logger.info(
-            f"Making authenticated fetch request with key from {signing_key.owner.first()}"
-        )
         return super().resolve(uri, signing_key=signing_key)
