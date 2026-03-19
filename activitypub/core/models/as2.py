@@ -101,13 +101,13 @@ class AbstractAs2ObjectContext(AbstractContextModel):
     name = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
     summary = models.TextField(null=True, blank=True)
-    published = models.DateTimeField(null=True, blank=True)
-    updated = models.DateTimeField(null=True, blank=True)
+    published = models.DateTimeField(null=True, blank=True, db_index=True)
+    updated = models.DateTimeField(null=True, blank=True, db_index=True)
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
     duration = models.DurationField(null=True, blank=True)
-    sensitive = models.BooleanField(null=True, blank=True)
-    media_type = models.CharField(max_length=64, null=True, blank=True)
+    sensitive = models.BooleanField(null=True, blank=True, db_index=True)
+    media_type = models.CharField(max_length=64, null=True, blank=True, db_index=True)
     url = models.URLField(max_length=2083, null=True, blank=True)
     url_link = ReferenceField()
 
@@ -179,9 +179,9 @@ class LinkContext(AbstractContextModel):
 
     type = models.CharField(max_length=48, choices=Types.choices, default=Types.LINK)
     href = models.URLField(max_length=2083)
-    media_type = models.CharField(max_length=48, null=True, blank=True)
+    media_type = models.CharField(max_length=48, null=True, blank=True, db_index=True)
     name = models.TextField(null=True, blank=True)
-    language = models.CharField(max_length=5, null=True, blank=True)
+    language = models.CharField(max_length=5, null=True, blank=True, db_index=True)
     height = models.PositiveIntegerField(null=True)
     width = models.PositiveIntegerField(null=True)
     preview = models.ForeignKey(
@@ -598,7 +598,7 @@ class QuestionContext(AbstractContextModel):
         "one_of": AS2.oneOf,
     }
     # Only applicable for Question Activities (or Objects if non-standard)
-    closed = models.DateTimeField(null=True, blank=True)
+    closed = models.DateTimeField(null=True, blank=True, db_index=True)
     any_of = ReferenceField(related_name="multiple_choice_alternatives")
     one_of = ReferenceField(related_name="alternatives")
 
