@@ -1,5 +1,4 @@
 import logging
-
 from urllib.parse import urlunparse
 
 from django.http import HttpResponse, JsonResponse

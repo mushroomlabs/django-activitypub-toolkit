@@ -7,7 +7,6 @@ from activitypub.core.exceptions import DocumentResolutionError, ReferenceGone, 
 from activitypub.core.models import ActivityPubServer, Domain, SecV1Context
 from activitypub.core.settings import app_settings
 
-
 logger = logging.getLogger(__name__)
 
 
