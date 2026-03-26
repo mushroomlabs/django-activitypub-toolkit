@@ -53,12 +53,6 @@ dev = [
   "httpretty",
 ]
 
-# OAuth support
-oauth = [
-  "django-oauth-toolkit>=3.2.0",
-  "django-oauth-toolkit-dcr>=0.1.0",
-]
-
 # Lemmy API adapter
 lemmy = [
   "django-filter",
@@ -97,7 +91,7 @@ filterwarnings = [
 ]
 
 [tool.pytest_env]
-DJANGO_SETTINGS_MODULE = "tests.settings.full"
+DJANGO_SETTINGS_MODULE = "tests.settings.lemmy"
 
 [tool.black]
 line-length = 99

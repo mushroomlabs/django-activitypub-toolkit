@@ -25,11 +25,11 @@ python -m venv venv
 source venv/bin/activate
 
 pip install django django-activitypub-toolkit djangorestframework
-django-admin startproject config .
+django-admin startproject standalone .
 python manage.py startapp actors
 ```
 
-Configure `config/settings.py`:
+Configure `standalone/settings.py`:
 
 ```python
 INSTALLED_APPS = [
@@ -40,34 +40,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'oauth2_provider',
     'activitypub.core',
-    'activitypub.extras.oauth',
     'actors',
 ]
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
-    ],
-}
-
-OAUTH2_PROVIDER = {
-    'SCOPES': {
-        'read': 'Read access',
-        'write': 'Write access',
-        'follow': 'Follow and unfollow users',
-        'activitypub': 'ActivityPub identity information',
-    },
-    'OAUTH2_VALIDATOR_CLASS': 'activitypub.extras.oauth.views.ActivityPubIdentityOAuth2Validator',
-    'OAUTH2_SERVER_CLASS': 'activitypub.extras.oauth.views.ActivityPubOAuthServer',
-}
-
-OAUTH2_PROVIDER_APPLICATION_MODEL = 'activitypub_oauth.OAuthClientApplication'
-OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'activitypub_oauth.OAuthAccessToken'
-OAUTH2_PROVIDER_GRANT_MODEL = 'activitypub_oauth.OAuthAuthorizationCode'
-OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = 'activitypub_oauth.OAuthRefreshToken'
-OAUTH2_PROVIDER_ID_TOKEN_MODEL = 'activitypub_oauth.OidcIdentityToken'
 
 FEDERATION = {
     'DEFAULT_URL': 'http://localhost:8000',
@@ -84,49 +59,157 @@ python manage.py migrate
 
 ## Identity System
 
-The toolkit provides a built-in Identity system that links Django users to ActivityPub actors. A single user can control multiple actors, each representing a distinct identity. The `activitypub.extras.oauth` package extends this with OAuth support for client applications.
+The toolkit provides a built-in Identity system that links Django users to ActivityPub actors. A single user can control multiple actors, each representing a distinct identity.
 
-No additional models are needed. The Identity system is already configured through the installed apps.
+No additional models are needed. The Identity system is already configured through the installed apps. We can manage them all at the Django Admin.
+
+To access the django admin, you will need to create a superuser:
+
+```bash
+python manage.py createsuperuser
+```
 
 ## OAuth Authentication Setup
 
-OAuth enables clients to authenticate on behalf of users. The toolkit's OAuth integration supports identity selection, allowing users to choose which actor to authorize. Configure OAuth in `config/urls.py`:
+A standalone ActivityPub server needs to authenticate two different
+kinds of requests: server-to-server federation (handled by HTTP
+Signatures, covered later) and client-to-server API requests. For C2S,
+clients need to prove they are authorized to act on behalf of a
+specific actor. Since a single user may control multiple actors,
+simple user-level authentication is not sufficient. We need tokens
+that are scoped to a specific actor. One of the many ways to do this
+is by leveraging OAuth, so in this section we will see how to set it up.
 
-```python
-from django.contrib import admin
-from django.urls import path, include
-from activitypub.extras.oauth.views import (
-    IdentitySelectionAuthorizationView,
-    ActivityPubDynamicClientRegistrationView,
-)
 
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('o/authorize/', IdentitySelectionAuthorizationView.as_view(), name='authorize'),
-    path('o/register/', ActivityPubDynamicClientRegistrationView.as_view(), name='register'),
-    path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
-    path('', include('actors.urls')),
-]
-```
-
-Create a superuser and an identity:
+Install Django OAuth Toolkit:
 
 ```bash
-python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
+pip install django-oauth-toolkit
 ```
 
-Visit `http://localhost:8000/admin/` to create an identity:
+Add it to INSTALLED_APPS and configure DRF to use OAuth authentication:
 
-1. Navigate to Activitypub Core → Identities
-2. Click "Add Identity"
-3. Select your user
-4. Create or select an actor (you may need to create an ActorContext first)
-5. Mark as primary identity
-6. Save
+```python
+INSTALLED_APPS = [
+    ...
+    'oauth2_provider',
+]
 
-For OAuth applications, clients can use Dynamic Client Registration or you can manually create applications in the admin interface under OAuth Client Applications.
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'actors.oauth.ActorScopedOAuth2Authentication',
+    ],
+}
+
+OAUTH2_PROVIDER = {
+    'SCOPES': {
+        'read': 'Read access',
+        'write': 'Write access',
+    },
+    'ACCESS_TOKEN_MODEL': 'actors.ActorAccessToken',
+}
+```
+
+Create `actors/models.py` with a custom access token model that ties each token to a specific actor:
+
+```python
+from django.db import models
+from oauth2_provider.models import AbstractAccessToken
+from activitypub.core.models import ActorContext
+
+class ActorAccessToken(AbstractAccessToken):
+    actor = models.ForeignKey(
+        ActorContext,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='access_tokens',
+    )
+
+    class Meta:
+        app_label = 'actors'
+```
+
+Create `actors/oauth.py` with a validator that binds the actor during the authorization code exchange, and an authentication class that attaches it to the request:
+
+```python
+from oauth2_provider.contrib.rest_framework import OAuth2Authentication
+from oauth2_provider.oauth2_validators import OAuth2Validator
+from activitypub.core.models import Reference
+from .models import ActorAccessToken
+
+class ActorOAuth2Validator(OAuth2Validator):
+    def save_authorization_code(self, client_id, code, request, *args, **kwargs):
+        # Store the actor URI from login_hint in the authorization code
+        # so it can be retrieved during token exchange
+        request.actor_uri = request.GET.get('login_hint')
+        super().save_authorization_code(client_id, code, request, *args, **kwargs)
+
+    def save_bearer_token(self, token, request, *args, **kwargs):
+        super().save_bearer_token(token, request, *args, **kwargs)
+        if hasattr(request, 'actor_uri') and request.actor_uri:
+            try:
+                ref = Reference.objects.get(uri=request.actor_uri)
+                actor = ref.actor_context
+                ActorAccessToken.objects.filter(
+                    token=token['access_token']
+                ).update(actor=actor)
+            except Exception:
+                pass
+
+class ActorScopedOAuth2Authentication(OAuth2Authentication):
+    def authenticate(self, request):
+        result = super().authenticate(request)
+        if result is None:
+            return None
+        user, token = result
+        request.actor = getattr(token, 'actor', None)
+        return user, token
+```
+
+Add the custom validator to your OAuth settings:
+
+```python
+OAUTH2_PROVIDER = {
+    ...
+    'OAUTH2_VALIDATOR_CLASS': 'actors.oauth.ActorOAuth2Validator',
+}
+```
+
+Run migrations to create the token table:
+
+```bash
+python manage.py makemigrations actors
+python manage.py migrate
+```
+
+Create an OAuth application in the Django admin under **OAuth2 Provider → Applications**. Set the client type to **Confidential** and the authorization grant type to **Authorization code**.
+
+Clients authenticate by directing the user to the authorization endpoint with the actor URI as a hint:
+
+```
+http://localhost:8000/o/authorize/?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=YOUR_REDIRECT_URI&scope=read+write&login_hint=http://localhost:8000/actors/uuid-here
+```
+
+After the user approves, exchange the authorization code for a token:
+
+```bash
+curl -X POST \
+  -d "grant_type=authorization_code&code=AUTH_CODE&redirect_uri=YOUR_REDIRECT_URI&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET" \
+  http://localhost:8000/o/token/
+```
+
+The response includes a bearer token scoped to the specified actor:
+
+```json
+{
+  "access_token": "your-access-token",
+  "token_type": "Bearer",
+  "expires_in": 36000,
+  "refresh_token": "your-refresh-token",
+  "scope": "read write"
+}
+```
 
 ## Actor Creation API
 
@@ -452,20 +535,14 @@ The server:
 
 The toolkit provides built-in views for WebFinger and NodeInfo discovery. These work with the Identity system to resolve actors by their subject names.
 
-Update `config/urls.py` to include discovery endpoints:
+Update `standalone/urls.py` to include discovery endpoints:
 
 ```python
 from django.contrib import admin
 from django.urls import path, include
-from activitypub.extras.oauth.views import (
-    IdentitySelectionAuthorizationView,
-    ActivityPubDynamicClientRegistrationView,
-)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('o/authorize/', IdentitySelectionAuthorizationView.as_view(), name='authorize'),
-    path('o/register/', ActivityPubDynamicClientRegistrationView.as_view(), name='register'),
     path('o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     path('', include('actors.urls')),
 ]
@@ -625,13 +702,13 @@ For production deployment:
 
 ## Summary
 
-You have built a complete generic ActivityPub server using the toolkit's built-in Identity and OAuth systems. The server implements both C2S (client-to-server) and S2S (server-to-server) protocols. Clients authenticate via OAuth with identity-scoped tokens and post activities to outboxes. Remote servers deliver activities to inboxes via HTTP Signatures.
+You have built a complete generic ActivityPub server using the toolkit's built-in Identity system. The server implements both C2S (client-to-server) and S2S (server-to-server) protocols. Clients authenticate via OAuth with actor-scoped tokens and post activities to outboxes. Remote servers deliver activities to inboxes via HTTP Signatures.
 
 Key features of this implementation:
 
-**Identity Management:** Users control multiple actors through the Identity system. Each OAuth token is bound to a specific identity, allowing clients to operate in the context of that actor.
+**Identity Management:** Users control multiple actors through the Identity system. Each OAuth token is bound to a specific actor, allowing clients to operate in the context of that actor.
 
-**OAuth Integration:** The `activitypub.extras.oauth` package provides identity selection during authorization, custom ActivityPub OIDC claims, and dynamic client registration.
+**OAuth Integration:** Django OAuth Toolkit handles authentication with a custom access token model that ties tokens to actors, and a validator that captures actor selection during authorization.
 
 **Generic Storage:** The server stores ActivityStreams objects using only the toolkit's context models. No application-specific models are required beyond the built-in Identity system.
 

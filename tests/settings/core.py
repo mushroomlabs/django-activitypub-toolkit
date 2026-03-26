@@ -65,4 +65,4 @@ CELERY_TASK_EAGER_PROPAGATES = True
 FEDERATION = {"DEFAULT_URL": "http://testserver", "SOFTWARE_NAME": "activitypub_toolkit"}
 
 
-PYTEST_IGNORE = ["tests/oauth", "tests/lemmy"]
+PYTEST_IGNORE = ["tests/lemmy"]

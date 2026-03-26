@@ -18,13 +18,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.staticfiles",
     "rest_framework",
-    "oauth2_provider",
-    "oauth_dcr",
     "taggit",
     "tree_queries",
     "activitypub.core",
     "activitypub.adapters.lemmy",
-    "activitypub.extras.oauth",
 ]
 
 MIDDLEWARE = [
@@ -130,23 +127,4 @@ LOGGING = {
             "propagate": False,
         },
     },
-}
-
-
-OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "activitypub_extras_oauth.OAuthAccessToken"
-OAUTH2_PROVIDER_APPLICATION_MODEL = "activitypub_extras_oauth.OAuthClientApplication"
-OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "activitypub_extras_oauth.OAuthRefreshToken"
-OAUTH2_PROVIDER_ID_TOKEN_MODEL = "activitypub_extras_oauth.OidcIdentityToken"
-OAUTH2_PROVIDER_GRANT_MODEL = "activitypub_extras_oauth.OAuthAuthorizationCode"
-
-OAUTH2_PROVIDER = {
-    "OAUTH2_BACKEND_CLASS": "activitypub.extras.oauth.views.ActivityPubOAuthServer",
-    "OAUTH2_VALIDATOR_CLASS": "activitypub.extras.oauth.views.ActivityPubIdentityOAuth2Validator",
-    "ALLOWED_REDIRECT_URI_SCHEMES": ["https", "http"],
-    # OAuth Admin Classes
-    "APPLICATION_ADMIN_CLASS": "activitypub.extras.oauth.admin.OAuthClientApplicationAdmin",
-    "ACCESS_TOKEN_ADMIN_CLASS": "activitypub.extras.oauth.admin.OAuthAccessTokenAdmin",
-    "GRANT_ADMIN_CLASS": "activitypub.extras.oauth.admin.OAuthAuthorizationCodeAdmin",
-    "REFRESH_TOKEN_ADMIN_CLASS": "activitypub.extras.oauth.admin.OAuthRefreshTokenAdmin",
-    "ID_TOKEN_ADMIN_CLASS": "activitypub.extras.oauth.admin.OidcIdentityTokenAdmin",
 }

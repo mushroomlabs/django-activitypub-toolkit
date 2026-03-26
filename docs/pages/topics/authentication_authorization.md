@@ -48,7 +48,11 @@ def my_view(request):
         # Perform operations as this actor
 ```
 
-For applications where users manage multiple identities, views must explicitly determine which identity the user is acting as. The OAuth authorization flow demonstrates this pattern by prompting users to select an identity when authorizing client applications.
+For applications where users manage multiple identities, views must
+explicitly determine which identity the user is acting as. This is
+left up to the developer how to implement. An hypothetical OAuth-based
+system could achieve this by prompting users to select an identity
+when authorizing client applications and issuing actor-specific access tokens.
 
 ### Authentication Backends
 
@@ -63,44 +67,6 @@ AUTHENTICATION_BACKENDS = [
 ```
 
 This backend authenticates users by looking up an Identity with the specified username and domain, then verifying the password against the associated Django user. This allows users to log in using their ActivityPub actor identifier rather than their Django username.
-
-### OAuth and Identity Selection
-
-The OAuth integration extends django-oauth-toolkit to support identity-scoped tokens. When a client application requests authorization, the user selects which identity to authorize. Access tokens are bound to that identity, and API requests authenticated with the token operate in the context of that specific actor.
-
-```python
-from activitypub.extras.oauth.models import OAuthAccessToken
-
-# Access tokens are bound to identities
-token = OAuthAccessToken.objects.get(token=token_string)
-actor = token.identity.actor
-
-# The token response includes the actor URI
-# {
-#   "access_token": "...",
-#   "token_type": "Bearer",
-#   "expires_in": 3600,
-#   "actor": "https://myserver.com/actors/alice"
-# }
-```
-
-Client applications receive the actor URI in the token response, allowing them to identify which actor they're operating as. This supports multi-account clients that manage multiple identities across different servers.
-
-The OAuth validator includes custom OIDC claims for ActivityPub identity information:
-
-```python
-# Claims available in the activitypub scope
-{
-    "sub": "https://myserver.com/actors/alice",
-    "preferred_username": "alice",
-    "subject_username": "alice@myserver.com",
-    "display_name": "Alice Smith",
-    "profile": "https://myserver.com/actors/alice",
-    "identity_id": 123
-}
-```
-
-These claims allow client applications to retrieve actor information without additional API requests.
 
 ### User-Controlled Domains
 
