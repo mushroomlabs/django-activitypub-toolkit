@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "django-activitypub-toolkit"
 version = "0.2.0"
-requires-python = ">= 3.10"
+requires-python = ">= 3.12"
 description = "Django pluggable application to ActivityPub servers"
 authors = [{name = "Raphael Lullis", email = "raphael@mushroomlabs.com"}]
 keywords = ["django", "activitypub"]
@@ -32,7 +32,7 @@ classifiers = [
 dependencies = [
   "django >= 5.2",
   "django-model-utils >= 4.2",
-  "djangorestframework >= 3.16",
+  "djangorestframework >= 3.17",
   "celery >= 5.4",
   "pyld >= 2.0.4",
   "rdflib >= 7.0.0",
@@ -40,7 +40,10 @@ dependencies = [
   "django-celery-beat >= 2.7.0",
   "python-ulid (>=3.0.0,<4.0.0)",
   "mmh3>=5.2.0",
+  "typing-extensions",
 ]
+
+
 
 [project.optional-dependencies]
 dev = [
